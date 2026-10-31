@@ -10,7 +10,7 @@ independently per platform packaging run.
 
 ### Changed
 
-- **Rivet pin moved to b81d66d**, which makes DMG packaging resilient to
+- **Rivet pin moved to 79a01a4**, which makes DMG packaging resilient to
   slow volume teardown on CI runners: the installer now probes the mount
   point, retries the graceful detach across the busy window, treats an
   already-torn-down volume as success, and only then falls back to the
