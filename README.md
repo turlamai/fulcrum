@@ -14,6 +14,8 @@ Existing launcher, clipboard, plugins and BYOK features remain free. No Pro chec
 
 [Installation, first use, privacy, backup and recovery](docs/user-guide.md) · [简体中文](docs/user-guide.zh-CN.md)
 
+[Release trust and platform signing policy](docs/release-signing-policy.md) — macOS is currently ad-hoc (not notarized), Windows packages are unsigned by default, and the update feed is independently Ed25519-signed.
+
 ## Install on macOS (developer preview)
 
 Choose your Mac build from [GitHub Releases](https://github.com/turlamai/fulcrum/releases/latest):
