@@ -43,17 +43,9 @@
 
 本地搜索（包括已索引的文件名与路径）、历史与片段保存在设备上；插件、BYOK 请求和配置的同步具有各自的联网与数据去向。
 
-## 为什么还要一个启动器？
+## 设计与实现
 
-因为没有任何产品能在三个桌面系统上同时提供 Raycast 级别的打磨和**原生** UI。Fulcrum 构建在 [Rivet](https://rivet.jrtx.site) 之上：一个共享的 Racket 后端嵌入每个应用，macOS 用 SwiftUI，Windows 用 WinUI 3，Linux 用 GTK4。不是 Electron，不是网页套壳。Windows 版就是 Windows 应用，macOS 版就是 macOS 应用。
-
-| | Fulcrum | Raycast | PowerToys Run | Ulauncher |
-|---|---|---|---|---|
-| 平台 | macOS + Windows + Linux | macOS（Windows beta 中） | Windows | Linux |
-| 原生 UI | **逐平台第一方** | macOS 原生 | WinUI | GTK |
-| 后端 | 一个内嵌 Racket CS | 各平台独立 | C# | Python |
-| 插件 | JSON over stdio，任意语言 | TypeScript，进程内 | C# | Python |
-| 价格 | 核心免费；1.0 推出 Pro | 免费 + Pro | 免费 | 免费 |
+Fulcrum 为 macOS、Windows 和 Linux 提供一致的键盘优先操作方式。共享的 Racket 后端负责搜索、剪贴板历史、文本片段和插件等功能；各平台分别使用 SwiftUI、WinUI 3、GTK4 原生界面。具体能力和限制以本文及用户手册为准。
 
 ## 仓库结构
 
