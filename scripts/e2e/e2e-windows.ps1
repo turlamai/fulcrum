@@ -13,6 +13,9 @@ using System.Runtime.InteropServices;
 public static class FulcrumNative {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 }
 '@
 
@@ -186,11 +189,48 @@ try {
         throw 'restarted launcher showed uninitialized scaffold'
     }
 
+    # Exercise the packaged Settings window, not just the EXE/tray icon.
+    # This regressed when Settings called AppWindow.SetIcon with an EXE path
+    # (WinUI's string overload requires a real .ico file). Rivet embeds the
+    # resource as numeric group-icon ID 1 and its ApplyAppIcon helper uses it.
+    $settingsQuery = Find-ById $restarted 'QueryBox'
+    $settingsQuery.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('^a')
+    [System.Windows.Forms.SendKeys]::SendWait('settings')
+    [void](Wait-Until 'Settings action in packaged launcher' {
+        if (Find-ByNameFragment $restarted 'Settings') { return $true }
+        return $false
+    })
+    $settingsQuery.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    $settingsWindow = Wait-Until 'titled Fulcrum Settings window' {
+        $condition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+        $windows = $desktop.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+        foreach ($candidate in $windows) {
+            if ($candidate.Current.Name -eq 'Fulcrum Settings') { return $candidate }
+        }
+        return $null
+    }
+    $settingsHwnd = [IntPtr]::new([int64]$settingsWindow.Current.NativeWindowHandle)
+    if ($settingsHwnd -eq [IntPtr]::Zero) {
+        throw 'Fulcrum Settings was visible but had no native HWND'
+    }
+    $titleIcon = [FulcrumNative]::SendMessage(
+        $settingsHwnd, [uint32]0x007F, [IntPtr]::new(1), [IntPtr]::Zero)
+    if ($titleIcon -eq [IntPtr]::Zero) {
+        $titleIcon = [FulcrumNative]::SendMessage(
+            $settingsHwnd, [uint32]0x007F, [IntPtr]::Zero, [IntPtr]::Zero)
+    }
+    if ($titleIcon -eq [IntPtr]::Zero) {
+        throw 'Fulcrum Settings title bar has no native application icon (WM_GETICON)'
+    }
+
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('set:QueryBox=12*12','press:Enter','launch:secondary','quit:acceptance-tray-path','launch:again')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window')
+        actions = @('set:QueryBox=12*12','press:Enter','launch:secondary','quit:acceptance-tray-path','launch:again','type:settings','open:settings')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Settings exposed a titled native window with embedded app icon')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
     $env:FULCRUM_DATA_DIR = $savedData

@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "SettingsWindow.xaml.h"
 #include "GeneratedI18n.hpp"
+#include "../system/winui_window.hpp"
 #if __has_include("SettingsWindow.g.cpp")
 #include "SettingsWindow.g.cpp"
 #endif
@@ -97,23 +98,22 @@ SettingsWindow::SettingsWindow() {
   InitializeComponent();
   Title(L"Fulcrum Settings");
   try {
-    // Mica like the Windows Settings app; a regular title bar stays — this
-    // window is a document-style surface, not the launcher overlay.
+    // This titled secondary window needs the same module-owned icon as the
+    // packaged app. SetIcon(String) expects an .ico path, NOT an EXE path.
+    // Rivet's helper uses the generated RT_GROUP_ICON resource ID 1 and
+    // preserves the native fallback when that resource is absent.
+    (void)rivet::system::ApplyAppIcon(*this);
+  } catch (...) {
+    // Icon decoration must never block Settings when WinUI rejects a handle.
+  }
+  try {
+    // Mica like the Windows Settings app; the launcher itself remains borderless.
     SystemBackdrop(mx::Media::MicaBackdrop());
     if (auto appWindow = this->AppWindow()) {
       appWindow.Resize(winrt::Windows::Graphics::SizeInt32{680, 840});
-      // Titled Windows windows carry their icon left of the title; WinUI
-      // ships a blank unless one is set. Our exe embeds the app icon at
-      // resource ID 1 (rivet build), so pointing at the exe itself works
-      // in the staged tree and after install alike.
-      wchar_t exe_path[MAX_PATH];
-      if (::GetModuleFileNameW(nullptr, exe_path, MAX_PATH) > 0) {
-        appWindow.SetIcon(exe_path);
-      }
     }
   } catch (...) {
-    // Backdrop, sizing and the titlebar icon are polish; the form works
-    // without them.
+    // Backdrop and size are polish; Settings remains operable without them.
   }
 }
 
