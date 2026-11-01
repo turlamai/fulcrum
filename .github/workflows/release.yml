@@ -443,7 +443,10 @@ jobs:
     name: Draft GitHub release
     needs: channel-manifest
     runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.draft_release.outputs.id }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -457,8 +460,11 @@ jobs:
           cp artifacts/channel-manifest/manifest.json release/
           (cd release && cat *.sha256 > SHA256SUMS)
           ls -la release/
-      - uses: softprops/action-gh-release@v2
+      - id: draft_release
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
           draft: true
           prerelease: ${{ contains(github.ref_name, '-rc.') }}
           make_latest: ${{ contains(github.ref_name, '-rc.') && 'false' || 'true' }}
@@ -468,6 +474,16 @@ jobs:
             release/SHA256SUMS
             release/update-manifest.json
             release/manifest.json
+      - name: Verify and reconcile draft identity before stable aliases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.draft_release.outputs.id }}
+          EXPECTED_TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_PRERELEASE: ${{ contains(github.ref_name, '-rc.') }}
+        run: bash scripts/verify-release-draft.sh
       - name: Stable alias copies (versionless direct-download links)
         if: ${{ !contains(github.ref_name, '-rc.') }}
         env:
@@ -507,21 +523,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          ID_FROM_UPLOAD: ${{ needs.github-release.outputs.release_id }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          # `gh release view --json id` returns a GraphQL node id, while the
-          # REST update endpoint requires the numeric database id. The tagged
-          # release endpoint returns 404 for drafts, so locate it in the
-          # authenticated releases collection before publishing.
-          release_id="$(
-            gh api "repos/$GH_REPO/releases?per_page=100" \
-              --jq ".[] | select(.tag_name == \"$tag\" and .draft == true) | .id" \
-              | head -n1
-          )"
+          # Exact numeric ID from the draft creator; listing releases is
+          # ambiguous on busy repos and misses paginated/stale drafts.
+          release_id="$ID_FROM_UPLOAD"
           [[ "$release_id" =~ ^[0-9]+$ ]] || {
-            echo "::error::Could not resolve numeric draft release id for $tag"
+            echo "::error::Draft upload did not provide a numeric REST id"
             exit 1
           }
           echo "id=$release_id" >> "$GITHUB_OUTPUT"

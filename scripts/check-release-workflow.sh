@@ -36,7 +36,13 @@ require 'Disclose platform-specific trust before publishing'
 require 'macOS ad-hoc signed, NOT notarized'
 require 'Windows MSI/ZIP unsigned'
 require 'Resolve draft release REST id'
-require 'releases?per_page=100'
+require 'release_id: ${{ steps.draft_release.outputs.id }}'
+require 'ID_FROM_UPLOAD: ${{ needs.github-release.outputs.release_id }}'
+require 'tag_name: ${{ github.ref_name }}'
+require 'target_commitish: ${{ github.sha }}'
+require 'name: Verify and reconcile draft identity before stable aliases'
+require 'run: bash scripts/verify-release-draft.sh'
+bash "$ROOT/scripts/test-verify-release-draft.sh"
 require 'RELEASE_ID: ${{ steps.release.outputs.id }}'
 # Drafts are not reliably addressable by tag through gh release view.
 # The release must be checked by numeric REST id before and after publication.
