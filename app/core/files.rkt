@@ -77,12 +77,19 @@
 
 ;; ---- search ---------------------------------------------------------------
 
-;; Windows Search returns file: URLs (file:///C:/Users/me/a%20b/x.md);
-;; every other backend emits plain filesystem paths. Decode URL form
-;; into a plain path; leave anything else untouched.
+;; A file: URL can name a Windows drive, a UNC share, or a POSIX path.
+;; Remove only the URL scheme and the drive's URI leading slashes:
+;; dropping all slashes also drops a UNC server (file://host/share) and
+;; converts an absolute POSIX file URL into a relative path.
 (define (file-url->path line)
   (if (string-prefix? line "file:")
-      (uri-decode (regexp-replace #px"^file:/+" line ""))
+      (let ([path (uri-decode (substring line (string-length "file:")))])
+        (cond
+          [(regexp-match? #px"^/+[A-Za-z]:/" path)
+           (regexp-replace #px"^/+" path "")]
+          [(string-prefix? path "///")
+           (substring path 2)]
+          [else path]))
       line))
 
 ;; Universal path-list parser: newline-separated absolute paths →

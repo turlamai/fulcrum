@@ -36,6 +36,24 @@
   (check-equal? (cdr (car parsed)) "C:/Users/me/Reports/q3.md")
   (check-equal? (cdr (cadr parsed)) "C:/Users/me/My Notes.md"))
 
+
+(test-case "file URL transport keeps arbitrary Windows volumes and UNC authorities"
+  ;; Volume labels must never be a fixed list of C:/D:/E:. Indexed
+  ;; Windows Search can emit another assigned letter or a network share.
+  (check-equal?
+   (parse-paths
+    "file:///Z:/Work/report.txt\nfile:///Q:/Users/%E6%96%87%E6%A1%A3.txt\nfile://storage.example/Team%20Space/report.txt\n"
+    8)
+   '(("report.txt" . "Z:/Work/report.txt")
+     ("文档.txt" . "Q:/Users/文档.txt")
+     ("report.txt" . "//storage.example/Team Space/report.txt"))))
+
+(test-case "file URL transport retains POSIX absolute paths"
+  (check-equal?
+   (parse-paths "file:///home/runner/notes.txt\nfile:/mnt/archive/log.txt\n")
+   '(("notes.txt" . "/home/runner/notes.txt")
+     ("log.txt" . "/mnt/archive/log.txt"))))
+
 (test-case "Windows scan paths with backslashes are retained"
   ;; Get-ChildItem -ExpandProperty FullName emits native backslashes.  The old
   ;; slash-only filter silently discarded every fallback result. PowerShell's
