@@ -577,9 +577,16 @@ jobs:
             prerelease=true
             make_latest=false
           fi
-          gh release view "$tag" --json isDraft --jq '.isDraft' | grep -Fx true
-          gh release view "$tag" --json isPrerelease --jq '.isPrerelease' | grep -Fx "$prerelease"
-          assets="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+          # gh release view by tag may fail for drafts. The numeric REST release
+          # id was resolved above; verify it is still the expected draft before
+          # checking assets. Never accept a different tag or published release.
+          release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
+          printf '%s\n' "$release_json" | jq -e --arg tag "$tag" \
+            --argjson prerelease "$prerelease" \
+            '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease)' >/dev/null || {
+            echo "::error::Draft release metadata mismatch for $tag"; exit 1;
+          }
+          assets="$(printf '%s\n' "$release_json" | jq -r '.assets[].name')"
           required=(
             "fulcrum-${version}-macos-arm64.dmg" \
             "fulcrum-${version}-macos-x64.dmg" \
@@ -608,5 +615,11 @@ jobs:
             -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f name="$tag" \
             -F draft=false -F prerelease="$prerelease" \
             -f make_latest="$make_latest" >/dev/null
-          gh release view "$tag" --json isDraft,isPrerelease \
-            --jq '[.isDraft, .isPrerelease] | @tsv' | grep -Fx $'false\t'"$prerelease"
+          # Verify publication through the same REST id; do not rely on tag
+          # lookup behavior for the draft-to-published transition.
+          published_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
+          printf '%s\n' "$published_json" | jq -e --arg tag "$tag" \
+            --argjson prerelease "$prerelease" \
+            '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease)' >/dev/null || {
+            echo "::error::Published release metadata mismatch for $tag"; exit 1;
+          }
