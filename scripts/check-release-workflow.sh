@@ -38,6 +38,16 @@ require 'Windows MSI/ZIP unsigned'
 require 'Resolve draft release REST id'
 require 'releases?per_page=100'
 require 'RELEASE_ID: ${{ steps.release.outputs.id }}'
+# Drafts are not reliably addressable by tag through gh release view.
+# The release must be checked by numeric REST id before and after publication.
+require 'release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
+require 'published_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
+require '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease)'
+require '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease)'
+if grep -Fq 'gh release view "$tag" --json isDraft' "$release"; then
+  echo 'release-safety: do not query drafts by tag' >&2
+  exit 1
+fi
 require '-f tag_name="$tag" -f target_commitish="$GITHUB_SHA"'
 require 'needs: github-release'
 require 'Verify installers and signed feed exist before publishing'
