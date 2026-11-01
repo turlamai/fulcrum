@@ -72,7 +72,7 @@ var _hmt = _hmt || [];
                 <li><a href="index.html#features" class="optional" data-i18n="nav.features">功能</a></li>
                 <li><a href="index.html#platforms" class="optional" data-i18n="nav.platforms">平台</a></li>
                 <li><a href="guide.html" style="color:var(--accent)" data-i18n="nav.guide">手册</a></li>
-                <li><a href="https://github.com/turinglambdaai/fulcrum" class="optional">GitHub</a></li>
+                <li><a href="https://github.com/turlamai/fulcrum" class="optional">GitHub</a></li>
                 <li class="lang-dropdown-wrapper">
                     <button class="lang-btn" onclick="void 0">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -97,7 +97,7 @@ var _hmt = _hmt || [];
         <div class="container">
             <span class="eyebrow" data-i18n="m.eyebrow">使用手册</span>
             <h1><span data-i18n="m.h1">Fulcrum 能做的一切，</span><span class="accent" data-i18n="m.h1b">一页说清。</span></h1>
-<aside class="guide-status"><p class="reader-en " lang="en">Existing launcher, clipboard, plugins and BYOK features remain free. No Pro checkout is open.</p><p class="reader-zh " lang="zh">已有启动器、剪贴板、插件和 BYOK 功能保持免费；尚未开放 Pro 购买。</p><a class="reader-en" lang="en" href="https://github.com/turinglambdaai/fulcrum/blob/main/docs/user-guide.md">Current installation, privacy and recovery</a><a class="reader-zh" lang="zh" href="https://github.com/turinglambdaai/fulcrum/blob/main/docs/user-guide.zh-CN.md">当前安装、隐私与恢复</a></aside>
+<aside class="guide-status"><p class="reader-en " lang="en">Existing launcher, clipboard, plugins and BYOK features remain free. No Pro checkout is open.</p><p class="reader-zh " lang="zh">已有启动器、剪贴板、插件和 BYOK 功能保持免费；尚未开放 Pro 购买。</p><a class="reader-en" lang="en" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.md">Current installation, privacy and recovery</a><a class="reader-zh" lang="zh" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.zh-CN.md">当前安装、隐私与恢复</a></aside>
             <p class="lead" data-i18n="m.lead">从安装到 AI 密钥，从粘贴回前台到热键自定义——还有最常见的几个坑，都在这里。</p>
         </div>
     </section>
@@ -132,16 +132,13 @@ var _hmt = _hmt || [];
                 </h2>
                 <p data-i18n="m.qs-lead">装好、唤起、跑通第一条命令。整份手册其余的部分都是可选的。</p>
                 <ol>
-                    <li data-i18n="m.qs-1"><strong>安装。</strong>到 <a href="https://github.com/turinglambdaai/fulcrum/releases/latest">Releases</a> 页下载最新版：macOS 把 .dmg 里的 Fulcrum 拖进「应用程序」；Windows 双击 .msi 安装；Linux 用 .deb / .rpm / .AppImage。没有账号，没有引导问卷。</li>
+                    <li data-i18n="m.qs-1"><strong>安装。</strong>到 <a href="https://github.com/turlamai/fulcrum/releases/latest">Releases</a> 页下载最新版：macOS 把 .dmg 里的 Fulcrum 拖进「应用程序」；Windows 双击 .msi 安装；Linux 用 .deb / .rpm / .AppImage。没有账号，没有引导问卷。</li>
                     <li data-i18n="m.qs-2"><strong>唤起。</strong>按 <kbd>Alt</kbd>+<kbd>Space</kbd>（macOS 是 <kbd>⌥</kbd>+<kbd>Space</kbd>），浮动面板出现在屏幕中央。再按一次，面板隐藏。热键被别的软件占了？Fulcrum 自动退到 <code>Ctrl+Alt+Space</code> 并提示。</li>
                     <li data-i18n="m.qs-3"><strong>跑第一条命令。</strong>输入 <code>calc</code> 回车——计算器打开。再唤起，输入 <code>128*768</code>——答案就在列表里，回车即复制。存第一个片段：输入 <code>add snippet addr 南京西路 42 号</code>。</li>
                     <li data-i18n="m.qs-4"><strong>粘贴回前台。</strong>在任意应用里复制一段文字。唤起面板，输入 <code>clip</code> 或那段文字里的任意词，回车——文字直接粘进你刚才在用的应用，不用切窗口。macOS 第一次会请求辅助功能权限，授权一次全局生效（详见 <a href="#faq">FAQ</a>）。</li>
                 </ol>
-                <img src="img/fulcrum-main-light.png"
-                     alt="Fulcrum 启动面板（macOS 浅色主题）：搜索框、应用结果列表与底部键位提示"
-                     data-i18n-alt="shot.main-alt"
-                     class="manual-shot" loading="lazy">
-                <p class="manual-hint" data-i18n="m.qs-hint">截图为真实的 macOS 版本。Windows 与 Linux 面板布局相同，控件随平台风格。</p>
+                
+                <p class="manual-hint" data-i18n="m.qs-hint">预期结果：唤起面板后输入关键字，候选结果应随输入更新；按回车执行选中操作。若未响应，检查全局快捷键及相关系统权限。</p>
                 <p data-i18n="m.qs-outro">整个产品就是：<strong>一个键 → 输入 → 回车</strong>。下面全是细节。</p>
             </section>
 
@@ -307,7 +304,7 @@ var _hmt = _hmt || [];
                 </table>
 
                 <h3 class="manual-h3" data-i18n="m.hot-plugin-h">插件一句话</h3>
-                <p data-i18n="m.hot-plugin">输入 <code>gallery</code> 查看内置的二十六个插件（单位换算、时间戳、正则、哈希、Base64、密码、颜色、HN、词典、天气……），回车安装。插件用任何能输出 JSON 的语言编写，见 <a href="https://github.com/turinglambdaai/fulcrum/blob/main/docs/plugins.md">docs/plugins.md</a>——Python 就够。</p>
+                <p data-i18n="m.hot-plugin">输入 <code>gallery</code> 查看内置的二十六个插件（单位换算、时间戳、正则、哈希、Base64、密码、颜色、HN、词典、天气……），回车安装。插件用任何能输出 JSON 的语言编写，见 <a href="https://github.com/turlamai/fulcrum/blob/main/docs/plugins.md">docs/plugins.md</a>——Python 就够。</p>
             </section>
 
             <!-- =================== FAQ =================== -->
@@ -336,15 +333,12 @@ var _hmt = _hmt || [];
                 <p data-i18n="m.faq-platform">macOS 14+（Apple silicon 与 Intel）、Windows 10（19041+）/ 11、Linux（GTK4；.deb / .rpm / .AppImage / tar.gz）。诚实清单：文件搜索仅限 macOS；片段自动展开不支持 Linux；剪贴板只收文本。其余功能三平台一致、键位一致。</p>
 
                 <h3 class="manual-h3" data-i18n="m.faq-lang-h">怎么换语言和主题？</h3>
-                <p data-i18n="m.faq-lang">面板内：<code>settings</code> → <code>language</code>（zh / en）、<code>theme</code>（system / light / dark，即时生效）。深色面板长这样：</p>
-                <img src="img/fulcrum-main-dark.png"
-                     alt="Fulcrum 启动面板（macOS 深色主题）"
-                     data-i18n-alt="shot.dark-alt"
-                     class="manual-shot" loading="lazy">
-                <p class="manual-hint" data-i18n="m.faq-lang-hint">同一块面板，深色主题。本站右上角 ◐ 也可以切换网站深浅色。</p>
+                <p data-i18n="m.faq-lang">面板内：<code>settings</code> → <code>language</code>（zh / en）、<code>theme</code>（system / light / dark，即时生效）。切换后可立即查看面板主题变化。</p>
+                
+                <p class="manual-hint" data-i18n="m.faq-lang-hint">预期结果：切换 system、light 或 dark 后面板立即使用相应主题；网站右上角的 ◐ 仅控制本站主题。</p>
 
                 <h3 class="manual-h3" data-i18n="m.faq-update-h">更新失败怎么办？</h3>
-                <p data-i18n="m.faq-update">面板里输入 <code>update</code> → Check for updates now。更新包后台下载，macOS 原地换装重启。更新包带 Ed25519 签名——校验失败直接拒收，绝不安装损坏的包。多次失败：到 <a href="https://github.com/turinglambdaai/fulcrum/releases/latest">Releases</a> 页手动下载最新版覆盖安装，设置与数据不受影响。</p>
+                <p data-i18n="m.faq-update">面板里输入 <code>update</code> → Check for updates now。更新包后台下载，macOS 原地换装重启。更新包带 Ed25519 签名——校验失败直接拒收，绝不安装损坏的包。多次失败：到 <a href="https://github.com/turlamai/fulcrum/releases/latest">Releases</a> 页手动下载最新版覆盖安装，设置与数据不受影响。</p>
 
                 <h3 class="manual-h3" data-i18n="m.faq-uninstall-h">怎么卸载？</h3>
                 <p data-i18n="m.faq-uninstall">先退出：菜单栏（macOS）或托盘（Windows）图标 → Quit Fulcrum——这是唯一的退出方式，Esc 只是隐藏。再删应用：macOS 从「应用程序」拖进废纸篓；Windows 在「设置 → 应用」里卸载；Linux 用包管理器卸载或直接删 AppImage。想彻底清空：删掉上文的数据目录即可，辅助功能授权随应用删除自动失效。</p>
@@ -368,8 +362,8 @@ var _hmt = _hmt || [];
             </div>
             <div class="footer-links">
                 <a href="index.html" data-i18n="footer.home">首页</a>
-                <a href="https://github.com/turinglambdaai/fulcrum">GitHub</a>
-                <a href="https://github.com/turinglambdaai/fulcrum/blob/main/CHANGELOG.md" data-i18n="footer.changelog">更新日志</a>
+                <a href="https://github.com/turlamai/fulcrum">GitHub</a>
+                <a href="https://github.com/turlamai/fulcrum/blob/main/CHANGELOG.md" data-i18n="footer.changelog">更新日志</a>
                 <a href="https://rivet.jrtx.site">Rivet</a>
             </div>
             <div class="footer-note">© 2026 TuringLambda AI</div>
@@ -395,12 +389,11 @@ var _hmt = _hmt || [];
                 "m.toc-hotkey": "热键与设置", "m.toc-faq": "常见问题", "m.toc-faq-link": "FAQ",
                 "m.qs-title": "五分钟上手",
                 "m.qs-lead": "装好、唤起、跑通第一条命令。整份手册其余的部分都是可选的。",
-                "m.qs-1": "<strong>安装。</strong>到 <a href='https://github.com/turinglambdaai/fulcrum/releases/latest'>Releases</a> 页下载最新版：macOS 把 .dmg 里的 Fulcrum 拖进「应用程序」；Windows 双击 .msi 安装；Linux 用 .deb / .rpm / .AppImage。没有账号，没有引导问卷。",
+                "m.qs-1": "<strong>安装。</strong>到 <a href='https://github.com/turlamai/fulcrum/releases/latest'>Releases</a> 页下载最新版：macOS 把 .dmg 里的 Fulcrum 拖进「应用程序」；Windows 双击 .msi 安装；Linux 用 .deb / .rpm / .AppImage。没有账号，没有引导问卷。",
                 "m.qs-2": "<strong>唤起。</strong>按 <kbd>Alt</kbd>+<kbd>Space</kbd>（macOS 是 <kbd>⌥</kbd>+<kbd>Space</kbd>），浮动面板出现在屏幕中央。再按一次，面板隐藏。热键被别的软件占了？Fulcrum 自动退到 <code>Ctrl+Alt+Space</code> 并提示。",
                 "m.qs-3": "<strong>跑第一条命令。</strong>输入 <code>calc</code> 回车——计算器打开。再唤起，输入 <code>128*768</code>——答案就在列表里，回车即复制。存第一个片段：输入 <code>add snippet addr 南京西路 42 号</code>。",
                 "m.qs-4": "<strong>粘贴回前台。</strong>在任意应用里复制一段文字。唤起面板，输入 <code>clip</code> 或那段文字里的任意词，回车——文字直接粘进你刚才在用的应用，不用切窗口。macOS 第一次会请求辅助功能权限，授权一次全局生效（详见 <a href='#faq'>FAQ</a>）。",
-                "shot.main-alt": "Fulcrum 启动面板（macOS 浅色主题）：搜索框、应用结果列表与底部键位提示",
-                "m.qs-hint": "截图为真实的 macOS 版本。Windows 与 Linux 面板布局相同，控件随平台风格。",
+                "m.qs-hint": "预期结果：唤起面板后输入关键字，候选结果应随输入更新；按回车执行选中操作。若未响应，检查全局快捷键及相关系统权限。",
                 "m.qs-outro": "整个产品就是：<strong>一个键 → 输入 → 回车</strong>。下面全是细节。",
                 "m.search-title": "搜索一切",
                 "m.search-lead": "面板只有一个输入框，但什么都接：应用、算式、文件、网页、表情。",
@@ -469,7 +462,7 @@ var _hmt = _hmt || [];
                 "m.k5": "标题补全到搜索框",
                 "m.k6": "逐层退掉：动作 → 详情 → AI → 查询词 → 隐藏",
                 "m.hot-plugin-h": "插件一句话",
-                "m.hot-plugin": "输入 <code>gallery</code> 查看内置的二十六个插件（单位换算、时间戳、正则、哈希、Base64、密码、颜色、HN、词典、天气……），回车安装。插件用任何能输出 JSON 的语言编写，见 <a href='https://github.com/turinglambdaai/fulcrum/blob/main/docs/plugins.md'>docs/plugins.md</a>——Python 就够。",
+                "m.hot-plugin": "输入 <code>gallery</code> 查看内置的二十六个插件（单位换算、时间戳、正则、哈希、Base64、密码、颜色、HN、词典、天气……），回车安装。插件用任何能输出 JSON 的语言编写，见 <a href='https://github.com/turlamai/fulcrum/blob/main/docs/plugins.md'>docs/plugins.md</a>——Python 就够。",
                 "m.faq-title": "常见问题",
                 "m.faq-data-h": "数据存在哪？",
                 "m.faq-data": "全部数据在一个目录里。删掉它就是全新状态：",
@@ -482,11 +475,10 @@ var _hmt = _hmt || [];
                 "m.faq-platform-h": "支持哪些系统？各平台有差异吗？",
                 "m.faq-platform": "macOS 14+（Apple silicon 与 Intel）、Windows 10（19041+）/ 11、Linux（GTK4；.deb / .rpm / .AppImage / tar.gz）。诚实清单：文件搜索仅限 macOS；片段自动展开不支持 Linux；剪贴板只收文本。其余功能三平台一致、键位一致。",
                 "m.faq-lang-h": "怎么换语言和主题？",
-                "m.faq-lang": "面板内：<code>settings</code> → <code>language</code>（zh / en）、<code>theme</code>（system / light / dark，即时生效）。深色面板长这样：",
-                "shot.dark-alt": "Fulcrum 启动面板（macOS 深色主题）",
-                "m.faq-lang-hint": "同一块面板，深色主题。本站右上角 ◐ 也可以切换网站深浅色。",
+                "m.faq-lang": "面板内：<code>settings</code> → <code>language</code>（zh / en）、<code>theme</code>（system / light / dark，即时生效）。切换后可立即查看面板主题变化。",
+                "m.faq-lang-hint": "预期结果：切换 system、light 或 dark 后面板立即使用相应主题；网站右上角的 ◐ 仅控制本站主题。",
                 "m.faq-update-h": "更新失败怎么办？",
-                "m.faq-update": "面板里输入 <code>update</code> → Check for updates now。更新包后台下载，macOS 原地换装重启。更新包带 Ed25519 签名——校验失败直接拒收，绝不安装损坏的包。多次失败：到 <a href='https://github.com/turinglambdaai/fulcrum/releases/latest'>Releases</a> 页手动下载最新版覆盖安装，设置与数据不受影响。",
+                "m.faq-update": "面板里输入 <code>update</code> → Check for updates now。更新包后台下载，macOS 原地换装重启。更新包带 Ed25519 签名——校验失败直接拒收，绝不安装损坏的包。多次失败：到 <a href='https://github.com/turlamai/fulcrum/releases/latest'>Releases</a> 页手动下载最新版覆盖安装，设置与数据不受影响。",
                 "m.faq-uninstall-h": "怎么卸载？",
                 "m.faq-uninstall": "先退出：菜单栏（macOS）或托盘（Windows）图标 → Quit Fulcrum——这是唯一的退出方式，Esc 只是隐藏。再删应用：macOS 从「应用程序」拖进废纸篓；Windows 在「设置 → 应用」里卸载；Linux 用包管理器卸载或直接删 AppImage。想彻底清空：删掉上文的数据目录即可，辅助功能授权随应用删除自动失效。",
                 "footer.home": "首页", "footer.changelog": "更新日志"
@@ -503,12 +495,11 @@ var _hmt = _hmt || [];
                 "m.toc-hotkey": "Hotkey & settings", "m.toc-faq": "FAQ", "m.toc-faq-link": "FAQ",
                 "m.qs-title": "Five-minute start",
                 "m.qs-lead": "Install, summon, run your first command. Everything else in this manual is optional.",
-                "m.qs-1": "<strong>Install.</strong> Grab the latest build from the <a href='https://github.com/turinglambdaai/fulcrum/releases/latest'>Releases</a> page: drag Fulcrum from the .dmg into Applications on macOS, run the .msi on Windows, or install the .deb / .rpm / .AppImage on Linux. No account, no onboarding quiz.",
+                "m.qs-1": "<strong>Install.</strong> Grab the latest build from the <a href='https://github.com/turlamai/fulcrum/releases/latest'>Releases</a> page: drag Fulcrum from the .dmg into Applications on macOS, run the .msi on Windows, or install the .deb / .rpm / .AppImage on Linux. No account, no onboarding quiz.",
                 "m.qs-2": "<strong>Summon it.</strong> Press <kbd>Alt</kbd>+<kbd>Space</kbd> (<kbd>⌥</kbd>+<kbd>Space</kbd> on macOS) and the floating panel appears in the middle of the screen. Press it again to hide. Hotkey taken? Fulcrum falls back to <code>Ctrl+Alt+Space</code> and tells you.",
                 "m.qs-3": "<strong>Run your first commands.</strong> Type <code>calc</code> and press Enter — the calculator opens. Summon again, type <code>128*768</code> — the answer is right there, Enter copies it. Save your first snippet: type <code>add snippet addr 42 Wall Street</code>.",
                 "m.qs-4": "<strong>Paste back into your app.</strong> Copy some text anywhere. Summon the panel, type <code>clip</code> or any word from that text, press Enter — it pastes straight into the app you came from. macOS asks for the Accessibility permission once (see the <a href='#faq'>FAQ</a>).",
-                "shot.main-alt": "The Fulcrum launcher panel (macOS, light theme): search field, app results and key hints in the footer",
-                "m.qs-hint": "The screenshot is the real macOS build. Windows and Linux use the same layout with platform-styled controls.",
+                "m.qs-hint": "Expected result: suggestions update as you type in the launcher; Enter runs the selected action. If nothing happens, check the global shortcut and platform permissions.",
                 "m.qs-outro": "The whole product is <strong>one key → type → Enter</strong>. Everything below is detail.",
                 "m.search-title": "Search everything",
                 "m.search-lead": "The panel has one input, and everything plugs into it: apps, math, files, the web, emoji.",
@@ -577,7 +568,7 @@ var _hmt = _hmt || [];
                 "m.k5": "Complete the title into the search field",
                 "m.k6": "Back out layer by layer: actions → detail → AI → query → hide",
                 "m.hot-plugin-h": "Plugins in one paragraph",
-                "m.hot-plugin": "Type <code>gallery</code> to browse the twenty-six bundled plugins (unit conversion, timestamps, regex, hashes, Base64, passwords, colors, Hacker News, dictionary, weather…); Enter installs. Plugins speak JSON over stdio in any language — see <a href='https://github.com/turinglambdaai/fulcrum/blob/main/docs/plugins.md'>docs/plugins.md</a>. Python is enough.",
+                "m.hot-plugin": "Type <code>gallery</code> to browse the twenty-six bundled plugins (unit conversion, timestamps, regex, hashes, Base64, passwords, colors, Hacker News, dictionary, weather…); Enter installs. Plugins speak JSON over stdio in any language — see <a href='https://github.com/turlamai/fulcrum/blob/main/docs/plugins.md'>docs/plugins.md</a>. Python is enough.",
                 "m.faq-title": "FAQ",
                 "m.faq-data-h": "Where is my data?",
                 "m.faq-data": "Everything lives in one directory. Delete it for a fresh start:",
@@ -590,11 +581,10 @@ var _hmt = _hmt || [];
                 "m.faq-platform-h": "Which systems are supported? Any differences?",
                 "m.faq-platform": "macOS 14+ (Apple silicon and Intel), Windows 10 (19041+) / 11, Linux (GTK4; .deb / .rpm / .AppImage / tar.gz). The honest list: file search is macOS-only; snippet expansion is unavailable on Linux; the clipboard records text only. Everything else matches across platforms, keys included.",
                 "m.faq-lang-h": "How do I change language and theme?",
-                "m.faq-lang": "In the panel: <code>settings</code> → <code>language</code> (zh / en) and <code>theme</code> (system / light / dark, applied instantly). The dark panel looks like this:",
-                "shot.dark-alt": "The Fulcrum launcher panel (macOS, dark theme)",
-                "m.faq-lang-hint": "The same panel in the dark theme. The ◐ button in this site's nav switches the website's own theme.",
+                "m.faq-lang": "In the panel: <code>settings</code> → <code>language</code> (zh / en) and <code>theme</code> (system / light / dark, applied instantly). Check that the panel theme changes immediately.",
+                "m.faq-lang-hint": "Expected result: system, light, or dark applies to the launcher immediately. The ◐ control on this site changes the website theme only.",
                 "m.faq-update-h": "The update fails — now what?",
-                "m.faq-update": "Type <code>update</code> in the panel → Check for updates now. Updates download in the background; on macOS the app swaps itself in place and relaunches. Update bundles carry an Ed25519 signature — a failed check is rejected, never installed. If it keeps failing: download the latest build from the <a href='https://github.com/turinglambdaai/fulcrum/releases/latest'>Releases</a> page and install over the old one; settings and data are untouched.",
+                "m.faq-update": "Type <code>update</code> in the panel → Check for updates now. Updates download in the background; on macOS the app swaps itself in place and relaunches. Update bundles carry an Ed25519 signature — a failed check is rejected, never installed. If it keeps failing: download the latest build from the <a href='https://github.com/turlamai/fulcrum/releases/latest'>Releases</a> page and install over the old one; settings and data are untouched.",
                 "m.faq-uninstall-h": "How do I uninstall?",
                 "m.faq-uninstall": "Quit first: menu-bar (macOS) or tray (Windows) icon → Quit Fulcrum — the only quit affordance; Esc merely hides. Then remove the app: drag it from Applications to the Trash on macOS, uninstall under Settings → Apps on Windows, or use your package manager (or delete the AppImage) on Linux. To wipe everything: delete the data directory listed above; the Accessibility grant expires with the app.",
                 "footer.home": "Home", "footer.changelog": "Changelog"
