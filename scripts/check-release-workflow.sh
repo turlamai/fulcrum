@@ -11,6 +11,7 @@ require() {
   }
 }
 bash "$ROOT/scripts/check-release-signing-modes.sh" --self-test
+bash "$ROOT/scripts/test-release-draft-identity.sh"
 require 'Validate independent platform signing modes'
 require 'scripts/check-release-signing-modes.sh "$MACOS_SIGNING_MODE" "$WINDOWS_SIGNING_MODE"'
 require "if: matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id'"
