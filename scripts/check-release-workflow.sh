@@ -11,6 +11,11 @@ require() {
   }
 }
 bash "$ROOT/scripts/check-release-signing-modes.sh" --self-test
+bash "$ROOT/scripts/test-version-release-preflight.sh"
+grep -Fq 'run: bash scripts/version-release-preflight.sh' "$ROOT/.github/workflows/version-release.yml" || {
+  echo 'release-safety: VERSION tag gate must use independent-mode preflight' >&2
+  exit 1
+}
 require 'Validate independent platform signing modes'
 require 'scripts/check-release-signing-modes.sh "$MACOS_SIGNING_MODE" "$WINDOWS_SIGNING_MODE"'
 require "if: matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id'"
