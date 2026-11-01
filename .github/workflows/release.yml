@@ -489,8 +489,9 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then prerelease=true; fi
           release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
           printf '%s\n' "$release_json" | jq -e --arg tag "$GITHUB_REF_NAME" \
+            --argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA" \
             --argjson prerelease "$prerelease" \
-            '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease)' >/dev/null || {
+            '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
             echo "::error::Created GitHub draft is untagged or does not match the requested tag; refusing further release actions"
             exit 1
           }
@@ -548,7 +549,8 @@ jobs:
           }
           release_json="$(gh api "repos/$GH_REPO/releases/$release_id")"
           printf '%s\n' "$release_json" | jq -e --arg tag "$tag" \
-            '(.tag_name == $tag) and (.draft == true)' >/dev/null || {
+            --argjson id "$release_id" --arg sha "$GITHUB_SHA" \
+            '(.tag_name == $tag) and (.draft == true) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
             echo "::error::Release id does not identify the requested version-tag draft"
             exit 1
           }
@@ -610,8 +612,9 @@ jobs:
           # checking assets. Never accept a different tag or published release.
           release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
           printf '%s\n' "$release_json" | jq -e --arg tag "$tag" \
+            --argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA" \
             --argjson prerelease "$prerelease" \
-            '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease)' >/dev/null || {
+            '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
             echo "::error::Draft release metadata mismatch for $tag"; exit 1;
           }
           assets="$(printf '%s\n' "$release_json" | jq -r '.assets[].name')"
@@ -647,7 +650,8 @@ jobs:
           # lookup behavior for the draft-to-published transition.
           published_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
           printf '%s\n' "$published_json" | jq -e --arg tag "$tag" \
+            --argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA" \
             --argjson prerelease "$prerelease" \
-            '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease)' >/dev/null || {
+            '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
             echo "::error::Published release metadata mismatch for $tag"; exit 1;
           }
