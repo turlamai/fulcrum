@@ -198,7 +198,7 @@ try {
     [System.Windows.Forms.SendKeys]::SendWait('^a')
     [System.Windows.Forms.SendKeys]::SendWait('settings')
     [void](Wait-Until 'Settings action in packaged launcher' {
-        if (Find-ByNameFragment $restarted 'Settings') { return $true }
+        if (Find-ByNameFragment $restarted 'Settings…') { return $true }
         return $false
     })
     $settingsQuery.SetFocus()
