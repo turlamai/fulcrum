@@ -132,9 +132,10 @@ struct MainWindow : MainWindowT<MainWindow> {
   void StartUpdateProgressPoll();
   // Tray "Check for Updates…": manual check, result in the footer.
   void CheckForUpdates();
-  // About panel (tray menu + the `about` launcher row): one ContentDialog
-  // with version, tagline, license and the site/issue links.
-  winrt::fire_and_forget ShowAbout();
+  // A separate titled window: tray About must be visible while the
+  // transient launcher is hidden, without summoning Alt+Space first.
+  void ShowAbout();
+  winrt::Microsoft::UI::Xaml::Window about_window_{nullptr};
   // Settings window (tray menu + the `settings` launcher row): one
   // instance, reloaded on every show so launcher-row edits are reflected.
   void ShowSettings();
