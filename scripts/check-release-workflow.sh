@@ -16,6 +16,7 @@ grep -Fq 'run: bash scripts/version-release-preflight.sh' "$ROOT/.github/workflo
   echo 'release-safety: VERSION tag gate must use independent-mode preflight' >&2
   exit 1
 }
+bash "$ROOT/scripts/test-release-draft-identity.sh"
 require 'Validate independent platform signing modes'
 require 'scripts/check-release-signing-modes.sh "$MACOS_SIGNING_MODE" "$WINDOWS_SIGNING_MODE"'
 require "if: matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id'"
@@ -41,14 +42,35 @@ require 'Disclose platform-specific trust before publishing'
 require 'macOS ad-hoc signed, NOT notarized'
 require 'Windows MSI/ZIP unsigned'
 require 'Resolve draft release REST id'
-require 'releases?per_page=100'
+require 'release_id: ${{ steps.create-release.outputs.id }}'
+require 'id: create-release'
+require 'tag_name: ${{ github.ref_name }}'
+require 'target_commitish: ${{ github.sha }}'
+require 'Confirm exact draft identity before uploading stable aliases'
+require 'RELEASE_ID: ${{ steps.create-release.outputs.id }}'
+require 'RELEASE_ID: ${{ needs.github-release.outputs.release_id }}'
+require '(.target_commitish == $sha)'
+require '(.id == $id)'
+require 'argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA"'
+require 'release_id="${RELEASE_ID}"'
 require 'RELEASE_ID: ${{ steps.release.outputs.id }}'
+if grep -Fq 'releases?per_page=100' "$release"; then
+  echo 'release-safety: do not rediscover drafts through a non-unique list' >&2
+  exit 1
+fi
 # Drafts are not reliably addressable by tag through gh release view.
 # The release must be checked by numeric REST id before and after publication.
 require 'release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
 require 'published_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
 require '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease)'
 require '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease)'
+# Ensure creation identity gate precedes versionless public-facing aliases.
+draft_gate_line="$(grep -n -m1 'name: Confirm exact draft identity before uploading stable aliases' "$release" | cut -d: -f1)"
+alias_step_line="$(grep -n -m1 'name: Stable alias copies (versionless direct-download links)' "$release" | cut -d: -f1)"
+[[ "$draft_gate_line" -lt "$alias_step_line" ]] || {
+  echo 'release-safety: draft identity gate must precede stable aliases' >&2
+  exit 1
+}
 if grep -Fq 'gh release view "$tag" --json isDraft' "$release"; then
   echo 'release-safety: do not query drafts by tag' >&2
   exit 1
