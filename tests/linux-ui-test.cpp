@@ -308,6 +308,32 @@ int main() {
         "sustained focus loss to another window hides the panel");
 
   gtk_window_destroy(other);
+
+  // A normal second desktop invocation is a "show", not a blind toggle.
+  // The resident process may already be visible; another click must never
+  // make it disappear. Explicit --toggle remains a compositor shortcut.
+  check(!toggle_activation_requested({"--show"}) &&
+            toggle_activation_requested({"--toggle"}) &&
+            !toggle_activation_requested({}),
+        "only explicit --toggle requests toggle semantics");
+  launcher.hide();
+  on_activation({"--show"});
+  pump(50);
+  check(gtk_widget_get_visible(GTK_WIDGET(launcher.window)),
+        "normal second launch shows a hidden resident launcher");
+  on_activation({"--show"});
+  pump(50);
+  check(gtk_widget_get_visible(GTK_WIDGET(launcher.window)),
+        "repeating desktop launch leaves a visible launcher visible");
+  on_activation({"--toggle"});
+  pump(50);
+  check(!gtk_widget_get_visible(GTK_WIDGET(launcher.window)),
+        "explicit --toggle hides the visible launcher");
+  on_activation({"--toggle"});
+  pump(50);
+  check(gtk_widget_get_visible(GTK_WIDGET(launcher.window)),
+        "explicit --toggle summons a hidden launcher");
+
   g_x11_hotkey.stop();
   launcher.tray.reset();
   launcher.stop_backend();
