@@ -1714,7 +1714,8 @@
                  #:plugin-manager plug-mgr
                  #:max-results (settings-get manager 'max-results)
                  #:file-index-path (file-index-path)
-                 #:file-catalog-roots (default-file-catalog-roots)))
+                 #:file-catalog-roots (default-file-catalog-roots)
+                 #:file-catalog-nudge bump-search-revision!))
   (engine-rebuild-index! engine)
   ;; The startup rebuild IS the fresh state; stamping the cache here keeps
   ;; the first search from re-scanning the roots redundantly.
