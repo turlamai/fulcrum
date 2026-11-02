@@ -6,6 +6,8 @@ independently per platform packaging run.
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-11-02
+
 ### Fixed
 
 - **Windows Settings title bar shows the app icon again.** The window
@@ -16,6 +18,22 @@ independently per platform packaging run.
   embedded `RT_GROUP_ICON` resource and hands `SetIcon` an `IconId`;
   missing resources keep the native default. A static contract test
   rejects the exe-path overload and locks the helper in.
+- **File search resolves UNC shares and POSIX paths from file URLs.** The
+  URL-to-path decoder stripped every leading slash, so Windows Search
+  results on UNC shares (`file://host/share/...`) lost their server and
+  an absolute POSIX file URL collapsed into a relative path. Only the
+  scheme and the drive's URI prefix are removed now; UNC, POSIX and
+  arbitrary-volume forms survive intact, covered by regression tests.
+- **The default update feed points at the canonical repository.** The
+  backend's fallback feed URL still named the pre-rename
+  `turinglambdaai` org path, which serves no releases — installs relying
+  on the default would never see an update. It now uses `turlamai`,
+  matching the shipped updater configuration.
+- **Draft releases publish reliably.** The release workflow pins the
+  created draft's numeric REST id and commit SHA and verifies that exact
+  identity before uploading stable aliases and before promotion, and the
+  gate refuses untagged drafts early instead of failing verification with
+  a confusing mismatch after promotion.
 
 ## [0.14.1] - 2026-10-30
 
