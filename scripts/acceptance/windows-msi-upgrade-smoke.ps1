@@ -90,8 +90,10 @@ function Assert-InstalledColdLaunch([string]$label) {
             [System.Windows.Automation.TreeScope]::Descendants, $queryCondition)
           $status = $window.FindFirst(
             [System.Windows.Automation.TreeScope]::Descendants, $statusCondition)
+          # An error status still exposes the same widgets. Require a
+          # positive ready message, not merely "not starting".
           if ($null -ne $query -and $null -ne $status -and
-              $status.Current.Name -notmatch 'Starting embedded|启动中') {
+              $status.Current.Name -match '^(Ready|就绪)') {
             $ready = $true
             break
           }
