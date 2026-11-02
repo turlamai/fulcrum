@@ -243,7 +243,7 @@
 (define (file-index-count path)
   (call-with-index path 0
                    (lambda (connection)
-                     (query-value connection "SELECT count(*) FROM files"))))
+                       (query-value connection "SELECT count(*) FROM files"))))
 
 (define (row->hit row)
   (cons (vector-ref row 0) (vector-ref row 1)))
@@ -255,44 +255,44 @@
      (file-index-query '() 'ok)]
     [else
      (let ([hits
-            (call-with-index
-             path #f
-             (lambda (connection)
-        ;; Appending the greatest Unicode scalar creates an exclusive upper
-        ;; bound for every string beginning with q under SQLite BINARY order.
-        (define upper (string-append q "\U0010FFFF"))
-        ;; q." through q/ is the exact-stem-with-extension range. Query it
-        ;; separately so report.md cannot be crowded out by thousands of
-        ;; report-* names, while both statements still stop on the B-tree
-        ;; instead of sorting an entire one-character prefix.
-        (define stem-rows
-          (query-rows
-           connection
-           "SELECT name,path FROM files WHERE folded_name >= ? AND folded_name < ? ORDER BY folded_name,path LIMIT ?"
-           (string-append q ".") (string-append q "/")
-           (min limit max-candidates)))
-        (define prefix-rows
-          (query-rows
-           connection
-           "SELECT name,path FROM files WHERE folded_name >= ? AND folded_name < ? ORDER BY folded_name,path LIMIT ?"
-           q upper (min limit max-candidates)))
-        (define pinyin-rows
-          (query-rows
-           connection
-           (string-append
-            "SELECT files.name,files.path FROM file_pinyin "
-            "JOIN files ON files.path=file_pinyin.path "
-            "WHERE file_pinyin.term >= ? AND file_pinyin.term < ? "
-            "ORDER BY file_pinyin.term,files.path LIMIT ?")
-           q upper (min limit max-candidates)))
-        (define hits
-          (remove-duplicates
-           (append (map row->hit stem-rows)
-                   (map row->hit prefix-rows)
-                   (map row->hit pinyin-rows))
-           string=?
-           #:key cdr))
-        (take hits (min limit (length hits)))))])
+              (call-with-index
+               path #f
+               (lambda (connection)
+          ;; Appending the greatest Unicode scalar creates an exclusive upper
+          ;; bound for every string beginning with q under SQLite BINARY order.
+          (define upper (string-append q "\U0010FFFF"))
+          ;; q." through q/ is the exact-stem-with-extension range. Query it
+          ;; separately so report.md cannot be crowded out by thousands of
+          ;; report-* names, while both statements still stop on the B-tree
+          ;; instead of sorting an entire one-character prefix.
+          (define stem-rows
+            (query-rows
+             connection
+             "SELECT name,path FROM files WHERE folded_name >= ? AND folded_name < ? ORDER BY folded_name,path LIMIT ?"
+             (string-append q ".") (string-append q "/")
+             (min limit max-candidates)))
+          (define prefix-rows
+            (query-rows
+             connection
+             "SELECT name,path FROM files WHERE folded_name >= ? AND folded_name < ? ORDER BY folded_name,path LIMIT ?"
+             q upper (min limit max-candidates)))
+          (define pinyin-rows
+            (query-rows
+             connection
+             (string-append
+              "SELECT files.name,files.path FROM file_pinyin "
+              "JOIN files ON files.path=file_pinyin.path "
+              "WHERE file_pinyin.term >= ? AND file_pinyin.term < ? "
+              "ORDER BY file_pinyin.term,files.path LIMIT ?")
+             q upper (min limit max-candidates)))
+          (define hits
+            (remove-duplicates
+             (append (map row->hit stem-rows)
+                     (map row->hit prefix-rows)
+                     (map row->hit pinyin-rows))
+             string=?
+             #:key cdr))
+          (take hits (min limit (length hits)))))])
        (if hits
            (file-index-query hits 'ok)
            (file-index-query '() 'error)))]))
