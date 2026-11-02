@@ -37,7 +37,9 @@ Launcher-specific parts on top of the official runtime:
   `SKIP_TASKBAR`, `WINDOW_TYPE_UTILITY`) set directly on X11; Wayland
   compositors own those decisions.
 - **Single instance** — Rivet's first-party `SingleInstanceLease`;
-  second launches forward `--toggle` to the primary and exit.
+  repeated desktop launches show the resident window, including when it is
+  already visible. Only an explicit `fulcrum --toggle` toggles visibility,
+  suitable for a Wayland compositor shortcut.
 
 ## Build
 
