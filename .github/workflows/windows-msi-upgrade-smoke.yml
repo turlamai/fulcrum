@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           racket -e '(dynamic-require (quote db) #f)' || raco pkg install --auto --no-docs db-lib
-          raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#79a01a43a0ac40d0f0e12313847500fafa6a5e72'
+          raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#8ccc95530af43287d1b7e94e1ae69e10279b4db4'
       - name: Verify official signed update discovery and MSI payload
         shell: bash
         run: racket scripts/acceptance/windows-signed-feed-smoke.rkt
