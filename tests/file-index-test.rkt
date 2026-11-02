@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require racket/file
+         racket/path
          rackunit
          "../app/core/file-index.rkt")
 
