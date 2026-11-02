@@ -64,6 +64,14 @@ chord on a private X server; Wayland acceptance calls the exact activation
 handler used by the portal because compositors intentionally prohibit synthetic
 global input.
 
+Windows resident lifecycle acceptance also opens About through the tray
+command handler with a hidden owner, checks the build version and duplicate
+invocation, and closes the dialog before continuing to calculate. It accepts
+then cancels an installer shutdown query without ending the app, uses the
+actual Restart Manager API without forced shutdown, and verifies normal exit
+and a fresh usable primary process. This supplements, and does not replace,
+installed MSI upgrade and Finish-page launch acceptance.
+
 ## 当前交付优先级（2026-10-23）
 
 先收敛交互与真实更新/签名门禁，再做窄范围的新增工作流 Pro。保留已有免费能力，平台机制遵循原生惯例。

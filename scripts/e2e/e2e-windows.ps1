@@ -13,6 +13,47 @@ using System.Runtime.InteropServices;
 public static class FulcrumNative {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hwnd, int command);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wParam,
+        IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
+    [StructLayout(LayoutKind.Sequential)]
+    public struct UniqueProcess {
+        public uint ProcessId;
+        public System.Runtime.InteropServices.ComTypes.FILETIME StartTime;
+    }
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    private static extern int RmStartSession(out uint session, uint flags, System.Text.StringBuilder key);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    private static extern int RmRegisterResources(uint session, uint fileCount, string[] files,
+        uint processCount, UniqueProcess[] processes, uint serviceCount, string[] services);
+    [DllImport("rstrtmgr.dll")]
+    private static extern int RmShutdown(uint session, uint flags, IntPtr callback);
+    [DllImport("rstrtmgr.dll")]
+    private static extern int RmEndSession(uint session);
+
+    public static void ShutdownForInstaller(int processId) {
+        using (var process = System.Diagnostics.Process.GetProcessById(processId)) {
+            long start = process.StartTime.ToUniversalTime().ToFileTimeUtc();
+            var resource = new UniqueProcess {
+                ProcessId = (uint)processId,
+                StartTime = new System.Runtime.InteropServices.ComTypes.FILETIME {
+                    dwLowDateTime = unchecked((int)start), dwHighDateTime = (int)(start >> 32)
+                }
+            };
+            uint session;
+            int error = RmStartSession(out session, 0, new System.Text.StringBuilder(33));
+            if (error != 0) throw new System.ComponentModel.Win32Exception(error, "RmStartSession");
+            try {
+                error = RmRegisterResources(session, 0, null, 1, new[] { resource }, 0, null);
+                if (error != 0) throw new System.ComponentModel.Win32Exception(error, "RmRegisterResources");
+                // No RmForceShutdown: a test kill must never count as success.
+                error = RmShutdown(session, 0, IntPtr.Zero);
+                if (error != 0) throw new System.ComponentModel.Win32Exception(error, "RmShutdown");
+            } finally { RmEndSession(session); }
+        }
+    }
 }
 '@
 
@@ -186,11 +227,68 @@ try {
         throw 'restarted launcher showed uninitialized scaffold'
     }
 
+    # Enter the exact tray command handler with its owner hidden, as it is
+    # during everyday tray use. Re-entry must not create a second dialog or
+    # escape fire_and_forget; close it and prove the process stays usable.
+    $hwnd = [IntPtr]::new([int64]$restarted.Current.NativeWindowHandle)
+    [void][FulcrumNative]::ShowWindow($hwnd, 0)
+    [void][FulcrumNative]::PostMessage($hwnd, 0x8007, [IntPtr]::new(2), [IntPtr]::Zero)
+    $version = (Get-Content -LiteralPath (Join-Path $repo 'VERSION') -Raw).Trim()
+    [void](Wait-Until 'About Fulcrum with correct version from hidden tray owner' {
+        Find-ByName $restarted "Fulcrum v$version"
+    })
+    [void][FulcrumNative]::PostMessage($hwnd, 0x8007, [IntPtr]::new(2), [IntPtr]::Zero)
+    $close = Wait-Until 'About close button' { Find-ById $restarted 'CloseButton' }
+    $invoke = $close.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+    ([System.Windows.Automation.InvokePattern]$invoke).Invoke()
+    [void](Wait-Until 'About closed without terminating Fulcrum' {
+        if ($process.HasExited) { throw 'About terminated the resident process' }
+        if (-not (Find-ByName $restarted "Fulcrum v$version")) { return $true }
+        return $false
+    })
+
+    # A canceled installer shutdown must leave the resident app usable.
+    $hwnd = [IntPtr]::new([int64]$restarted.Current.NativeWindowHandle)
+    $reply = [UIntPtr]::Zero
+    if ([FulcrumNative]::SendMessageTimeout($hwnd, 0x11, [IntPtr]::Zero,
+        [IntPtr]::new(1), 2, 5000, [ref]$reply) -eq [IntPtr]::Zero -or
+        $reply.ToUInt64() -ne 1) { throw 'installer shutdown query was not accepted' }
+    if ([FulcrumNative]::SendMessageTimeout($hwnd, 0x16, [IntPtr]::Zero,
+        [IntPtr]::new(1), 2, 5000, [ref]$reply) -eq [IntPtr]::Zero) {
+        throw 'canceled installer shutdown was not delivered'
+    }
+    $query = Find-ById $restarted 'QueryBox'
+    $query.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('^a12*12')
+    [void](Wait-Until 'calculator still works after canceled installer shutdown' {
+        Find-ByNameFragment $restarted '144'
+    })
+
+    # Use Windows' real Restart Manager against the packaged process, then
+    # demand normal exit, lease release, and a working new primary.
+    [FulcrumNative]::ShutdownForInstaller($process.Id)
+    if (-not $process.WaitForExit(30000) -or $process.ExitCode -ne 0) {
+        throw 'Restart Manager did not shut down Fulcrum normally'
+    }
+    $process.Dispose()
+    $process = Start-Process -FilePath $executable.FullName -PassThru -WorkingDirectory $repo
+    $afterInstaller = Wait-Until 'Fulcrum launcher after installer shutdown' {
+        $condition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+        $desktop.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
+    }
+    $query = Wait-Until 'query after installer shutdown' { Find-ById $afterInstaller 'QueryBox' }
+    $query.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('^a12*12')
+    [void](Wait-Until 'calculator works after installer shutdown and relaunch' {
+        Find-ByNameFragment $afterInstaller '144'
+    })
+
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('set:QueryBox=12*12','press:Enter','launch:secondary','quit:acceptance-tray-path','launch:again')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window')
+        actions = @('set:QueryBox=12*12','press:Enter','launch:secondary','quit:acceptance-tray-path','launch:again','hide:owner','tray:About','tray:About-again','close:About','cancel:installer-shutdown','shutdown:RestartManager','launch:after-installer','set:QueryBox=12*12')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','About from hidden tray owner shows correct version and survives re-entry','canceled installer shutdown preserves calculator','Restart Manager exits normally without force','post-installer relaunch obtains same lease and calculates 144')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
     $env:FULCRUM_DATA_DIR = $savedData

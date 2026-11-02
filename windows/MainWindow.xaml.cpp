@@ -1013,6 +1013,19 @@ void MainWindow::FinishNativeSetup() {
                     [](HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
                        UINT_PTR, DWORD_PTR dwRefData) -> LRESULT {
                       auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+                      // Restart Manager uses session-end messages before MSI
+                      // replaces files. Ordinary WM_CLOSE hides our resident
+                      // panel, so it cannot serve as the installer exit path.
+                      // A query is consent only: another app may cancel it.
+                      if (msg == WM_QUERYENDSESSION && self != nullptr &&
+                          (lParam & ENDSESSION_CLOSEAPP) != 0) {
+                        return TRUE;
+                      }
+                      if (msg == WM_ENDSESSION && self != nullptr &&
+                          (lParam & ENDSESSION_CLOSEAPP) != 0) {
+                        if (wParam != FALSE) self->QuitApplication();
+                        return 0;
+                      }
                       if (msg == WM_HOTKEY && self != nullptr &&
                           self->HandleHotkeyMessage(msg, wParam, lParam)) {
                         return 0;
@@ -1036,6 +1049,11 @@ void MainWindow::FinishNativeSetup() {
                       if (msg == fulcrum::windows::kAcceptanceQuitMessage && self != nullptr &&
                           is_acceptance_run()) {
                         self->QuitApplication();
+                        return 0;
+                      }
+                      if (msg == fulcrum::windows::kAcceptanceTrayCommandMessage &&
+                          self != nullptr && is_acceptance_run()) {
+                        self->HandleTrayCommand(static_cast<int>(wParam));
                         return 0;
                       }
                       if (msg == WM_NCHITTEST && self != nullptr) {
@@ -1085,6 +1103,7 @@ void MainWindow::FinishNativeSetup() {
     if (args.WindowActivationState() ==
             winrt::Microsoft::UI::Xaml::WindowActivationState::Deactivated &&
         !is_acceptance_run()) {
+      if (about_open_) return;  // Keep the ContentDialog's owner visible.
       this->HideLauncher();
     }
   });
@@ -1130,22 +1149,26 @@ void MainWindow::HandleTrayMessage(std::uint32_t message, std::int64_t lParam,
         // Required by the Win32 foreground-menu contract so a subsequent
         // tray invocation is not swallowed after outside-click dismissal.
         ::PostMessageW(hwnd, WM_NULL, 0, 0);
-        if (choice == kTrayMenuOpen) {
-          ShowLauncher();
-        } else if (choice == kTrayMenuSettings) {
-          ShowSettings();
-        } else if (choice == kTrayMenuUpdates) {
-          CheckForUpdates();
-        } else if (choice == kTrayMenuAbout) {
-          ShowAbout();
-        } else if (choice == kTrayMenuQuit) {
-          this->QuitApplication();
-        }
+        HandleTrayCommand(choice);
       }
       break;
     }
     default:
       break;
+  }
+}
+
+void MainWindow::HandleTrayCommand(int choice) {
+  if (choice == kTrayMenuOpen) {
+    ShowLauncher();
+  } else if (choice == kTrayMenuSettings) {
+    ShowSettings();
+  } else if (choice == kTrayMenuUpdates) {
+    CheckForUpdates();
+  } else if (choice == kTrayMenuAbout) {
+    ShowAbout();
+  } else if (choice == kTrayMenuQuit) {
+    QuitApplication();
   }
 }
 
@@ -1804,44 +1827,62 @@ void MainWindow::RunSelected() {
 // one ContentDialog with version, tagline, license and the site/issue
 // links (taskly's OnAbout shape).
 winrt::fire_and_forget MainWindow::ShowAbout() {
-  namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
-  namespace mx = winrt::Microsoft::UI::Xaml;
+  // ContentDialog needs a visible, live XamlRoot. The tray can invoke this
+  // while the launcher is hidden; repeated invocations must not open two
+  // dialogs on the same root (ShowAsync would throw in fire_and_forget).
+  if (about_open_ || quitting_) co_return;
+  auto lifetime = get_strong();
+  about_open_ = true;
+  try {
+    ShowLauncher(false);
+    namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
+    namespace mx = winrt::Microsoft::UI::Xaml;
 
-  auto panel = mxc::StackPanel{};
-  panel.Spacing(4);
-  auto tagline = mxc::TextBlock{};
-  tagline.Text(t("aboutContent"));
-  tagline.TextAlignment(mx::TextAlignment::Center);
-  tagline.TextWrapping(mx::TextWrapping::Wrap);
-  tagline.Margin({0, 0, 0, 8});
-  auto license = mxc::TextBlock{};
-  license.Text(t("aboutLicense"));
-  license.TextAlignment(mx::TextAlignment::Center);
-  license.FontSize(12);
-  license.Opacity(0.75);
-  auto website = mxc::HyperlinkButton{};
-  website.Content(winrt::box_value(t("aboutWebsite")));
-  website.NavigateUri(
-      winrt::Windows::Foundation::Uri{L"https://fulcrum.jrtx.site"});
-  website.HorizontalAlignment(mx::HorizontalAlignment::Center);
-  website.Padding({0, 0, 0, 0});
-  auto issue = mxc::HyperlinkButton{};
-  issue.Content(winrt::box_value(t("aboutReportIssue")));
-  issue.NavigateUri(winrt::Windows::Foundation::Uri{
-      L"https://github.com/turinglambdaai/fulcrum/issues"});
-  issue.HorizontalAlignment(mx::HorizontalAlignment::Center);
-  issue.Padding({0, 0, 0, 0});
-  panel.Children().Append(tagline);
-  panel.Children().Append(license);
-  panel.Children().Append(website);
-  panel.Children().Append(issue);
+    auto panel = mxc::StackPanel{};
+    panel.Spacing(4);
+    auto tagline = mxc::TextBlock{};
+    tagline.Text(t("aboutContent"));
+    tagline.TextAlignment(mx::TextAlignment::Center);
+    tagline.TextWrapping(mx::TextWrapping::Wrap);
+    tagline.Margin({0, 0, 0, 8});
+    auto license = mxc::TextBlock{};
+    license.Text(t("aboutLicense"));
+    license.TextAlignment(mx::TextAlignment::Center);
+    license.FontSize(12);
+    license.Opacity(0.75);
+    auto website = mxc::HyperlinkButton{};
+    website.Content(winrt::box_value(t("aboutWebsite")));
+    website.NavigateUri(
+        winrt::Windows::Foundation::Uri{L"https://fulcrum.jrtx.site"});
+    website.HorizontalAlignment(mx::HorizontalAlignment::Center);
+    website.Padding({0, 0, 0, 0});
+    auto issue = mxc::HyperlinkButton{};
+    issue.Content(winrt::box_value(t("aboutReportIssue")));
+    issue.NavigateUri(winrt::Windows::Foundation::Uri{
+        L"https://github.com/turlamai/fulcrum/issues"});
+    issue.HorizontalAlignment(mx::HorizontalAlignment::Center);
+    issue.Padding({0, 0, 0, 0});
+    panel.Children().Append(tagline);
+    panel.Children().Append(license);
+    panel.Children().Append(website);
+    panel.Children().Append(issue);
 
-  auto dialog = mxc::ContentDialog{};
-  dialog.Title(winrt::box_value(L"Fulcrum v" + to_wide(rivet_app::kVersion)));
-  dialog.Content(winrt::box_value(panel));
-  dialog.CloseButtonText(t("updateClose"));
-  dialog.XamlRoot(Content().XamlRoot());
-  co_await dialog.ShowAsync();
+    auto dialog = mxc::ContentDialog{};
+    dialog.Title(winrt::box_value(L"Fulcrum v" + to_wide(rivet_app::kVersion)));
+    dialog.Content(winrt::box_value(panel));
+    dialog.CloseButtonText(t("updateClose"));
+    dialog.XamlRoot(Content().XamlRoot());
+    co_await dialog.ShowAsync();
+  } catch (winrt::hresult_error const& error) {
+    // Never let a dialog failure escape fire_and_forget and terminate the
+    // resident process; show a copyable diagnostic in the launcher instead.
+    SetStatusError(error.message());
+    ShowLauncher(false);
+  } catch (std::exception const& error) {
+    SetStatusError(to_wide(error.what()));
+    ShowLauncher(false);
+  }
+  about_open_ = false;
 }
 
 // ---- settings -------------------------------------------------------------

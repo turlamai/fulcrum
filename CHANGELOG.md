@@ -6,6 +6,16 @@ independently per platform packaging run.
 
 ## [Unreleased]
 
+- Windows About activates its hidden launcher owner before displaying the
+  version dialog, prevents duplicate dialogs, and contains dialog errors
+  instead of allowing an unhandled asynchronous exception to end the app.
+
+- Windows responds to Restart Manager's confirmed installer shutdown through
+  the same orderly exit as tray Quit, releasing the resident process and
+  single-instance lease instead of treating the request as hide-to-tray.
+  Canceled shutdown requests keep the launcher running. Packaged Windows
+  acceptance now exercises real Restart Manager shutdown and usable relaunch.
+
 ## [0.14.2] - 2026-11-02
 
 ### Fixed

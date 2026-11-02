@@ -71,6 +71,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   // Tray callback: left click opens the launcher, right click opens the
   // Open/Quit menu.
   void HandleTrayMessage(std::uint32_t message, std::int64_t lParam, HWND hwnd);
+  void HandleTrayCommand(int choice);
 
   // ⌘K equivalent (Ctrl+K): swap the list for the selected row's
   // secondary actions; Esc walks back to the search rows.
@@ -154,6 +155,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::atomic<bool> update_polling_{false};
   bool startup_presented_{false};
   bool quitting_{false};
+  bool about_open_{false};
   // ⌘K (Ctrl+K) mode: rows_ currently holds secondary actions and
   // search_rows_ remembers the live result list.
   bool actions_mode_{false};
