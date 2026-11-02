@@ -32,6 +32,7 @@
          "core/paths.rkt"
          "core/plugins.rkt"
          "core/quicklinks.rkt"
+         "core/revision-publisher.rkt"
          "core/store.rkt"
          (rename-in "core/settings.rkt" [settings-list core:settings-list])
          (rename-in "core/snippets.rkt" [snippet-list core:snippet-list])
@@ -159,12 +160,17 @@
 ;; results-changed pushes. Hosts re-run the current query when it moves.
 (define-state search-revision : Int64 0)
 
-(define search-revision-box (box 0))
+;; File-catalog progress and FPP2 daemon notifications can arrive on
+;; independent worker threads. A shared increment without synchronization
+;; could lose updates or deliver revisions to hosts out of order.
+(define search-revision-publisher
+  (make-revision-publisher
+   (lambda (revision)
+     (with-handlers ([exn:fail? void])
+       (state-set! search-revision revision)))))
 
 (define (bump-search-revision!)
-  (set-box! search-revision-box (add1 (unbox search-revision-box)))
-  (with-handlers ([exn:fail? void])
-    (state-set! search-revision (unbox search-revision-box))))
+  (revision-publish! search-revision-publisher))
 
 (define (nullable value)
   (if value value (void)))
