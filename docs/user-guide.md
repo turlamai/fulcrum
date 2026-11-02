@@ -373,6 +373,15 @@ auto-expansion does not work on Linux.
   menu (it clears the stock binding). To fix it by hand:
   `gsettings set org.gnome.desktop.wm.keybindings activate-window-menu "[]"`.
 
+- **Ubuntu GNOME Wayland: portal says "An app id is required".** Some host
+  launch paths lack the systemd app identity required by the desktop portal,
+  so the shortcut permission prompt cannot open. Fulcrum now preserves this
+  failure in the status footer instead of showing a misleading "Ready".
+  Until the app identity is provided by the installed desktop/session launch,
+  use GNOME Settings → Keyboard → View and Customize Shortcuts → Custom
+  Shortcuts, and bind the command `fulcrum --toggle` to an available combo.
+  This is a workaround, **not** a claim that the portal binding succeeded.
+
 - **Paste-to-frontmost does nothing on macOS.** Grant Accessibility:
   System Settings → Privacy & Security → Accessibility → enable
   Fulcrum.
