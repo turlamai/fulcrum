@@ -15,6 +15,8 @@ public static class FulcrumNative {
     public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 }
 '@
 
@@ -233,11 +235,42 @@ try {
         throw 'restarted launcher showed uninitialized scaffold'
     }
 
+    # Simulate the Windows Installer Restart Manager close-app handshake
+    # against an actually packaged resident process, with the launcher
+    # already hidden. QUERY must not kill the app; ENDSESSION must do so
+    # gracefully and free the lease (the behavior missing in #148).
+    $restartHwnd = [IntPtr]::new([int64]$restarted.Current.NativeWindowHandle)
+    if ($restartHwnd -eq [IntPtr]::Zero -or -not [FulcrumNative]::PostMessage(
+        $restartHwnd, [uint32]0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) {
+        throw 'could not close transient launcher panel'
+    }
+    [void](Wait-Until 'launcher hidden before Restart Manager request' {
+        if (-not [FulcrumNative]::IsWindowVisible($restartHwnd)) { return $true }
+        return $false
+    })
+    # WM_QUERYENDSESSION=0x11, WM_ENDSESSION=0x16,
+    # ENDSESSION_CLOSEAPP=1. No other test process is targeted.
+    $approved = [FulcrumNative]::SendMessage(
+        $restartHwnd, [uint32]0x0011, [IntPtr]::Zero, [IntPtr]::new(1))
+    if ($approved -ne [IntPtr]::new(1) -or $process.HasExited) {
+        throw 'Restart Manager shutdown query was rejected or caused premature exit'
+    }
+    if (-not [FulcrumNative]::PostMessage(
+        $restartHwnd, [uint32]0x0016, [IntPtr]::new(1), [IntPtr]::new(1))) {
+        throw 'could not send Restart Manager shutdown confirmation'
+    }
+    if (-not $process.WaitForExit(30000)) {
+        throw 'Fulcrum ignored Restart Manager close-app shutdown'
+    }
+    if ($process.ExitCode -ne 0) {
+        throw "Restart Manager shutdown exited with code $($process.ExitCode)"
+    }
+
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('set:QueryBox=12*12','press:Enter','about:while-launcher-hidden','about:close-and-reopen','launch:secondary','quit:acceptance-tray-path','launch:again')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window')
+        actions = @('set:QueryBox=12*12','press:Enter','about:while-launcher-hidden','about:close-and-reopen','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
     $env:FULCRUM_DATA_DIR = $savedData

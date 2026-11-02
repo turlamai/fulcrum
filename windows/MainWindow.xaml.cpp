@@ -1013,6 +1013,22 @@ void MainWindow::FinishNativeSetup() {
                     [](HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
                        UINT_PTR, DWORD_PTR dwRefData) -> LRESULT {
                       auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+                      // MSI's Restart Manager uses ENDSESSION_CLOSEAPP to
+                      // request a clean shutdown before replacing in-use
+                      // files. A normal Alt+F4 stays hide-on-close; an
+                      // installer-driven end-session must actually release
+                      // the backend, hotkeys, tray and instance lease.
+                      // Do not exit on QUERY: another app may still veto.
+                      if (msg == WM_QUERYENDSESSION &&
+                          (lParam & ENDSESSION_CLOSEAPP) != 0) {
+                        return TRUE;
+                      }
+                      if (msg == WM_ENDSESSION && wParam != 0 &&
+                          (lParam & ENDSESSION_CLOSEAPP) != 0 &&
+                          self != nullptr) {
+                        self->QuitApplication();
+                        return 0;
+                      }
                       if (msg == WM_HOTKEY && self != nullptr &&
                           self->HandleHotkeyMessage(msg, wParam, lParam)) {
                         return 0;
