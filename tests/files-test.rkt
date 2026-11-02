@@ -121,6 +121,10 @@
   (check-true (string-contains? script "Get-ChildItem"))
   (check-true (string-contains? script "SELECT TOP 128"))
   (check-true (string-contains? script "Select-Object -First 128"))
+  (check-true (string-contains? script "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)")
+              "Windows PowerShell must emit UTF-8 path names to the Racket UTF-8 reader")
+  (check-false (string-contains? script "-replace '^file:/+'")
+               "indexed file URLs must preserve UNC //server/share authorities")
   ;; The query is neutralized for both SQL and PowerShell single quotes.
   (check-false (string-contains? script "o'brien"))
   (check-true (string-contains? script "o''brien")))
