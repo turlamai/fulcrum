@@ -6,6 +6,7 @@
 #include "winui_window.hpp"
 
 #include <map>
+#include <memory>
 #include <string>
 
 namespace winrt::RivetHost::implementation {
@@ -21,8 +22,9 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   SettingsWindow();
 
   // Hooked up by MainWindow once the backend is ready (and again on every
-  // show, which reloads). The API outlives this window: MainWindow owns it.
-  void Attach(rivet_app::API* api);
+  // show, which reloads). Each worker keeps its own shared API lease;
+  // the backend stays alive even if the window closes while an RPC runs.
+  void Attach(std::shared_ptr<rivet_app::API> api);
 
   // XAML handlers (SettingsWindow.xaml).
   void Toggle_Toggled(winrt::Windows::Foundation::IInspectable const&,
@@ -51,7 +53,7 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   void ShowError(std::wstring const& message);
   void ClearError();
 
-  rivet_app::API* api_{nullptr};
+  std::shared_ptr<rivet_app::API> api_;
   // True while Apply pushes values into the controls, so their change
   // handlers do not write them straight back.
   bool loading_{false};

@@ -117,8 +117,8 @@ SettingsWindow::SettingsWindow() {
   }
 }
 
-void SettingsWindow::Attach(rivet_app::API* api) {
-  api_ = api;
+void SettingsWindow::Attach(std::shared_ptr<rivet_app::API> api) {
+  api_ = std::move(api);
   Load();
 }
 
@@ -128,7 +128,7 @@ void SettingsWindow::Load() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::map<std::string, std::string> values;
     std::string status;
@@ -191,7 +191,7 @@ void SettingsWindow::Write(std::string key, std::string value) {
   if (key == "language") ApplyLocalization(value);
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher, key, value]() mutable {
     std::string error;
     try {
@@ -241,7 +241,7 @@ void SettingsWindow::RefreshAiStatus() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::string status;
     try {
@@ -267,7 +267,7 @@ void SettingsWindow::SaveKey() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher, key]() mutable {
     std::string status;
     try {

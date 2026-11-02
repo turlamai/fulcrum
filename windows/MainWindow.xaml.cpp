@@ -894,7 +894,15 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
     dispatcher.TryEnqueue([weak, backend = std::move(backend)]() mutable {
       if (auto window = weak.get()) {
         window->backend_ = std::move(backend);
-        window->api_ = std::make_unique<rivet_app::API>(*window->backend_);
+        // A detached RPC may outlive its source window. Capturing the API
+        // handle keeps both the API and its referenced backend alive until
+        // the final worker exits; Shutdown can still reject a late RPC.
+        window->api_ = std::shared_ptr<rivet_app::API>(
+            new rivet_app::API(*window->backend_),
+            [backend = window->backend_](rivet_app::API* api) {
+              delete api;
+              (void)backend;  // hold the backend through API destruction
+            });
         window->SetStatusOk(t("readyStatus"));
         window->FinishNativeSetup();
         try {
@@ -1435,7 +1443,7 @@ void MainWindow::PullHostSettings() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::string hotkey;
     std::string theme;
@@ -1570,7 +1578,7 @@ winrt::fire_and_forget MainWindow::SearchAsync(std::wstring const& query) {
   auto const generation = search_generation_.fetch_add(1) + 1;
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   auto const utf8_query = to_utf8(query);
 
   try {
@@ -1665,7 +1673,7 @@ void MainWindow::ShowActionsForSelection() {
   search_rows_ = rows_;
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
 
   std::thread([weak, api, dispatcher, row]() mutable {
     try {
@@ -1711,7 +1719,7 @@ void MainWindow::RunSelected() {
   auto const row = rows_[static_cast<std::size_t>(index)];
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
 
   // Side effects (app launch, plugin run) belong off the UI thread; the
   // backend Events that follow drive the actual clipboard/URL work.
@@ -1750,7 +1758,7 @@ void MainWindow::RunSelected() {
             // paints through the dispatcher (captured below — the
             // TryEnqueue lambda would not otherwise see it).
             window->DismissDetailPanel();
-            auto* api2 = window->api_.get();
+            auto api2 = window->api_;
             auto const row_id = row.id;   // rows are already UTF-8
             auto const row_arg = row.arg;
             std::thread([weak, dispatcher, api2, row_id, row_arg]() mutable {
@@ -1922,7 +1930,7 @@ void MainWindow::ShowSettings() {
     window.Closed([this](auto&&, auto&&) { settings_window_ = nullptr; });
     settings_window_ = window;
   }
-  winrt::get_self<SettingsWindow>(settings_window_)->Attach(api_.get());
+  winrt::get_self<SettingsWindow>(settings_window_)->Attach(api_);
   settings_window_.Activate();
 }
 
@@ -2027,7 +2035,7 @@ void MainWindow::RefreshExpansionData() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     bool enabled = true;
     std::vector<std::pair<std::wstring, std::wstring>> triggers;
@@ -2107,7 +2115,7 @@ void MainWindow::CheckForUpdates() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::wstring line;
     bool is_error = false;
@@ -2150,7 +2158,7 @@ void MainWindow::StartSilentUpdateCheck() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   // The 4-hour throttle and the manifest verification are backend-owned;
   // this is one cheap RPC the backend may decline (status "throttled").
   // Failures are silent by design — a resident launcher must never nag.
@@ -2179,7 +2187,7 @@ void MainWindow::StartUpdateProgressPoll() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     while (true) {
       try {
