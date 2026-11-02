@@ -5,6 +5,7 @@
 #include "GeneratedBackend.hpp"
 #include "winui_window.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -142,7 +143,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   winrt::RivetHost::SettingsWindow settings_window_{nullptr};
 
   std::shared_ptr<rivet::windows::Backend> backend_;
-  std::unique_ptr<rivet_app::API> api_;
+  // Each in-flight RPC captures a shared API handle. Its deleter retains
+  // the Rivet backend until the last RPC has finished, even during Quit.
+  std::shared_ptr<rivet_app::API> api_;
   std::vector<rivet_app::ResultRow> rows_;
   // Per-row ↵ affordance chips, parallel to rows_ (strong refs; the list
   // owns the visual tree so these stay alive with it).
