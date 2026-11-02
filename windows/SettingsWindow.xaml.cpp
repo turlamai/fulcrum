@@ -102,15 +102,15 @@ SettingsWindow::SettingsWindow() {
     SystemBackdrop(mx::Media::MicaBackdrop());
     if (auto appWindow = this->AppWindow()) {
       appWindow.Resize(winrt::Windows::Graphics::SizeInt32{680, 840});
-      // Titled Windows windows carry their icon left of the title; WinUI
-      // ships a blank unless one is set. Our exe embeds the app icon at
-      // resource ID 1 (rivet build), so pointing at the exe itself works
-      // in the staged tree and after install alike.
-      wchar_t exe_path[MAX_PATH];
-      if (::GetModuleFileNameW(nullptr, exe_path, MAX_PATH) > 0) {
-        appWindow.SetIcon(exe_path);
-      }
     }
+    // Titled Windows windows carry their icon left of the title; WinUI
+    // ships a blank unless one is set. ApplyAppIcon loads the exe's
+    // embedded icon (RT_GROUP_ICON resource ID 1) as a shared module-owned
+    // HICON and hands AppWindow.SetIcon an IconId — the String overload
+    // this window used to call wants an .ico file path, so an exe path
+    // failed silently and the slot stayed blank (issue #140). Missing
+    // resources return false and leave the native default in place.
+    (void)rivet::system::ApplyAppIcon(*this);
   } catch (...) {
     // Backdrop, sizing and the titlebar icon are polish; the form works
     // without them.

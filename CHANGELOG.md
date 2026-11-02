@@ -6,6 +6,17 @@ independently per platform packaging run.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows Settings title bar shows the app icon again.** The window
+  passed its exe path to `AppWindow.SetIcon`, whose String overload wants
+  an `.ico` file — the call failed silently inside the constructor's
+  `try/catch` and the slot stayed blank in v0.14.1. It now uses rivet's
+  `ApplyAppIcon` helper (already in the pinned rivet), which loads the
+  embedded `RT_GROUP_ICON` resource and hands `SetIcon` an `IconId`;
+  missing resources keep the native default. A static contract test
+  rejects the exe-path overload and locks the helper in.
+
 ## [0.14.1] - 2026-10-30
 
 ### Changed
