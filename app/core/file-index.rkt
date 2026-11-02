@@ -254,10 +254,10 @@
     [(or (string=? q "") (<= limit 0))
      (file-index-query '() 'ok)]
     [else
-     (define hits
-       (call-with-index
-        path #f
-        (lambda (connection)
+     (let ([hits
+            (call-with-index
+             path #f
+             (lambda (connection)
         ;; Appending the greatest Unicode scalar creates an exclusive upper
         ;; bound for every string beginning with q under SQLite BINARY order.
         (define upper (string-append q "\U0010FFFF"))
@@ -292,10 +292,10 @@
                    (map row->hit pinyin-rows))
            string=?
            #:key cdr))
-        (take hits (min limit (length hits))))))
-     (if hits
-         (file-index-query hits 'ok)
-         (file-index-query '() 'error))]))
+        (take hits (min limit (length hits)))))])
+       (if hits
+           (file-index-query hits 'ok)
+           (file-index-query '() 'error)))]))
 
 (define (file-index-search path query [limit 8])
   (file-index-query-hits (file-index-search/status path query limit)))
