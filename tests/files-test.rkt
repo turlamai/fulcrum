@@ -5,6 +5,7 @@
 ;; elsewhere.
 
 (require racket/file
+         racket/path
          racket/async-channel
          racket/list
          racket/string
