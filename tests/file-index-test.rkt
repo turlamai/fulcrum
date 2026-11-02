@@ -82,16 +82,16 @@
   (with-index
    (lambda (db)
      (define empty (file-index-search/status db "unmatched" 8))
-     (check-equal? (file-index-query-status empty) 'ok)
-     (check-equal? (file-index-query-hits empty) '())
      ;; An ordinary file cannot be a directory. This reproducibly denies
      ;; cache creation on Windows, macOS and Ubuntu without chmod assumptions.
      (define blocker (build-path (path-only db) "not-a-directory"))
-     (display-to-file "blocked" blocker)
      (define broken (build-path blocker "index.sqlite3"))
-     (define failed (file-index-search/status broken "report" 8))
-     (check-equal? (file-index-query-status failed) 'error)
-     (check-equal? (file-index-query-hits failed) '())
+     (check-equal? (file-index-query-status empty) 'ok)
+     (check-equal? (file-index-query-hits empty) '())
+     (display-to-file "blocked" blocker)
+     (let ([failed (file-index-search/status broken "report" 8)])
+       (check-equal? (file-index-query-status failed) 'error)
+       (check-equal? (file-index-query-hits failed) '()))
      ;; Legacy callers still get a harmless list, not an exception.
      (check-equal? (file-index-search broken "report" 8) '()))))
 
