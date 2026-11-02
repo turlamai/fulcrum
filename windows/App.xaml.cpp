@@ -35,12 +35,14 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
     // acquired a usable lease (#148). Only the exact marked resident window
     // can receive our summon; never terminate another RivetHost.exe.
     bool summoned = false;
-    for (int attempt = 0; attempt < 30; ++attempt) {
+    // Bound the whole retry budget to a few seconds even when an existing
+    // HWND is hung (SendMessageTimeout runs for every attempt).
+    for (int attempt = 0; attempt < 20; ++attempt) {
       if (HWND existing = fulcrum::windows::FindResidentWindow()) {
         DWORD_PTR ignored{};
         if (::SendMessageTimeoutW(
                 existing, fulcrum::windows::kSummonResidentMessage, 0, 0,
-                SMTO_ABORTIFHUNG | SMTO_BLOCK, 1500, &ignored) != 0) {
+                SMTO_ABORTIFHUNG | SMTO_BLOCK, 250, &ignored) != 0) {
           summoned = true;
           break;
         }
