@@ -13,6 +13,8 @@ using System.Runtime.InteropServices;
 public static class FulcrumNative {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hwnd);
 }
 '@
 
@@ -135,6 +137,51 @@ try {
         if ($text -and $text.TrimEnd() -eq '144') { return $true }
         return $false
     })
+    # About must NOT depend on the hidden Alt+Space launcher XamlRoot.
+    # WM_APP+7 is an acceptance-only trigger invoking the same ShowAbout()
+    # method as the production tray menu. Test the actual packaged WinUI
+    # window visibility before ever re-summoning the launcher.
+    $mainHwnd = [IntPtr]::new([int64]$window.Current.NativeWindowHandle)
+    [void](Wait-Until 'launcher hidden after the calculator action' {
+        if (-not [FulcrumNative]::IsWindowVisible($mainHwnd)) { return $true }
+        return $false
+    })
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        if (-not [FulcrumNative]::PostMessage(
+            $mainHwnd, [uint32]0x8007, [IntPtr]::Zero, [IntPtr]::Zero)) {
+            throw 'could not invoke acceptance-only tray About command'
+        }
+        $about = Wait-Until "visible independent About window (attempt $attempt)" {
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+            $topLevels = $desktop.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+            for ($i = 0; $i -lt $topLevels.Count; $i++) {
+                $candidate = $topLevels[$i]
+                if ($candidate.Current.Name -ne 'About Fulcrum') { continue }
+                $handle = [IntPtr]::new([int64]$candidate.Current.NativeWindowHandle)
+                if ($handle -ne [IntPtr]::Zero -and [FulcrumNative]::IsWindowVisible($handle)) {
+                    return $candidate
+                }
+            }
+            return $null
+        }
+        if (-not (Find-ByNameFragment $about 'Fulcrum v')) {
+            throw 'About window does not show its product version'
+        }
+        if ([FulcrumNative]::IsWindowVisible($mainHwnd)) {
+            throw 'About unexpectedly summoned the hidden search launcher'
+        }
+        $aboutHwnd = [IntPtr]::new([int64]$about.Current.NativeWindowHandle)
+        $aboutWindow = [System.Windows.Automation.WindowPattern]$about.GetCurrentPattern(
+            [System.Windows.Automation.WindowPattern]::Pattern)
+        $aboutWindow.Close()
+        [void](Wait-Until "About closed (attempt $attempt)" {
+            if (-not [FulcrumNative]::IsWindowVisible($aboutHwnd)) { return $true }
+            return $false
+        })
+        if ($process.HasExited) { throw 'closing About terminated the resident process' }
+    }
+
     # Starting a second EXE while the resident host owns the lease must not
     # leave another invisible Fulcrum process. It should summon the original.
     $secondary = Start-Process -FilePath $executable.FullName -PassThru -WorkingDirectory $repo
@@ -189,8 +236,8 @@ try {
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('set:QueryBox=12*12','press:Enter','launch:secondary','quit:acceptance-tray-path','launch:again')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window')
+        actions = @('set:QueryBox=12*12','press:Enter','about:while-launcher-hidden','about:close-and-reopen','launch:secondary','quit:acceptance-tray-path','launch:again')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
     $env:FULCRUM_DATA_DIR = $savedData

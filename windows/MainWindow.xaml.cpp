@@ -1038,6 +1038,13 @@ void MainWindow::FinishNativeSetup() {
                         self->QuitApplication();
                         return 0;
                       }
+                      // Acceptance-only About invocation uses the same
+                      // code path as the tray while the launcher is hidden.
+                      if (msg == fulcrum::windows::kAcceptanceAboutMessage && self != nullptr &&
+                          is_acceptance_run()) {
+                        self->ShowAbout();
+                        return 0;
+                      }
                       if (msg == WM_NCHITTEST && self != nullptr) {
                         // The borderless panel has no titlebar to drag by,
                         // and the macOS panel stays movable through its
@@ -1800,48 +1807,87 @@ void MainWindow::RunSelected() {
 
 // ---- about ----------------------------------------------------------------
 
-// The tray menu's "About Fulcrum" and the `about` launcher row land here:
-// one ContentDialog with version, tagline, license and the site/issue
-// links (taskly's OnAbout shape).
-winrt::fire_and_forget MainWindow::ShowAbout() {
+// Unlike the transient Alt+Space search panel, About owns an independent
+// titled window. A ContentDialog attached to Content().XamlRoot() remained
+// invisible while the launcher was hidden (#149).
+void MainWindow::ShowAbout() {
   namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
   namespace mx = winrt::Microsoft::UI::Xaml;
 
+  if (about_window_) {
+    about_window_.Activate();
+    if (HWND hwnd = rivet::system::NativeWindowHandle(about_window_)) {
+      ::SetForegroundWindow(hwnd);
+    }
+    return;
+  }
+
   auto panel = mxc::StackPanel{};
-  panel.Spacing(4);
+  panel.Spacing(10);
+
+  auto version = mxc::TextBlock{};
+  version.Text(winrt::hstring(L"Fulcrum v" + to_wide(rivet_app::kVersion)));
+  version.FontSize(22);
+  version.TextAlignment(mx::TextAlignment::Center);
+
   auto tagline = mxc::TextBlock{};
   tagline.Text(t("aboutContent"));
   tagline.TextAlignment(mx::TextAlignment::Center);
   tagline.TextWrapping(mx::TextWrapping::Wrap);
-  tagline.Margin({0, 0, 0, 8});
+
   auto license = mxc::TextBlock{};
   license.Text(t("aboutLicense"));
   license.TextAlignment(mx::TextAlignment::Center);
   license.FontSize(12);
   license.Opacity(0.75);
+
   auto website = mxc::HyperlinkButton{};
   website.Content(winrt::box_value(t("aboutWebsite")));
   website.NavigateUri(
       winrt::Windows::Foundation::Uri{L"https://fulcrum.jrtx.site"});
   website.HorizontalAlignment(mx::HorizontalAlignment::Center);
   website.Padding({0, 0, 0, 0});
+
   auto issue = mxc::HyperlinkButton{};
   issue.Content(winrt::box_value(t("aboutReportIssue")));
   issue.NavigateUri(winrt::Windows::Foundation::Uri{
       L"https://github.com/turinglambdaai/fulcrum/issues"});
   issue.HorizontalAlignment(mx::HorizontalAlignment::Center);
   issue.Padding({0, 0, 0, 0});
+
+  panel.Children().Append(version);
   panel.Children().Append(tagline);
   panel.Children().Append(license);
   panel.Children().Append(website);
   panel.Children().Append(issue);
 
-  auto dialog = mxc::ContentDialog{};
-  dialog.Title(winrt::box_value(L"Fulcrum v" + to_wide(rivet_app::kVersion)));
-  dialog.Content(winrt::box_value(panel));
-  dialog.CloseButtonText(t("updateClose"));
-  dialog.XamlRoot(Content().XamlRoot());
-  co_await dialog.ShowAsync();
+  auto content = mxc::Border{};
+  content.Padding({24, 20, 24, 20});
+  content.Child(panel);
+
+  auto window = mx::Window{};
+  window.Title(L"About Fulcrum");
+  window.Content(content);
+  try {
+    if (auto appWindow = window.AppWindow()) {
+      appWindow.Resize(winrt::Windows::Graphics::SizeInt32{440, 330});
+    }
+    (void)rivet::system::ApplyAppIcon(window);
+  } catch (...) {
+    // Window sizing/icon are optional; never lose the About surface.
+  }
+
+  auto weak = get_weak();
+  window.Closed([weak](auto&&, auto&&) {
+    if (auto owner = weak.get()) {
+      owner->about_window_ = nullptr;
+    }
+  });
+  about_window_ = window;
+  about_window_.Activate();
+  if (HWND hwnd = rivet::system::NativeWindowHandle(about_window_)) {
+    ::SetForegroundWindow(hwnd);
+  }
 }
 
 // ---- settings -------------------------------------------------------------
