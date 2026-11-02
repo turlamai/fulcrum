@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "SettingsWindow.g.h"
 #include "GeneratedBackend.hpp"
+#include "winui_window.hpp"
 
 #include <map>
 #include <string>
