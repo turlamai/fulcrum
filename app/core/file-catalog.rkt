@@ -243,7 +243,7 @@
                           [partial? 'partial]
                           [else 'ready])
                     indexed completed (length normalized-roots) #f))
-         (notify-progress! #t))))))
+         (notify-progress! #t)))))
   (file-catalog-worker worker-thread cancel status))
 
 (define (stop-file-catalog! worker)
