@@ -593,6 +593,21 @@
    "file index search status catalog"
    120))
 
+;; A platform search with zero hits cannot prove nonexistence. The local
+;; catalog may still be building on first use, and the system index only
+;; covers selected locations. Surface honest progress/coverage information.
+(define (file-search-empty-row engine)
+  (define state (file-catalog-status-state (engine-file-catalog-status engine)))
+  (if (member state '(starting scanning))
+      (file-index-status-row engine)
+      (result
+       "noop"
+       "No matching files in searched locations"
+       "Coverage is limited by the OS index and local folders; type file index to check indexing status"
+       "File" "" "doc" "" "Partial scope"
+       "find file search empty index scope"
+       85)))
+
 ;; `find <query>` claims file search. All three platforms have a real
 ;; provider (files.rkt); the honest row below appears only when the
 ;; platform's search tool is missing entirely, naming what would restore it.
@@ -615,12 +630,15 @@
                               #:index-path (engine-file-index-path engine))])
                  (case (file-search-result-status search)
                    [(ok)
-                    (for/list ([hit (in-list (file-search-result-hits search))])
-                      (result "file.open" (car hit)
-                              (cdr hit) "File"
-                              (cdr hit) "doc" "" ""
-                              (car hit)
-                              85))]
+                    (define hits (file-search-result-hits search))
+                    (if (null? hits)
+                        (list (file-search-empty-row engine))
+                        (for/list ([hit (in-list hits)])
+                          (result "file.open" (car hit)
+                                  (cdr hit) "File"
+                                  (cdr hit) "doc" "" ""
+                                  (car hit)
+                                  85)))]
                    [(timeout)
                     (list
                      (result "noop"
