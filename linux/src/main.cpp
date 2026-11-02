@@ -2601,9 +2601,9 @@ std::string install_x11_hotkey(GdkDisplay* display) {
 }
 
 // ---- single instance via the first-party rivet lease ----------------------
-// `fulcrum --toggle` forwards the argument to the running primary, whose
-// activation handler presents the panel on the GTK main loop (the handler
-// itself runs on the lease's watcher thread).
+// Desktop relaunch forwards --show and always presents the resident panel.
+// Only explicit `fulcrum --toggle` forwards --toggle to toggle visibility.
+// The handler runs on the lease's watcher thread and posts to the GTK loop.
 
 gboolean activate_on_main(gpointer) {
   // A forwarded --toggle is a real toggle: the compositor keybinding
@@ -2617,9 +2617,17 @@ gboolean show_on_main(gpointer) {
   return G_SOURCE_REMOVE;
 }
 
+// A normal desktop launch should show the resident window. Only an explicit
+// --toggle command (e.g. a Wayland compositor shortcut) should hide it.
+bool toggle_activation_requested(std::vector<std::string> const& arguments) {
+  return std::find(arguments.begin(), arguments.end(), "--toggle") !=
+         arguments.end();
+}
+
 void on_activation(std::vector<std::string> arguments) {
-  (void)arguments;  // fulcrum only ever forwards --toggle
-  g_idle_add(activate_on_main, nullptr);
+  g_idle_add(toggle_activation_requested(arguments)
+                 ? activate_on_main : show_on_main,
+             nullptr);
 }
 
 // ---- tray ------------------------------------------------------------------
@@ -3284,9 +3292,10 @@ void on_shutdown(GApplication*, gpointer) {
 
 }  // namespace
 
-int run_application() {
+int run_application(bool toggle_requested = false) {
   // The first-party rivet lease replaces the old pid-file + SIGUSR1 scheme:
-  // second launches forward --toggle to the primary and exit.
+  // second desktop launches show the primary. Explicit --toggle from a
+  // compositor binding retains true toggle semantics.
   char const* isolated_id = std::getenv("FULCRUM_INSTANCE_ID");
   std::string const application_id =
       isolated_id != nullptr && *isolated_id != '\0'
@@ -3294,7 +3303,7 @@ int run_application() {
           : "site.jrtx.fulcrum";
   rivet::system::SingleInstanceLease lease(application_id);
   if (!lease.is_primary()) {
-    if (!lease.forward_arguments({"--toggle"})) {
+    if (!lease.forward_arguments({toggle_requested ? "--toggle" : "--show"})) {
       std::cerr << "fulcrum: running instance not reachable\n";
       return 1;
     }
@@ -3321,6 +3330,8 @@ int run_application() {
   return status;
 }
 
-int main(int, char**) {
-  return run_application();
+int main(int argc, char** argv) {
+  bool const toggle_requested = argc > 1 &&
+      std::string_view(argv[1]) == "--toggle";
+  return run_application(toggle_requested);
 }
