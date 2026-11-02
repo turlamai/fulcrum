@@ -294,6 +294,9 @@
   (define sql-q (string-replace raw-q "'" "''"))
   (string-append
    "$ErrorActionPreference='SilentlyContinue';"
+   ;; Windows PowerShell 5.1 defaults stdout to the OEM code page. Racket
+   ;; expects UTF-8, so Chinese/other Unicode file names can be mangled.
+   "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);"
    "$out=@();"
    "$q='" (ps-literal raw-q) "';"
    "$qs='" (ps-literal sql-q) "';"
@@ -309,7 +312,10 @@
    "$c.Close()"
    "}catch{};"
    "if($out.Count -gt 0){"
-   "$out|Select-Object -First 128|ForEach-Object{[System.Uri]::UnescapeDataString($_ -replace '^file:/+','')}"
+   ;; Preserve the original file: URLs. parse-paths does the one and only
+   ;; decode and knows how to retain UNC authorities and arbitrary drives.
+   ;; Stripping file:/+ here destroyed the leading //server/share.
+   "$out|Select-Object -First 128"
    "}else{"
    "Get-ChildItem -Path $env:USERPROFILE -Recurse -Depth 3 -Filter ('*'+$q+'*') -File -ErrorAction SilentlyContinue|Select-Object -First 128 -ExpandProperty FullName"
    "}"))
