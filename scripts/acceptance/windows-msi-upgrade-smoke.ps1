@@ -122,7 +122,7 @@ function Assert-InstalledColdLaunch([string]$label) {
 }
 
 function Get-OfficialMsi([string]$version) {
-  $base = "https://github.com/turinglambdaai/fulcrum/releases/download/v$version"
+  $base = "https://github.com/turlamai/fulcrum/releases/download/v$version"
   $filename = "fulcrum-$version-windows-x64.msi"
   $destination = Join-Path $root $filename
   $shaFile = "$destination.sha256"
