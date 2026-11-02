@@ -171,12 +171,12 @@ try {
         if ([FulcrumNative]::IsWindowVisible($mainHwnd)) {
             throw 'About unexpectedly summoned the hidden search launcher'
         }
+        $aboutHwnd = [IntPtr]::new([int64]$about.Current.NativeWindowHandle)
         $aboutWindow = [System.Windows.Automation.WindowPattern]$about.GetCurrentPattern(
             [System.Windows.Automation.WindowPattern]::Pattern)
         $aboutWindow.Close()
         [void](Wait-Until "About closed (attempt $attempt)" {
-            if (-not [FulcrumNative]::IsWindowVisible(
-                [IntPtr]::new([int64]$about.Current.NativeWindowHandle))) { return $true }
+            if (-not [FulcrumNative]::IsWindowVisible($aboutHwnd)) { return $true }
             return $false
         })
         if ($process.HasExited) { throw 'closing About terminated the resident process' }
