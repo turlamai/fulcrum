@@ -122,7 +122,7 @@
                (path->string (simple-form-path path))))))
 
 (define (scan-root! index-path root generation cancel status-box
-                    indexed completed total batch-size list-directory)
+                    indexed completed total batch-size list-directory on-progress)
   (define batch '())
   (define batch-count 0)
   (define count indexed)
@@ -140,6 +140,9 @@
       (set! batch '())
       (set! batch-count 0)
       (publish! 'scanning)
+      ;; A new searchable batch should refresh the current query, without
+      ;; requiring the user to type another character.
+      (on-progress)
       ;; Cooperatively yield between database batches so a large catalog does
       ;; not monopolize the embedded backend while the user keeps typing.
       (sleep 0)))
@@ -175,7 +178,8 @@
 
 (define (start-file-catalog! index-path roots
                              #:batch-size [batch-size 1000]
-                             #:list-directory [list-directory safe-directory-list])
+                             #:list-directory [list-directory safe-directory-list]
+                             #:on-progress [on-progress void])
   (unless (and (exact-positive-integer? batch-size) (<= batch-size 10000))
     (raise-argument-error 'start-file-catalog! "integer from 1 to 10000" batch-size))
   (define normalized-roots
@@ -185,6 +189,16 @@
        (simple-form-path root))
      string=? #:key path->string))
   (define cancel (make-semaphore 0))
+  ;; Throttle search-revision notifications on large directory trees; always
+  ;; notify when scanning finishes. Callback failure must not abort indexing.
+  (define last-notified #f)
+  (define (notify-progress! [force? #f])
+    (define now (current-inexact-milliseconds))
+    (when (or force? (not last-notified)
+              (>= (- now last-notified) 750))
+      (set! last-notified now)
+      (with-handlers ([exn:fail? (lambda (_) (void))])
+        (on-progress))))
   (define status
     (box (file-catalog-status 'starting 0 0 (length normalized-roots) #f)))
   (define worker-thread
@@ -197,7 +211,8 @@
                (set-box! status
                          (struct-copy file-catalog-status previous
                                       [state 'failed]
-                                      [error (exn-message exn)])))])
+                                      [error (exn-message exn)]))
+               (notify-progress! #t))])
          (define indexed 0)
          (define completed 0)
          (define partial? #f)
@@ -212,7 +227,7 @@
            (define-values (outcome next-indexed)
              (scan-root! index-path root generation cancel status
                          indexed completed (length normalized-roots) batch-size
-                         list-directory))
+                         list-directory notify-progress!))
            (set! indexed next-indexed)
            (case outcome
              [(complete)
@@ -227,7 +242,8 @@
                     (cond [(cancelled? cancel) 'cancelled]
                           [partial? 'partial]
                           [else 'ready])
-                    indexed completed (length normalized-roots) #f))))))
+                    indexed completed (length normalized-roots) #f))
+         (notify-progress! #t))))))
   (file-catalog-worker worker-thread cancel status))
 
 (define (stop-file-catalog! worker)
