@@ -630,15 +630,15 @@
                               #:index-path (engine-file-index-path engine))])
                  (case (file-search-result-status search)
                    [(ok)
-                    (define hits (file-search-result-hits search))
-                    (if (null? hits)
-                        (list (file-search-empty-row engine))
-                        (for/list ([hit (in-list hits)])
-                          (result "file.open" (car hit)
-                                  (cdr hit) "File"
-                                  (cdr hit) "doc" "" ""
-                                  (car hit)
-                                  85)))]
+                    (let ([hits (file-search-result-hits search)])
+                      (if (null? hits)
+                          (list (file-search-empty-row engine))
+                          (for/list ([hit (in-list hits)])
+                            (result "file.open" (car hit)
+                                    (cdr hit) "File"
+                                    (cdr hit) "doc" "" ""
+                                    (car hit)
+                                    85))))]
                    [(timeout)
                     (list
                      (result "noop"
