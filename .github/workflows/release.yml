@@ -488,17 +488,26 @@ jobs:
           prerelease=false
           if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then prerelease=true; fi
           release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
+          # For a draft whose tag_name references an existing ref (the gate
+          # mints the tag before dispatching this workflow), GitHub detaches
+          # the name server-side and reports an untagged-<hash> placeholder
+          # until publication (#146). Draft identity is anchored on the
+          # numeric REST id; the tag name is accepted in both its requested
+          # and detached shapes. Everything else stays strict, and the
+          # publication check keeps demanding the exact tag name.
           printf '%s\n' "$release_json" | jq -e --arg tag "$GITHUB_REF_NAME" \
             --argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA" \
             --argjson prerelease "$prerelease" \
-            '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
-            echo "::error::Created GitHub draft is untagged or does not match the requested tag; refusing further release actions"
+            '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
+            echo "::error::Created GitHub draft identity does not match the requested release; refusing further release actions"
             exit 1
           }
       - name: Stable alias copies (versionless direct-download links)
         if: ${{ !contains(github.ref_name, '-rc.') }}
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.create-release.outputs.id }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
@@ -522,7 +531,20 @@ jobs:
             # follow what the release actually contains.
             if [ -f "release/$src" ]; then cp "release/$src" "stable-alias/$dst"; fi
           done
-          gh release upload "$GITHUB_REF_NAME" stable-alias/* --clobber -R turlamai/fulcrum
+          # Upload through the numeric REST id, delete-then-upload for
+          # clobber semantics: tag-addressed release operations resolve
+          # through the tag name, which GitHub detaches to untagged-<hash>
+          # on drafts referencing an existing ref (#146).
+          assets_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
+          for f in stable-alias/*; do
+            name="$(basename "$f")"
+            while IFS=$'\t' read -r aid; do
+              [[ -n "$aid" ]] && gh api -X DELETE "repos/$GH_REPO/releases/assets/$aid" >/dev/null
+            done < <(printf '%s\n' "$assets_json" | jq -r --arg n "$name" '.assets[] | select(.name == $n) | .id')
+            gh api --method POST "repos/$GH_REPO/releases/$RELEASE_ID/assets?name=${name}" \
+              -H "Content-Type: application/octet-stream" \
+              --input "$f" >/dev/null
+          done
 
   publish:
     name: Verify assets and publish release
@@ -610,11 +632,14 @@ jobs:
           # gh release view by tag may fail for drafts. The numeric REST release
           # id was resolved above; verify it is still the expected draft before
           # checking assets. Never accept a different tag or published release.
+          # The tag name may still be GitHub's untagged-<hash> placeholder for
+          # a draft referencing an existing ref (#146); the publication PATCH
+          # below rebinds it, and the post-publish check demands it exactly.
           release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
           printf '%s\n' "$release_json" | jq -e --arg tag "$tag" \
             --argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA" \
             --argjson prerelease "$prerelease" \
-            '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
+            '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
             echo "::error::Draft release metadata mismatch for $tag"; exit 1;
           }
           assets="$(printf '%s\n' "$release_json" | jq -r '.assets[].name')"

@@ -57,7 +57,15 @@ fi
 # The release must be checked by numeric REST id before and after publication.
 require 'release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
 require 'published_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
-require '(.tag_name == $tag) and (.draft == true) and (.prerelease == $prerelease)'
+# Drafts referencing an existing tag carry GitHub's untagged-<hash>
+# placeholder until publication (#146): both draft-stage identity gates
+# must accept the detached shape while staying strict on REST id, SHA and
+# channel — and the publication confirmation must still demand the exact
+# tag name on a published release.
+[[ "$(grep -Fc '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease)' "$release")" == 2 ]] || {
+  echo 'release-safety: expected the anomaly-tolerant draft identity gate in both creator and publisher' >&2
+  exit 1
+}
 require '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease)'
 # Ensure creation identity gate precedes versionless public-facing aliases.
 draft_gate_line="$(grep -n -m1 'name: Confirm exact draft identity before uploading stable aliases' "$release" | cut -d: -f1)"
