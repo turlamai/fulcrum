@@ -243,10 +243,15 @@
       ;; on a shared CI runner. In that case a visible timeout explanation is
       ;; the correct product behavior; never mistake it for missing tools.
       (check-true
-       (or (andmap (lambda (r) (equal? (row-id r) "file.open")) file-rows)
+       (or (and (pair? file-rows)
+                (andmap (lambda (r) (equal? (row-id r) "file.open")) file-rows))
            (and (= (length file-rows) 1)
                 (equal? (row-id (car file-rows)) "noop")
-                (string-contains? (list-ref (car file-rows) 1) "timed out"))))
+                (let ([title (list-ref (car file-rows) 1)])
+                  (or (string-contains? title "timed out")
+                      ;; Empty system results no longer silently return
+                      ;; zero rows. The index/scope limitation is explicit.
+                      (string-contains? title "No matching files"))))))
       ;; Everywhere else: exactly one honest explanation, which runs to a
       ;; quiet refusal.
       (begin
