@@ -6,6 +6,22 @@ independently per platform packaging run.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stable releases promote unattended again.** For a draft referencing an
+  already-minted tag, GitHub detaches the tag name server-side and reports
+  an `untagged-<hash>` placeholder until publication — so the release
+  workflow's draft-identity gate demanded a field GitHub itself replaces,
+  and every gate-minted stable promotion failed at the last step
+  (v0.14.2's publish job; manual recovery applied). Draft identity is now
+  anchored on the numeric REST id and accepts both the requested and
+  detached tag-name shapes; version, commit, channel and draft state stay
+  strict, and the post-publication check still demands the exact tag name
+  on a published release. Stable alias uploads address the draft by its
+  REST id with delete-then-upload clobber semantics instead of resolving
+  through the detached tag name, and the offline contract tests and the
+  CI static gate pin the new shape in both directions.
+
 ## [0.14.2] - 2026-11-02
 
 ### Fixed
