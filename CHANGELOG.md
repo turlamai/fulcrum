@@ -8,6 +8,14 @@ independently per platform packaging run.
 
 ### Fixed
 
+- **macOS update dialog Close now actually dismisses the window.** The
+  previous Close buttons only changed a SwiftUI boolean while the real
+  AppKit window stayed open. Since the idle state reused the checking
+  spinner, closing a finished update check looked like an endless new
+  check. The Close buttons and native title-bar close now hide the same
+  window, idle no longer spins, in-flight dismissed checks cannot revive
+  the panel, and reopening does not launch duplicate checks. Closing
+  during download keeps the download running; Cancel remains explicit.
 - **Stable releases promote unattended again.** For a draft referencing an
   already-minted tag, GitHub detaches the tag name server-side and reports
   an `untagged-<hash>` placeholder until publication — so the release
