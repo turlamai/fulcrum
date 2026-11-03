@@ -17,8 +17,7 @@
 ## macOS 安装（开发者预览版）
 
 前往 [GitHub Releases](https://github.com/turlamai/fulcrum/releases/latest)，按芯片选择
-[Apple Silicon（M 系列）DMG](https://github.com/turlamai/fulcrum/releases/latest/download/fulcrum-macos-arm64.dmg)
-或 [Intel DMG](https://github.com/turlamai/fulcrum/releases/latest/download/fulcrum-macos-x64.dmg)。
+在[最新 GitHub Release 页面](https://github.com/turlamai/fulcrum/releases/latest)中选择 `fulcrum-<版本>-macos-arm64.dmg`（Apple Silicon / M 系列），或 `fulcrum-<版本>-macos-x64.dmg`（Intel）。安装包名称均包含明确版本号，不再重复上传无版本号副本。
 打开 **DMG**，把 **Fulcrum 图标拖到 Applications（应用程序）文件夹**，推出安装磁盘映像，再从**应用程序文件夹**启动 Fulcrum。不要直接从 DMG 中运行。
 
 **安全提示：** 当前版本的自动发布流程使用开发用临时签名，**尚未提供 Apple Developer ID 公证**，所以首次启动时可能被 Gatekeeper 拦截。请先确认下载自官方 Releases，再依据 [Apple 官方说明](https://support.apple.com/102445) 决定是否手动允许打开。**不建议关闭 Gatekeeper 或用 `xattr -cr` 清除隔离信息。** 在使用需要权限的功能时再授权「辅助功能」，详见 [macOS 初次安装与启动](docs/user-guide.zh-CN.md#macos-安装与首次启动)。
