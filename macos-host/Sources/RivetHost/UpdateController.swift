@@ -105,7 +105,22 @@ final class UpdateController: ObservableObject {
         AppDelegate.shared?.hideUpdatePanel()
     }
 
+    // Native host acceptance uses an offline fixture so update-dialog
+    // interaction checks cannot race the automatic network polling timer.
+    func presentCompletedCheckForAcceptance() {
+        guard ProcessInfo.processInfo.environment["FULCRUM_ACCEPTANCE"] == "1" else { return }
+        manualCheckTask?.cancel()
+        manualCheckTask = nil
+        checkGeneration &+= 1
+        pendingManifest = nil
+        errorMessage = ""
+        phase = .upToDate
+        panelVisible = true
+        AppDelegate.shared?.showUpdatePanel()
+    }
+
     func silentStartupCheck() {
+        guard ProcessInfo.processInfo.environment["FULCRUM_ACCEPTANCE"] != "1" else { return }
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard phase != .downloading else { return }
