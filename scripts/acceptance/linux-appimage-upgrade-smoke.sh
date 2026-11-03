@@ -16,7 +16,7 @@ trap 'rm -rf "$work"' EXIT
 fetch_release() {
   local version="$1"
   local filename="fulcrum-${version}-${suffix}"
-  local base="https://github.com/turinglambdaai/fulcrum/releases/download/v${version}"
+  local base="https://github.com/turlamai/fulcrum/releases/download/v${version}"
   curl --fail --location --silent --show-error --retry 4 \
     --connect-timeout 15 --max-time 300 "$base/$filename" -o "$work/$filename"
   curl --fail --location --silent --show-error --retry 4 \

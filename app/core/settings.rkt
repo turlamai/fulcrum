@@ -78,7 +78,7 @@
    (list (lambda (v) (and (string? v)
                           (or (string-prefix? v "https://")
                               (string-prefix? v "http://"))))
-         "https://github.com/turinglambdaai/fulcrum/releases/latest/download"
+         "https://github.com/turlamai/fulcrum/releases/latest/download"
          "Base URL the updater fetches the channel manifest from")
    'update-last-check
    (list (lambda (v) (and (exact-integer? v) (>= v 0))) 0

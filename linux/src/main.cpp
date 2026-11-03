@@ -876,7 +876,7 @@ void show_about_dialog(GtkWindow* parent) {
   gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(dialog), rivet_app::kVersion);
   std::string const comments =
       tr("aboutContent") + "\n" + tr("aboutReportIssue") +
-      ": github.com/turinglambdaai/fulcrum/issues";
+      ": github.com/turlamai/fulcrum/issues";
   gtk_about_dialog_set_comments(GTK_ABOUT_DIALOG(dialog), comments.c_str());
   std::string const license = tr("aboutLicense");
   gtk_about_dialog_set_license(GTK_ABOUT_DIALOG(dialog), license.c_str());

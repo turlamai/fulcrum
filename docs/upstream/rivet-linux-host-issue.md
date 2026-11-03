@@ -1,9 +1,9 @@
 # Upstream proposal: Linux host for Rivet
 
-> Draft GitHub issue for [turinglambdaai/rivet](https://github.com/turinglambdaai/rivet).
+> Draft GitHub issue for [turlamai/rivet](https://github.com/turlamai/rivet).
 > Paste as-is when opening the issue; the PR (if wanted) references it.
 > Status of evidence below: every claim was exercised while building
-> [Fulcrum](https://github.com/turinglambdaai/fulcrum), whose Linux host is
+> [Fulcrum](https://github.com/turlamai/fulcrum), whose Linux host is
 > the working prototype this proposal points at.
 
 ---
@@ -20,7 +20,7 @@ Linux stack (GNOME's supported toolkit, same role WinUI 3 and SwiftUI play
 on Windows/macOS), so the scope argument that excludes Linux may not apply.
 This issue proposes `platform/linux/` and offers a validated prototype.
 
-**Prototype:** [`turinglambdaai/fulcrum` → `linux/`](https://github.com/turinglambdaai/fulcrum/tree/main/linux) — built for
+**Prototype:** [`turlamai/fulcrum` → `linux/`](https://github.com/turlamai/fulcrum/tree/main/linux) — built for
 Fulcrum (a Rivet application), compiles as a CI smoke, runs headless under
 Xvfb; not yet wired into `raco rivet build`.
 
