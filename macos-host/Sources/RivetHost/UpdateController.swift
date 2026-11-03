@@ -34,6 +34,7 @@ final class UpdateController: ObservableObject {
     private weak var model: LauncherModel?
     private var pendingManifest: RivetUpdateManifest?
     private var downloadTask: Task<Void, Never>?
+    private var manualCheckTask: Task<Void, Never>?
     // A dismissed check must not repaint or reopen a window after an
     // in-flight URLSession request eventually completes.
     private var checkGeneration = 0
@@ -80,7 +81,8 @@ final class UpdateController: ObservableObject {
         // Reopening while a check is in flight should reveal its progress,
         // not start another request. Downloads also survive dismissal.
         guard phase != .downloading && phase != .checking else { return }
-        Task { [weak self] in
+        manualCheckTask?.cancel()
+        manualCheckTask = Task { [weak self] in
             guard let self, self.panelVisible else { return }
             await self.check(manual: true)
         }
@@ -90,6 +92,11 @@ final class UpdateController: ObservableObject {
         panelVisible = false
         if phase == .checking {
             checkGeneration &+= 1
+            // Cancellation stops a manual URLSession fetch; generation
+            // invalidation also covers silent checks and races with a
+            // response already delivered by the networking stack.
+            manualCheckTask?.cancel()
+            manualCheckTask = nil
         }
         // A download continues if the user chooses Close, not Cancel.
         if phase != .downloading {
