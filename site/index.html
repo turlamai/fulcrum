@@ -365,7 +365,7 @@ html:lang(en) .reader-zh,html:lang(zh) .reader-en{display:none!important}@media(
                 var suffix = {mac: 'macos-' + arch + '.dmg', win: 'windows-x64.msi', linux: 'linux-' + arch + '.tar.gz'}[os];
                 var url = page;
                 if (release && !release.draft && !release.prerelease &&
-                    /^v[0-9]+\\.[0-9]+\\.[0-9]+$/.test(release.tag_name)) {
+                    /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(release.tag_name)) {
                     var name = 'fulcrum-' + release.tag_name.slice(1) + '-' + suffix;
                     var exact = 'https://github.com/turlamai/fulcrum/releases/download/' + release.tag_name + '/' + name;
                     var asset = (release.assets || []).find(function (a) { return a.name === name && a.size > 0 && a.browser_download_url === exact; });
