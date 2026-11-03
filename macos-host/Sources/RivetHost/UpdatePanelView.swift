@@ -23,7 +23,7 @@ struct UpdatePanelView: View {
         VStack(spacing: 18) {
             switch controller.phase {
             case .idle:
-                checking
+                idle
             case .checking:
                 checking
             case .upToDate:
@@ -38,6 +38,17 @@ struct UpdatePanelView: View {
         }
         .padding(28)
         .frame(width: 380)
+    }
+
+    // Idle is a deliberate, non-spinning state; no network work is active.
+    private var idle: some View {
+        VStack(spacing: 14) {
+            Button(controller.t("updateCheckNow")) {
+                controller.checkForUpdates()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(minHeight: 120)
     }
 
     private var checking: some View {
@@ -76,8 +87,7 @@ struct UpdatePanelView: View {
                 .multilineTextAlignment(.center)
             HStack(spacing: 10) {
                 Button(controller.t("updateClose")) {
-                    controller.panelVisible = false
-                    controller.phase = .idle
+                    controller.dismissPanel()
                 }
                 .keyboardShortcut(.cancelAction)
                 Button(controller.t("updateDownload") + " → " +
@@ -115,7 +125,7 @@ struct UpdatePanelView: View {
                 Button(controller.t("updateClose")) {
                     // Dismissing does not cancel a verified transaction;
                     // Cancel explicitly stops the transfer.
-                    controller.panelVisible = false
+                    controller.dismissPanel()
                 }
             }
         }
@@ -137,8 +147,7 @@ struct UpdatePanelView: View {
                 .frame(maxWidth: 320)
             HStack(spacing: 10) {
                 Button(controller.t("updateClose")) {
-                    controller.panelVisible = false
-                    controller.phase = .idle
+                    controller.dismissPanel()
                 }
                 .keyboardShortcut(.cancelAction)
                 Button(controller.t("updateRetry")) {
@@ -151,8 +160,7 @@ struct UpdatePanelView: View {
 
     private var closeButtons: some View {
         Button(controller.t("updateClose")) {
-            controller.panelVisible = false
-            controller.phase = .idle
+            controller.dismissPanel()
         }
         .keyboardShortcut(.defaultAction)
     }
