@@ -34,6 +34,9 @@ final class UpdateController: ObservableObject {
     private weak var model: LauncherModel?
     private var pendingManifest: RivetUpdateManifest?
     private var downloadTask: Task<Void, Never>?
+    // A dismissed check must not repaint or reopen a window after an
+    // in-flight URLSession request eventually completes.
+    private var checkGeneration = 0
 
     // Never store a signing private key in the app. The feed URL is allowed
     // to move to latest, but the signature key identity is pinned here.
@@ -74,8 +77,22 @@ final class UpdateController: ObservableObject {
 
     func checkForUpdates() {
         panelVisible = true
-        guard phase != .downloading else { return }
+        // Reopening while a check is in flight should reveal its progress,
+        // not start another request. Downloads also survive dismissal.
+        guard phase != .downloading && phase != .checking else { return }
         Task { await check(manual: true) }
+    }
+
+    func dismissPanel() {
+        panelVisible = false
+        if phase == .checking {
+            checkGeneration &+= 1
+        }
+        // A download continues if the user chooses Close, not Cancel.
+        if phase != .downloading {
+            phase = .idle
+        }
+        AppDelegate.shared?.hideUpdatePanel()
     }
 
     func silentStartupCheck() {
@@ -95,7 +112,7 @@ final class UpdateController: ObservableObject {
     }
 
     func check(manual: Bool) async {
-        guard phase != .downloading else { return }
+        guard phase != .downloading && phase != .checking else { return }
         // Preserve the 4-hour silent throttle; a manual check always
         // bypasses it. Store the timestamp across relaunches.
         if !manual {
@@ -106,10 +123,12 @@ final class UpdateController: ObservableObject {
             }
             defaults.set(Date(), forKey: Self.lastCheckKey)
         }
+        checkGeneration &+= 1
+        let generation = checkGeneration
         phase = .checking
         errorMessage = ""
         pendingManifest = nil
-        guard let updater else {
+        guard updater != nil else {
             errorMessage = t("updateCheckFailed", "native update configuration unavailable")
             phase = .failed
             return
@@ -121,7 +140,9 @@ final class UpdateController: ObservableObject {
             // sticky rollout bucket, architecture and zip installer.
             // RivetUpdateService.check() only compares versions, and must
             // not decide installation eligibility by itself.
-            if let manifest = try await fetchEligibleManifest() {
+            let eligibleManifest = try await fetchEligibleManifest()
+            guard generation == checkGeneration else { return }
+            if let manifest = eligibleManifest {
                 guard let artifact = manifest.artifact(forPlatform: "macos") else {
                     throw RivetUpdateError.manifestMissing
                 }
@@ -137,6 +158,7 @@ final class UpdateController: ObservableObject {
                 phase = .upToDate
             }
         } catch {
+            guard generation == checkGeneration else { return }
             errorMessage = t("updateCheckFailed", Self.cleanError(error))
             phase = .failed
         }
