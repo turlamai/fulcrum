@@ -47,6 +47,9 @@
   (check-true (string-contains? controller "checkGeneration &+= 1"))
   (check-true (string-contains? controller "manualCheckTask?.cancel()"))
   (check-true (string-contains? controller "manualCheckTask = nil"))
+  (check-true (string-contains? controller
+                                "return\n        }\n        defaults.set(Date(), forKey: Self.lastCheckKey)"))
+
   (check-true (>= (length (regexp-match* #rx"guard generation == checkGeneration else" controller)) 2)
               "both a successful feed response and an error must honor Close")
   (check-true (string-contains? app "guard controller.panelVisible else { return }"))
