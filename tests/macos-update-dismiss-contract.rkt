@@ -39,6 +39,8 @@
 (test-case "a dismissed asynchronous check cannot repaint or re-open the panel"
   (check-true (string-contains? controller "private var checkGeneration = 0"))
   (check-true (string-contains? controller "checkGeneration &+= 1"))
+  (check-true (string-contains? controller "manualCheckTask?.cancel()"))
+  (check-true (string-contains? controller "manualCheckTask = nil"))
   (check-true (>= (length (regexp-match* #rx"guard generation == checkGeneration else" controller)) 2)
               "both a successful feed response and an error must honor Close")
   (check-true (string-contains? app "guard controller.panelVisible else { return }"))
