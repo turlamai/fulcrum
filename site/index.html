@@ -125,7 +125,7 @@ html:lang(en) .reader-zh,html:lang(zh) .reader-en{display:none!important}@media(
             <p class="lead animate-on-scroll" data-i18n="hero.lead">Fulcrum（支点）是 macOS、Windows 与 Linux 上的键盘优先启动器。按下全局热键，浮出命令面板：模糊搜索应用与文件、回溯剪贴板历史、展开片段、随手计算、发起网络搜索、运行插件——一切都在本机完成。</p>
 
             <div class="hero-buttons animate-on-scroll">
-                <a href="https://github.com/turlamai/fulcrum/releases/latest/download/fulcrum-macos-arm64.dmg" class="btn btn-primary" data-i18n="hero.cta-primary">下载 macOS 版</a>
+                <a href="https://github.com/turlamai/fulcrum/releases/latest" class="btn btn-primary" data-i18n="hero.cta-primary">下载 macOS 版</a>
                 <a href="guide.html" class="btn btn-secondary" data-i18n="hero.cta-docs">阅读文档</a>
                 <a href="https://github.com/turlamai/fulcrum/releases" class="btn btn-secondary" data-i18n="hero.all-releases">全部版本</a>
             </div>
@@ -349,39 +349,43 @@ html:lang(en) .reader-zh,html:lang(zh) .reader-en{display:none!important}@media(
 <nav id="product-support" aria-label="Support / 支持"><a href="https://github.com/turlamai/fulcrum/issues"><span class="support-zh">反馈</span><span class="support-en" lang="en">Feedback</span></a> <a href="https://github.com/turlamai/fulcrum/releases"><span class="support-zh">发布与更新</span><span class="support-en" lang="en">Releases</span></a> <a href="https://github.com/turlamai/fulcrum/blob/main/LICENSE"><span class="support-zh">源码许可</span><span class="support-en" lang="en">Source license</span></a> <a class="support-zh" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.zh-CN.md">使用与帮助</a> <a class="support-en" lang="en" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.md">Usage & help</a></nav>
 
     <script>
-        // Platform-aware direct download: point the hero CTA at the stable
-        // versionless alias for the visitor's OS and switch its i18n key
-        // before the language pass below runs, so the label matches too.
+        // Resolve canonical versioned assets for the visitor's OS. If the
+        // GitHub API is unavailable, the stable Release page remains usable.
+        // No versionless binary alias is required in the published assets.
         (function () {
-            var BASE = 'https://github.com/turlamai/fulcrum/releases/latest/download/';
+            var page = 'https://github.com/turlamai/fulcrum/releases/latest';
             var ua = navigator.userAgent;
             var os = /Windows/i.test(ua) ? 'win' : (/Mac|iPhone|iPad/i.test(ua) ? 'mac' : (/Linux|X11/i.test(ua) ? 'linux' : 'mac'));
-            // Linux UAs reveal ARM; macOS UAs do not, so mac defaults to the
-            // Apple Silicon build (the majority); Chromium refines below.
             var arch = os === 'linux' && /aarch64|arm/i.test(ua) ? 'arm64' : (os === 'linux' ? 'x64' : 'arm64');
-            // Linux ships the portable tar.gz as the direct download; the
-            // native installers (deb/rpm/AppImage) return with the next
-            // release once the upstream packaging fix is pinned.
-            var file = {
-                mac: 'fulcrum-macos-' + arch + '.dmg',
-                win: 'fulcrum-windows-x64.msi',
-                linux: 'fulcrum-linux-' + arch + '.tar.gz'
-            }[os];
-            var url = BASE + file;
-            var key = 'hero.cta-' + { mac: 'mac', win: 'win', linux: 'linux' }[os];
-            document.querySelectorAll('a[data-i18n="hero.cta-primary"]').forEach(function (a) {
-                a.href = url;
-                a.setAttribute('data-i18n', key);
-            });
+            var release = null;
+            var links = document.querySelectorAll('a[data-i18n="hero.cta-primary"]');
+            var key = 'hero.cta-' + {mac: 'mac', win: 'win', linux: 'linux'}[os];
+            links.forEach(function (a) { a.setAttribute('data-i18n', key); });
+            function updateDownload() {
+                var suffix = {mac: 'macos-' + arch + '.dmg', win: 'windows-x64.msi', linux: 'linux-' + arch + '.tar.gz'}[os];
+                var url = page;
+                if (release && !release.draft && !release.prerelease &&
+                    /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(release.tag_name)) {
+                    var name = 'fulcrum-' + release.tag_name.slice(1) + '-' + suffix;
+                    var exact = 'https://github.com/turlamai/fulcrum/releases/download/' + release.tag_name + '/' + name;
+                    var asset = (release.assets || []).find(function (a) { return a.name === name && a.size > 0 && a.browser_download_url === exact; });
+                    if (asset) url = exact;
+                }
+                links.forEach(function (a) { a.href = url; });
+            }
+            updateDownload();
             if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
                 navigator.userAgentData.getHighEntropyValues(['architecture', 'platform']).then(function (h) {
-                    if (!h || /Windows/i.test(h.platform || '')) return; // windows ships x64-only
-                    var a = h.architecture === 'arm' ? 'arm64' : (h.architecture === 'x86' ? 'x64' : null);
-                    if (!a || a === arch) return;
-                    var f = os === 'mac' ? 'fulcrum-macos-' + a + '.dmg' : 'fulcrum-linux-' + a + '.tar.gz';
-                    document.querySelectorAll('a[href="' + url + '"]').forEach(function (x) { x.href = BASE + f; });
+                    if (!h || /Windows/i.test(h.platform || '')) return;
+                    var resolved = h.architecture === 'arm' ? 'arm64' : (h.architecture === 'x86' ? 'x64' : null);
+                    if (resolved && resolved !== arch) { arch = resolved; updateDownload(); }
                 }).catch(function () {});
             }
+            fetch('https://api.github.com/repos/turlamai/fulcrum/releases/latest',
+                  {headers: {'Accept': 'application/vnd.github+json'}})
+                .then(function (r) { if (!r.ok) throw new Error('release lookup'); return r.json(); })
+                .then(function (data) { release = data; updateDownload(); })
+                .catch(function () { /* The Releases page is the safe fallback. */ });
         })();
     </script>
     <script>

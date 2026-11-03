@@ -457,8 +457,16 @@ jobs:
           cp artifacts/channel-manifest/update-manifest.json release/
           # byte-identical alias for pre-0.8.0 clients polling manifest.json
           cp artifacts/channel-manifest/manifest.json release/
-          (cd release && cat *.sha256 > SHA256SUMS)
-          ls -la release/
+          # Verify all release payloads before staging public downloads.
+          (cd release && cat *.sha256 | sed 's/ \*/  /' | LC_ALL=C sort -k2 > SHA256SUMS && sha256sum -c SHA256SUMS)
+          mkdir -p public
+          while read -r _ name; do
+            test -s "release/$name" || { echo "::error::Missing or empty $name"; exit 1; }
+            cp "release/$name" "public/$name"
+          done < release/SHA256SUMS
+          cp release/SHA256SUMS release/update-manifest.json release/manifest.json public/
+          (cd public && sha256sum -c SHA256SUMS)
+          ls -la public/
       - uses: softprops/action-gh-release@v2
         id: create-release
         with:
@@ -469,11 +477,11 @@ jobs:
           make_latest: ${{ contains(github.ref_name, '-rc.') && 'false' || 'true' }}
           generate_release_notes: true
           files: |
-            release/fulcrum-*
-            release/SHA256SUMS
-            release/update-manifest.json
-            release/manifest.json
-      - name: Confirm exact draft identity before uploading stable aliases
+            public/fulcrum-*
+            public/SHA256SUMS
+            public/update-manifest.json
+            public/manifest.json
+      - name: Confirm exact draft identity before pruning stale assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -502,49 +510,23 @@ jobs:
             echo "::error::Created GitHub draft identity does not match the requested release; refusing further release actions"
             exit 1
           }
-      - name: Stable alias copies (versionless direct-download links)
-        if: ${{ !contains(github.ref_name, '-rc.') }}
+      - name: Prune stale or build-only draft assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_ID: ${{ steps.create-release.outputs.id }}
+        shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          # Family rule: download buttons point at
-          # releases/latest/download/<alias>, so every release also ships
-          # versionless copies of the primary installers. Aliases are
-          # overwritten on each release; the versioned assets stay canonical.
-          mkdir -p stable-alias
-          for pair in \
-            "fulcrum-${VERSION}-macos-arm64.dmg fulcrum-macos-arm64.dmg" \
-            "fulcrum-${VERSION}-macos-x64.dmg fulcrum-macos-x64.dmg" \
-            "fulcrum-${VERSION}-windows-x64.msi fulcrum-windows-x64.msi" \
-            "fulcrum-${VERSION}-linux-x64.tar.gz fulcrum-linux-x64.tar.gz" \
-            "fulcrum-${VERSION}-linux-arm64.tar.gz fulcrum-linux-arm64.tar.gz" \
-            "fulcrum-${VERSION}-linux-amd64.deb fulcrum-linux-x64.deb" \
-            "fulcrum-${VERSION}-linux-arm64.deb fulcrum-linux-arm64.deb" \
-            "fulcrum-${VERSION}-linux-x86_64.AppImage fulcrum-linux-x64.AppImage" \
-            "fulcrum-${VERSION}-linux-aarch64.AppImage fulcrum-linux-arm64.AppImage"; do
-            src="${pair%% *}"; dst="${pair##* }"
-            # Native Linux installers may be absent in a release; aliases
-            # follow what the release actually contains.
-            if [ -f "release/$src" ]; then cp "release/$src" "stable-alias/$dst"; fi
-          done
-          # Upload through the numeric REST id, delete-then-upload for
-          # clobber semantics: tag-addressed release operations resolve
-          # through the tag name, which GitHub detaches to untagged-<hash>
-          # on drafts referencing an existing ref (#146).
-          assets_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
-          for f in stable-alias/*; do
-            name="$(basename "$f")"
-            while IFS=$'\t' read -r aid; do
-              [[ -n "$aid" ]] && gh api -X DELETE "repos/$GH_REPO/releases/assets/$aid" >/dev/null
-            done < <(printf '%s\n' "$assets_json" | jq -r --arg n "$name" '.assets[] | select(.name == $n) | .id')
-            gh api --method POST "repos/$GH_REPO/releases/$RELEASE_ID/assets?name=${name}" \
-              -H "Content-Type: application/octet-stream" \
-              --input "$f" >/dev/null
-          done
+          # Reruns prune sidecars and aliases; the draft's exact identity
+          # was already verified against the tag, SHA, and numeric REST id.
+          gh api "repos/$GH_REPO/releases/$RELEASE_ID/assets?per_page=100" \
+            --jq '.[] | [.id, .name] | @tsv' |
+            while IFS=$'\t' read -r id name; do
+              if [[ ! -f "public/$name" ]]; then
+                gh api -X DELETE "repos/$GH_REPO/releases/assets/$id" >/dev/null
+              fi
+            done
 
   publish:
     name: Verify assets and publish release
@@ -647,26 +629,36 @@ jobs:
             "fulcrum-${version}-macos-arm64.dmg" \
             "fulcrum-${version}-macos-x64.dmg" \
             "fulcrum-${version}-windows-x64.msi" \
+            "fulcrum-${version}-macos-arm64.zip" \
+            "fulcrum-${version}-macos-x64.zip" \
+            "fulcrum-${version}-windows-x64.zip" \
+            "fulcrum-${version}-linux-arm64.zip" \
+            "fulcrum-${version}-linux-x64.zip" \
+            "fulcrum-${version}-linux-amd64.deb" \
+            "fulcrum-${version}-linux-arm64.deb" \
+            "fulcrum-${version}-linux-x86_64.AppImage" \
+            "fulcrum-${version}-linux-aarch64.AppImage" \
             "fulcrum-${version}-linux-x64.tar.gz" \
             "fulcrum-${version}-linux-arm64.tar.gz" \
             "fulcrum-${version}-linux-x64.tar.gz.sig" \
             "fulcrum-${version}-linux-arm64.tar.gz.sig" \
             "update-manifest.json" "manifest.json" "SHA256SUMS")
-          # Native Linux installers (deb/rpm/AppImage) are optional: they are
-          # absent while the rivet linux-formats packaging bug is pinned out.
-          if [[ "$prerelease" == false ]]; then
-            # Versionless download aliases; native Linux installers are
-            # optional while the rivet linux-formats bug is pinned out.
-            required+=(
-              "fulcrum-macos-arm64.dmg"
-              "fulcrum-macos-x64.dmg"
-              "fulcrum-windows-x64.msi")
-          fi
+          # Complete stable releases require all native Linux installers.
+          # RPM uses a distinct package build revision.
           for name in "${required[@]}"; do
             printf '%s\n' "$assets" | grep -Fx "$name" || {
               echo "::error::Missing release asset $name"; exit 1;
             }
           done
+          for rpm_arch in x86_64 aarch64; do
+            printf '%s\n' "$assets" | grep -Eq "^fulcrum-${version}-[0-9]+-linux-${rpm_arch}\.rpm$" || {
+              echo "::error::Missing Linux RPM for $rpm_arch"; exit 1;
+            }
+          done
+          if printf '%s\n' "$assets" | grep -Eq '(\.sha256$|^fulcrum-(macos|windows|linux)-)'; then
+            echo "::error::Redundant checksum sidecar or versionless alias leaked to release"
+            exit 1
+          fi
           gh api -X PATCH "repos/$GH_REPO/releases/$RELEASE_ID" \
             -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f name="$tag" \
             -F draft=false -F prerelease="$prerelease" \

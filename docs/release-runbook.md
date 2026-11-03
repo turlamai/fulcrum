@@ -80,11 +80,12 @@ x64, Windows x64, Linux x64):
    (`fulcrum-<version>-macos-<arch>.dmg` / `.zip`,
    `fulcrum-<version>-windows-x64.msi`,
    `fulcrum-<version>-linux-x64.tar.gz`), writes a `.sha256` sidecar per
-   artifact, and uploads them;
+   artifact, and retains those individual checksum sidecars in the CI artifacts;
 5. the publish job signs one channel manifest pinning all artifacts
    (macOS clients are served the portable zip for their architecture),
-   assembles `SHA256SUMS` from the sidecars, and drafts the GitHub
-   release. Manifest URLs are tag-pinned
+   verifies the exact payload bytes, assembles one deterministic
+   `SHA256SUMS` from the sidecars, and drafts the GitHub release with
+   only versioned binaries, signed update metadata and that checksum file. Manifest URLs are tag-pinned
    (`releases/download/<tag>/<artifact>`) — never re-upload under an
    existing version URL. The app itself fetches `manifest.json` under its
    `update-base-url` setting (default
@@ -123,10 +124,11 @@ pass CI and Product Acceptance, then tag that commit. Do not merge the numeric
 version bump to `main`, because the main-branch version gate would create a
 stable tag automatically.
 
-The workflow marks an RC as a GitHub prerelease, never uploads the versionless
-stable aliases, and explicitly sets `make_latest=false`. Therefore
-`releases/latest/download/update-manifest.json` and all stable download buttons
-continue resolving to the last stable release. The RC still carries its own
+The workflow marks an RC as a GitHub prerelease and explicitly sets
+`make_latest=false`. Therefore the stable updater URL
+`releases/latest/download/update-manifest.json` keeps resolving to the last
+stable release. User-facing installers use canonical versioned asset names
+selected from the stable release page, not duplicated versionless aliases. The RC still carries its own
 tag-pinned signed manifest for inspection and manual installation.
 
 Because the installed native package version is numeric, an RC consumes that
