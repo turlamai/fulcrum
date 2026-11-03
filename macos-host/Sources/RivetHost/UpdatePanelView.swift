@@ -60,6 +60,7 @@ struct UpdatePanelView: View {
             Button(controller.t("updateClose")) {
                 controller.dismissPanel()
             }
+            .accessibilityIdentifier("fulcrum-update-close")
             .keyboardShortcut(.cancelAction)
         }
         .frame(minHeight: 120)
@@ -93,6 +94,7 @@ struct UpdatePanelView: View {
                 Button(controller.t("updateClose")) {
                     controller.dismissPanel()
                 }
+                .accessibilityIdentifier("fulcrum-update-close")
                 .keyboardShortcut(.cancelAction)
                 Button(controller.t("updateDownload") + " → " +
                        controller.t("updateQuitAndInstall")) {
@@ -131,6 +133,7 @@ struct UpdatePanelView: View {
                     // Cancel explicitly stops the transfer.
                     controller.dismissPanel()
                 }
+                .accessibilityIdentifier("fulcrum-update-close")
             }
         }
         .frame(minHeight: 120)
@@ -153,6 +156,7 @@ struct UpdatePanelView: View {
                 Button(controller.t("updateClose")) {
                     controller.dismissPanel()
                 }
+                .accessibilityIdentifier("fulcrum-update-close")
                 .keyboardShortcut(.cancelAction)
                 Button(controller.t("updateRetry")) {
                     Task { await controller.retry() }
@@ -166,6 +170,7 @@ struct UpdatePanelView: View {
         Button(controller.t("updateClose")) {
             controller.dismissPanel()
         }
+        .accessibilityIdentifier("fulcrum-update-close")
         .keyboardShortcut(.defaultAction)
     }
 }
