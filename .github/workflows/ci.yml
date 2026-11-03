@@ -9,7 +9,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # GitHub retains at most one pending job per concurrency group.
+  # Every main push needs its own evidence; only newer revisions of the
+  # same PR may supersede an older queued or running PR check.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Single source of truth for the rivet pin; every install step below
