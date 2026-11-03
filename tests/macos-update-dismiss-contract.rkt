@@ -33,7 +33,8 @@
   (check-true (string-contains? panel "case .idle:\n                idle"))
   (check-true (string-contains? panel "case .checking:\n                checking"))
   (check-true (string-contains? panel "controller.t(\"updateCheckNow\")"))
-  (check-true (string-contains? panel "controller.checkForUpdates()")))
+  (check-true (string-contains? panel "controller.checkForUpdates()"))
+  (check-true (string-contains? panel "guard panelVisible else { return }")))
 
 (test-case "a dismissed asynchronous check cannot repaint or re-open the panel"
   (check-true (string-contains? controller "private var checkGeneration = 0"))
