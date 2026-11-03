@@ -629,18 +629,36 @@ jobs:
             "fulcrum-${version}-macos-arm64.dmg" \
             "fulcrum-${version}-macos-x64.dmg" \
             "fulcrum-${version}-windows-x64.msi" \
+            "fulcrum-${version}-macos-arm64.zip" \
+            "fulcrum-${version}-macos-x64.zip" \
+            "fulcrum-${version}-windows-x64.zip" \
+            "fulcrum-${version}-linux-arm64.zip" \
+            "fulcrum-${version}-linux-x64.zip" \
+            "fulcrum-${version}-linux-amd64.deb" \
+            "fulcrum-${version}-linux-arm64.deb" \
+            "fulcrum-${version}-linux-x86_64.AppImage" \
+            "fulcrum-${version}-linux-aarch64.AppImage" \
             "fulcrum-${version}-linux-x64.tar.gz" \
             "fulcrum-${version}-linux-arm64.tar.gz" \
             "fulcrum-${version}-linux-x64.tar.gz.sig" \
             "fulcrum-${version}-linux-arm64.tar.gz.sig" \
             "update-manifest.json" "manifest.json" "SHA256SUMS")
-          # Native Linux installers (deb/rpm/AppImage) are optional: they are
-          # absent while the rivet linux-formats packaging bug is pinned out.
+          # Complete stable releases require all native Linux installers.
+          # RPM uses a distinct package build revision.
           for name in "${required[@]}"; do
             printf '%s\n' "$assets" | grep -Fx "$name" || {
               echo "::error::Missing release asset $name"; exit 1;
             }
           done
+          for rpm_arch in x86_64 aarch64; do
+            printf '%s\n' "$assets" | grep -Eq "^fulcrum-${version}-[0-9]+-linux-${rpm_arch}\.rpm$" || {
+              echo "::error::Missing Linux RPM for $rpm_arch"; exit 1;
+            }
+          done
+          if printf '%s\n' "$assets" | grep -Eq '(\.sha256$|^fulcrum-(macos|windows|linux)-)'; then
+            echo "::error::Redundant checksum sidecar or versionless alias leaked to release"
+            exit 1
+          fi
           gh api -X PATCH "repos/$GH_REPO/releases/$RELEASE_ID" \
             -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f name="$tag" \
             -F draft=false -F prerelease="$prerelease" \
