@@ -63,12 +63,12 @@ fi
 require 'release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
 require 'published_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
 # Drafts referencing an existing tag carry GitHub's untagged-<hash>
-# placeholder until publication (#146): both draft-stage identity gates
-# must accept the detached shape while staying strict on REST id, SHA and
-# channel — and the publication confirmation must still demand the exact
-# tag name on a published release.
-[[ "$(grep -Fc '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease)' "$release")" == 2 ]] || {
-  echo 'release-safety: expected the anomaly-tolerant draft identity gate in both creator and publisher' >&2
+# placeholder until publication (#146): all THREE draft-stage identity
+# gates (creator, REST id resolver, publisher) must tolerate the detached
+# shape while remaining strict on REST id, SHA and prerelease channel.
+# The post-publish confirmation must still demand the exact tag name.
+[[ "$(grep -Fc '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease)' "$release")" == 3 ]] || {
+  echo 'release-safety: expected anomaly-tolerant draft identity gates in creator, resolver and publisher' >&2
   exit 1
 }
 require '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease)'

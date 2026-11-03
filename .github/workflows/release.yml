@@ -552,9 +552,16 @@ jobs:
             exit 1
           }
           release_json="$(gh api "repos/$GH_REPO/releases/$release_id")"
+          # GitHub may temporarily detach an existing version tag from a
+          # draft and report an untagged-<hash> placeholder (#146).
+          # Anchor the resolver to the exact numeric REST id, commit SHA,
+          # draft state and channel, as the other draft gates already do.
+          prerelease=false
+          if [[ "$tag" == *-rc.* ]]; then prerelease=true; fi
           printf '%s\n' "$release_json" | jq -e --arg tag "$tag" \
             --argjson id "$release_id" --arg sha "$GITHUB_SHA" \
-            '(.tag_name == $tag) and (.draft == true) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
+            --argjson prerelease "$prerelease" \
+            '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
             echo "::error::Release id does not identify the requested version-tag draft"
             exit 1
           }
