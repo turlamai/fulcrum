@@ -147,12 +147,19 @@ do {
         let updatePanel: AXUIElement = try waitFor("completed update window (attempt \(attempt))") {
             visibleCompletedUpdatePanel()
         }
-        let close = walk(updatePanel).first {
-            stringAttribute($0, kAXRoleAttribute) == (kAXButtonRole as String) &&
-            ["Close", "关闭"].contains(stringAttribute($0, kAXTitleAttribute))
+        // First dismiss the in-panel SwiftUI button. On the second pass,
+        // dismiss the AppKit titlebar's red Close control (⌘W equivalent).
+        let close: AXUIElement?
+        if attempt == 1 {
+            close = walk(updatePanel).first {
+                stringAttribute($0, kAXRoleAttribute) == (kAXButtonRole as String) &&
+                ["Close", "关闭"].contains(stringAttribute($0, kAXTitleAttribute))
+            }
+        } else {
+            close = attribute(updatePanel, kAXCloseButtonAttribute as String) as? AXUIElement
         }
         guard let close, AXUIElementPerformAction(close, kAXPressAction as CFString) == .success else {
-            throw DriverError.failure("completed update panel has no clickable Close button (attempt \(attempt))")
+            throw DriverError.failure("update window did not expose its expected Close control (attempt \(attempt))")
         }
         _ = try waitFor("update panel disappears after Close (attempt \(attempt))", timeout: 10) {
             visibleCompletedUpdatePanel() == nil ? true : nil
