@@ -169,6 +169,9 @@ struct UpdatePanelView: View {
 extension UpdateController {
     /// Retry always re-verifies the signed feed; never reuse stale state.
     func retry() async {
+        // A title-bar Close may run before this retry task is scheduled.
+        // Do not start a new hidden request for a dismissed panel.
+        guard panelVisible else { return }
         await check(manual: true)
     }
 }
