@@ -11,6 +11,8 @@
 (define-runtime-path updater "../macos-host/Sources/RivetHost/UpdateController.swift")
 (define-runtime-path view "../macos-host/Sources/RivetHost/UpdatePanelView.swift")
 (define-runtime-path host "../macos-host/Sources/RivetHost/RivetHostApp.swift")
+(define-runtime-path launcher "../macos-host/Sources/RivetHost/ContentView.swift")
+(define-runtime-path acceptance "../scripts/e2e/macos-ax.swift")
 
 ;; Windows checkout/worktree tools may preserve CRLF. The regression
 ;; contract concerns Swift syntax, not the host line-ending convention.
@@ -50,3 +52,19 @@
   (check-true (string-contains? app "guard controller.panelVisible else { return }"))
   (check-true (string-contains? controller
                                 "guard phase != .downloading && phase != .checking else { return }")))
+
+(test-case "packaged macOS accessibility acceptance clicks Close and reopens the real panel"
+  (define launcher-source (source-text launcher))
+  (define acceptance-source (source-text acceptance))
+  (check-true (string-contains? launcher-source "FulcrumAcceptanceCompletedUpdate"))
+  (check-true (string-contains? controller "presentCompletedCheckForAcceptance"))
+  (check-true (string-contains? controller
+                                "FULCRUM_ACCEPTANCE\"] == \"1\""))
+  (check-true (string-contains? acceptance-source
+                                "visibleCompletedUpdatePanel()"))
+  (check-true (string-contains? acceptance-source
+                                "AXUIElementPerformAction(close, kAXPressAction"))
+  (check-true (string-contains? acceptance-source
+                                "for attempt in 1...2"))
+  (check-true (string-contains? acceptance-source
+                                "update panel disappears after Close")))
