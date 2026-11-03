@@ -10,7 +10,7 @@
          "../../app/update.rkt")
 
 (define base-url
-  "https://github.com/turinglambdaai/fulcrum/releases/download/v0.13.2")
+  "https://github.com/turlamai/fulcrum/releases/download/v0.13.2")
 (define tmp (make-temporary-file "fulcrum-signed-win-update-~a" 'directory))
 (define previous-data-dir (getenv "FULCRUM_DATA_DIR"))
 (define (require! condition fmt . args)

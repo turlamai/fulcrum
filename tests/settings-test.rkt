@@ -26,7 +26,7 @@
      (check-true (settings-get s 'clipboard-enabled))
      (check-equal? (settings-get s 'default-engine) "!g")
      (check-equal? (settings-get s 'update-base-url)
-                   "https://github.com/turinglambdaai/fulcrum/releases/latest/download")
+                   "https://github.com/turlamai/fulcrum/releases/latest/download")
      (check-equal? (settings-get s 'update-last-check) 0)
      (check-false (settings-get s 'update-rollout-bucket)))))
 

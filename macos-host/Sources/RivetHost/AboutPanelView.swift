@@ -30,7 +30,7 @@ struct AboutPanelView: View {
                      destination: URL(string: "https://fulcrum.jrtx.site")!)
                 Link(I18nService.shared.t("aboutReportIssue"),
                      destination: URL(string:
-                        "https://github.com/turinglambdaai/fulcrum/issues")!)
+                        "https://github.com/turlamai/fulcrum/issues")!)
             }
             .font(.system(size: 12))
         }

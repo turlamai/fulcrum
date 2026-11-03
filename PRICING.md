@@ -32,7 +32,7 @@ The target price includes no custom development, hardware procurement, certifica
 
 ## Authorization decision for implementation
 
-Decision revision: `2026-10-auth-1` (2026-10-23). This selects the integration design; it does not claim that the running app already implements it. Follow Permit's [normative entitlement semantics](https://github.com/turinglambdaai/permit/blob/main/docs/entitlement-v1.md) and [framework boundary](https://github.com/turinglambdaai/permit/blob/main/docs/framework-integration.md); this document owns product policy, not a second wire protocol.
+Decision revision: `2026-10-auth-1` (2026-10-23). This selects the integration design; it does not claim that the running app already implements it. Follow Permit's [normative entitlement semantics](https://github.com/turlamai/permit/blob/main/docs/entitlement-v1.md) and [framework boundary](https://github.com/turlamai/permit/blob/main/docs/framework-integration.md); this document owns product policy, not a second wire protocol.
 
 - **Credential and connectivity:** use a signed Protocol v1 `entitlement` for the purchased product, verified locally through the public `permit` facade. Set `activation_required=false` and `installation_id=null`. Do not issue activation leases, require periodic online checks, bind hardware or introduce a device cap. Purchase, reissue and recovery may use Commerce online; an imported credential must work without that service.
 - **Perpetual use and update window:** `use_expires_at=null`; `updates_through` is the paid update cutoff. For the paid scope use `feature_policy="published-through"`, `features=[]` and `features_through=updates_through`. Evaluate authenticated release and feature-introduction timestamps; a manually copied future binary must not widen rights. Keep free capabilities outside this gate. An expired update window preserves eligible acquired functionality and user data; security-fix delivery needs a separately identified eligible patch path.
@@ -45,6 +45,6 @@ Decision revision: `2026-10-auth-1` (2026-10-23). This selects the integration d
 
 Complete the real interaction and installation/update gates in #88, then deliver one workflow verified from input through an external action and failure recovery. A paid editor must not break free FPP plugins. Pro is not implemented; a 1.0 version number does not replace delivery evidence.
 
-Execution entry: [issue #88](https://github.com/turinglambdaai/fulcrum/issues/88). Complete this bounded slice before expanding commercial features.
+Execution entry: [issue #88](https://github.com/turlamai/fulcrum/issues/88). Complete this bounded slice before expanding commercial features.
 
-Portfolio role and shared boundaries: [PORTFOLIO](https://github.com/turinglambdaai/turinglambdaai.github.io/blob/master/PORTFOLIO.md).
+Portfolio role and shared boundaries: [PORTFOLIO](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.md).
