@@ -138,16 +138,17 @@ final class UpdateController: ObservableObject {
 
     func check(manual: Bool) async {
         guard phase != .downloading && phase != .checking else { return }
-        // Preserve the 4-hour silent throttle; a manual check always
-        // bypasses it. Store the timestamp across relaunches.
-        if !manual {
-            let defaults = UserDefaults.standard
-            if let last = defaults.object(forKey: Self.lastCheckKey) as? Date,
-               Date().timeIntervalSince(last) < 4 * 60 * 60 {
-                return
-            }
-            defaults.set(Date(), forKey: Self.lastCheckKey)
+        // The manual action bypasses the 4-hour throttle, but it still
+        // refreshes the timestamp. Otherwise the delayed startup check
+        // can run again just after a user dismisses the completed manual
+        // check, causing a redundant request or a reopened update panel.
+        let defaults = UserDefaults.standard
+        if !manual,
+           let last = defaults.object(forKey: Self.lastCheckKey) as? Date,
+           Date().timeIntervalSince(last) < 4 * 60 * 60 {
+            return
         }
+        defaults.set(Date(), forKey: Self.lastCheckKey)
         checkGeneration &+= 1
         let generation = checkGeneration
         phase = .checking
