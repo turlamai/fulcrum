@@ -151,10 +151,10 @@ do {
         // dismiss the AppKit titlebar's red Close control (⌘W equivalent).
         let close: AXUIElement?
         if attempt == 1 {
-            close = walk(updatePanel).first {
-                stringAttribute($0, kAXRoleAttribute) == (kAXButtonRole as String) &&
-                ["Close", "关闭"].contains(stringAttribute($0, kAXTitleAttribute))
-            }
+            // Native SwiftUI buttons expose an AXIdentifier reliably,
+            // while the localized visible label may be the AXDescription
+            // rather than AXTitle on different macOS/Xcode versions.
+            close = findByIdentifier(updatePanel, "fulcrum-update-close")
         } else {
             if let value = attribute(updatePanel, kAXCloseButtonAttribute as String),
                CFGetTypeID(value) == AXUIElementGetTypeID() {
@@ -166,7 +166,8 @@ do {
             }
         }
         guard let close, AXUIElementPerformAction(close, kAXPressAction as CFString) == .success else {
-            throw DriverError.failure("update window did not expose its expected Close control (attempt \(attempt))")
+            try? writeJSON(snapshot(updatePanel), to: output.appendingPathComponent("update-close-failure-\(attempt).json"))
+            throw DriverError.failure("update window did not expose its expected Close control (attempt \(attempt)); update panel AX snapshot captured")
         }
         _ = try waitFor("update panel disappears after Close (attempt \(attempt))", timeout: 10) {
             visibleCompletedUpdatePanel() == nil ? true : nil
