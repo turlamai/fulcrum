@@ -80,7 +80,10 @@ final class UpdateController: ObservableObject {
         // Reopening while a check is in flight should reveal its progress,
         // not start another request. Downloads also survive dismissal.
         guard phase != .downloading && phase != .checking else { return }
-        Task { await check(manual: true) }
+        Task { [weak self] in
+            guard let self, self.panelVisible else { return }
+            await self.check(manual: true)
+        }
     }
 
     func dismissPanel() {
