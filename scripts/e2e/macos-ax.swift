@@ -156,7 +156,14 @@ do {
                 ["Close", "关闭"].contains(stringAttribute($0, kAXTitleAttribute))
             }
         } else {
-            close = attribute(updatePanel, kAXCloseButtonAttribute as String) as? AXUIElement
+            if let value = attribute(updatePanel, kAXCloseButtonAttribute as String),
+               CFGetTypeID(value) == AXUIElementGetTypeID() {
+                // A generic CFTypeRef needs a checked CoreFoundation cast;
+                // Swift 6 rejects 'as? AXUIElement' as always succeeding.
+                close = unsafeBitCast(value, to: AXUIElement.self)
+            } else {
+                close = nil
+            }
         }
         guard let close, AXUIElementPerformAction(close, kAXPressAction as CFString) == .success else {
             throw DriverError.failure("update window did not expose its expected Close control (attempt \(attempt))")
