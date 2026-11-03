@@ -67,4 +67,6 @@
   (check-true (string-contains? acceptance-source
                                 "for attempt in 1...2"))
   (check-true (string-contains? acceptance-source
+                                "kAXCloseButtonAttribute"))
+  (check-true (string-contains? acceptance-source
                                 "update panel disappears after Close")))
