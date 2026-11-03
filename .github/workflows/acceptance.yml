@@ -12,7 +12,7 @@ permissions:
 env:
   # Unified immutable upstream revision containing AppImage handoff,
   # branded-DMG signature preservation, and macOS update rollback safety.
-  RIVET_PIN: 79a01a43a0ac40d0f0e12313847500fafa6a5e72
+  RIVET_PIN: 9355362e6b1fdf72787559277ecdf66ec22b3df1
 
 concurrency:
   # Preserve main acceptance evidence; cancel only superseded runs of a PR.
@@ -122,7 +122,7 @@ jobs:
       - name: Remember full Racket command path
         run: echo "FULL_RACKET_BIN=$(dirname "$(command -v raco)")" >> "$GITHUB_ENV"
       - name: Set up embeddable Racket CS
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@79a01a43a0ac40d0f0e12313847500fafa6a5e72
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@9355362e6b1fdf72787559277ecdf66ec22b3df1
       - name: Run executable product acceptance
         run: PATH="$FULL_RACKET_BIN:$PATH" dbus-run-session -- raco rivet acceptance --json
       - name: Require generated Linux client to be current
