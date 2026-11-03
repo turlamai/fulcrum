@@ -481,7 +481,7 @@ jobs:
             public/SHA256SUMS
             public/update-manifest.json
             public/manifest.json
-      - name: Confirm exact draft identity before uploading stable aliases
+      - name: Confirm exact draft identity before pruning stale assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
