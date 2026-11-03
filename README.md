@@ -18,9 +18,10 @@ Existing launcher, clipboard, plugins and BYOK features remain free. No Pro chec
 
 ## Install on macOS (developer preview)
 
-Choose your Mac build from [GitHub Releases](https://github.com/turlamai/fulcrum/releases/latest):
-[Apple Silicon / M-series DMG](https://github.com/turlamai/fulcrum/releases/latest/download/fulcrum-macos-arm64.dmg) or
-[Intel DMG](https://github.com/turlamai/fulcrum/releases/latest/download/fulcrum-macos-x64.dmg).
+Choose your Mac installer from [the latest GitHub Release](https://github.com/turlamai/fulcrum/releases/latest):
+`fulcrum-<version>-macos-arm64.dmg` for Apple Silicon (M-series), or
+`fulcrum-<version>-macos-x64.dmg` for Intel Macs. The versioned asset names are
+canonical; duplicate versionless installers are not published.
 Open the **DMG**, drag **Fulcrum** onto **Applications**, eject the disk image, then launch **Fulcrum from Applications**, not from the mounted installer. The icon on the right in the DMG is an Applications shortcut.
 
 **Signing note:** Current release jobs use development/ad-hoc signing, not an Apple-notarized Developer ID build. Gatekeeper may block the first launch. Verify the download comes from the official release before making any exception; see [Apple's guidance](https://support.apple.com/102445). Do **not** globally disable Gatekeeper or strip quarantine attributes. We are tracking signed/notarized distribution separately. On first use, grant Accessibility permission only when Fulcrum requests it for clipboard paste or snippets. See the [macOS first-run guide](docs/user-guide.md#install-and-first-launch-on-macos).

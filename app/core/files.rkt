@@ -207,13 +207,17 @@
   ;; delayed in SQLite could claim after a newer request and cancel the wrong
   ;; process when RVT1 workers run concurrently.
   (define cancel (and backend (claim-file-search!)))
-  (define cached
-    (if index-path
-        (file-index-search index-path query file-search-candidate-limit)
-        '()))
+  (define cache-result
+    (and index-path
+         (file-index-search/status index-path query file-search-candidate-limit)))
+  (define cached (if cache-result (file-index-query-hits cache-result) '()))
+  (define cache-error?
+    (and cache-result (eq? (file-index-query-status cache-result) 'error)))
   (if (false? backend)
       (if (null? cached)
-          (file-search-result '() 'unavailable #f)
+          (file-search-result '()
+                              (if cache-error? 'index-error 'unavailable)
+                              #f)
           (file-search-result (rank-file-hits query cached limit)
                               'ok 'fulcrum-index))
       (let-values ([(program args)
@@ -264,7 +268,7 @@
              query
              candidates
              limit)
-            'ok
+            (if (and cache-error? (null? candidates)) 'index-error 'ok)
             (if (and (null? platform-hits) (pair? cached))
                 'fulcrum-index
                 backend))]))))

@@ -23,7 +23,7 @@ struct UpdatePanelView: View {
         VStack(spacing: 18) {
             switch controller.phase {
             case .idle:
-                checking
+                idle
             case .checking:
                 checking
             case .upToDate:
@@ -40,12 +40,28 @@ struct UpdatePanelView: View {
         .frame(width: 380)
     }
 
+    // Idle is a deliberate, non-spinning state; no network work is active.
+    private var idle: some View {
+        VStack(spacing: 14) {
+            Button(controller.t("updateCheckNow")) {
+                controller.checkForUpdates()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(minHeight: 120)
+    }
+
     private var checking: some View {
         VStack(spacing: 14) {
             ProgressView()
             Text(controller.t("updateChecking"))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
+            Button(controller.t("updateClose")) {
+                controller.dismissPanel()
+            }
+            .accessibilityIdentifier("fulcrum-update-close")
+            .keyboardShortcut(.cancelAction)
         }
         .frame(minHeight: 120)
     }
@@ -76,9 +92,9 @@ struct UpdatePanelView: View {
                 .multilineTextAlignment(.center)
             HStack(spacing: 10) {
                 Button(controller.t("updateClose")) {
-                    controller.panelVisible = false
-                    controller.phase = .idle
+                    controller.dismissPanel()
                 }
+                .accessibilityIdentifier("fulcrum-update-close")
                 .keyboardShortcut(.cancelAction)
                 Button(controller.t("updateDownload") + " → " +
                        controller.t("updateQuitAndInstall")) {
@@ -115,8 +131,9 @@ struct UpdatePanelView: View {
                 Button(controller.t("updateClose")) {
                     // Dismissing does not cancel a verified transaction;
                     // Cancel explicitly stops the transfer.
-                    controller.panelVisible = false
+                    controller.dismissPanel()
                 }
+                .accessibilityIdentifier("fulcrum-update-close")
             }
         }
         .frame(minHeight: 120)
@@ -137,9 +154,9 @@ struct UpdatePanelView: View {
                 .frame(maxWidth: 320)
             HStack(spacing: 10) {
                 Button(controller.t("updateClose")) {
-                    controller.panelVisible = false
-                    controller.phase = .idle
+                    controller.dismissPanel()
                 }
+                .accessibilityIdentifier("fulcrum-update-close")
                 .keyboardShortcut(.cancelAction)
                 Button(controller.t("updateRetry")) {
                     Task { await controller.retry() }
@@ -151,9 +168,9 @@ struct UpdatePanelView: View {
 
     private var closeButtons: some View {
         Button(controller.t("updateClose")) {
-            controller.panelVisible = false
-            controller.phase = .idle
+            controller.dismissPanel()
         }
+        .accessibilityIdentifier("fulcrum-update-close")
         .keyboardShortcut(.defaultAction)
     }
 }
@@ -161,6 +178,9 @@ struct UpdatePanelView: View {
 extension UpdateController {
     /// Retry always re-verifies the signed feed; never reuse stale state.
     func retry() async {
+        // A title-bar Close may run before this retry task is scheduled.
+        // Do not start a new hidden request for a dismissed panel.
+        guard panelVisible else { return }
         await check(manual: true)
     }
 }

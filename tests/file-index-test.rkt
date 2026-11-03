@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require racket/file
+         racket/path
          rackunit
          "../app/core/file-index.rkt")
 
@@ -76,6 +77,24 @@
                    '("钉钉计划.md"))
      (check-true (file-index-remove-paths! path '("D:\\资料\\钉钉计划.md")))
      (check-equal? (file-index-search path "dingding" 8) '()))))
+
+
+(test-case "index errors are distinguishable from valid empty searches"
+  (with-index
+   (lambda (db)
+     (define empty (file-index-search/status db "unmatched" 8))
+     ;; An ordinary file cannot be a directory. This reproducibly denies
+     ;; cache creation on Windows, macOS and Ubuntu without chmod assumptions.
+     (define blocker (build-path (path-only db) "not-a-directory"))
+     (define broken (build-path blocker "index.sqlite3"))
+     (check-equal? (file-index-query-status empty) 'ok)
+     (check-equal? (file-index-query-hits empty) '())
+     (display-to-file "blocked" blocker)
+     (let ([failed (file-index-search/status broken "report" 8)])
+       (check-equal? (file-index-query-status failed) 'error)
+       (check-equal? (file-index-query-hits failed) '()))
+     ;; Legacy callers still get a harmless list, not an exception.
+     (check-equal? (file-index-search broken "report" 8) '()))))
 
 (test-case "corrupt cache is discarded and rebuilt safely"
   (with-index

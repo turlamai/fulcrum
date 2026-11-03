@@ -94,6 +94,27 @@ int main() {
   auto& launcher = Launcher::instance();
   // The test executable has no adjacent runtime: startup stops before boot.
   check(launcher.api == nullptr, "UI fixture does not start the backend");
+  // Ubuntu Wayland's portal may reject CreateSession before embedded Racket
+  // is ready. A later Ready/status refresh must never erase the only
+  // explanation that the global shortcut cannot summon the launcher.
+  Launcher::post_hotkey_diagnostic(
+      "Portal failed: app identity unavailable; use fulcrum --toggle");
+  pump(40);
+  launcher.set_ready_status();
+  check(std::string(gtk_label_get_text(launcher.status)).find(
+            "app identity unavailable") != std::string::npos,
+        "portal bind failure survives delayed backend Ready");
+  set_i18n_language("zh");
+  launcher.set_ready_status();
+  check(std::string(gtk_label_get_text(launcher.status)).find(
+            "app identity unavailable") != std::string::npos,
+        "portal failure survives a translated settings refresh");
+  Launcher::post_hotkey_bound("Summon hotkey: Alt+Space");
+  pump(40);
+  launcher.set_ready_status();
+  check(std::string(gtk_label_get_text(launcher.status)) == tr("ready"),
+        "successful permission rebind clears sticky portal failure");
+  set_i18n_language("en");
   // Check that the live X11 window actually advertises its program-chosen
   // position to the WM. The helper runs on every summon, not just startup.
   launcher.show();

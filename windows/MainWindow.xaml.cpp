@@ -1875,7 +1875,7 @@ void MainWindow::ShowAbout() {
   auto issue = mxc::HyperlinkButton{};
   issue.Content(winrt::box_value(t("aboutReportIssue")));
   issue.NavigateUri(winrt::Windows::Foundation::Uri{
-      L"https://github.com/turinglambdaai/fulcrum/issues"});
+      L"https://github.com/turlamai/fulcrum/issues"});
   issue.HorizontalAlignment(mx::HorizontalAlignment::Center);
   issue.Padding({0, 0, 0, 0});
 

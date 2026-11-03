@@ -16,12 +16,18 @@
          "search-normalize.rkt")
 
 (provide file-index-count
+         (struct-out file-index-query)
+         file-index-search/status
          file-index-search
          file-index-upsert-hits!
          file-index-upsert-scan-hits!
          file-index-finish-scan!
          file-index-remove-paths!
          file-index-rename!)
+
+;; Distinguish a successful empty lookup from an inaccessible/failed cache.
+;; Consumers can still use file-index-search for the historical list API.
+(struct file-index-query (hits status) #:transparent)
 
 (define schema-version 4)
 (define max-candidates 256)
@@ -237,54 +243,62 @@
 (define (file-index-count path)
   (call-with-index path 0
                    (lambda (connection)
-                     (query-value connection "SELECT count(*) FROM files"))))
+                       (query-value connection "SELECT count(*) FROM files"))))
 
 (define (row->hit row)
   (cons (vector-ref row 0) (vector-ref row 1)))
 
-(define (file-index-search path query [limit 8])
+(define (file-index-search/status path query [limit 8])
   (define q (fold (string-trim query)))
   (cond
-    [(or (string=? q "") (<= limit 0)) '()]
+    [(or (string=? q "") (<= limit 0))
+     (file-index-query '() 'ok)]
     [else
-     (call-with-index
-      path '()
-      (lambda (connection)
-        ;; Appending the greatest Unicode scalar creates an exclusive upper
-        ;; bound for every string beginning with q under SQLite BINARY order.
-        (define upper (string-append q "\U0010FFFF"))
-        ;; q." through q/ is the exact-stem-with-extension range. Query it
-        ;; separately so report.md cannot be crowded out by thousands of
-        ;; report-* names, while both statements still stop on the B-tree
-        ;; instead of sorting an entire one-character prefix.
-        (define stem-rows
-          (query-rows
-           connection
-           "SELECT name,path FROM files WHERE folded_name >= ? AND folded_name < ? ORDER BY folded_name,path LIMIT ?"
-           (string-append q ".") (string-append q "/")
-           (min limit max-candidates)))
-        (define prefix-rows
-          (query-rows
-           connection
-           "SELECT name,path FROM files WHERE folded_name >= ? AND folded_name < ? ORDER BY folded_name,path LIMIT ?"
-           q upper (min limit max-candidates)))
-        (define pinyin-rows
-          (query-rows
-           connection
-           (string-append
-            "SELECT files.name,files.path FROM file_pinyin "
-            "JOIN files ON files.path=file_pinyin.path "
-            "WHERE file_pinyin.term >= ? AND file_pinyin.term < ? "
-            "ORDER BY file_pinyin.term,files.path LIMIT ?")
-           q upper (min limit max-candidates)))
-        (define hits
-          (remove-duplicates
-           (append (map row->hit stem-rows)
-                   (map row->hit prefix-rows)
-                   (map row->hit pinyin-rows))
-           string=?
-           #:key cdr))
-        (take hits (min limit (length hits)))))]))
+     (let ([hits
+              (call-with-index
+               path #f
+               (lambda (connection)
+          ;; Appending the greatest Unicode scalar creates an exclusive upper
+          ;; bound for every string beginning with q under SQLite BINARY order.
+          (define upper (string-append q "\U0010FFFF"))
+          ;; q." through q/ is the exact-stem-with-extension range. Query it
+          ;; separately so report.md cannot be crowded out by thousands of
+          ;; report-* names, while both statements still stop on the B-tree
+          ;; instead of sorting an entire one-character prefix.
+          (define stem-rows
+            (query-rows
+             connection
+             "SELECT name,path FROM files WHERE folded_name >= ? AND folded_name < ? ORDER BY folded_name,path LIMIT ?"
+             (string-append q ".") (string-append q "/")
+             (min limit max-candidates)))
+          (define prefix-rows
+            (query-rows
+             connection
+             "SELECT name,path FROM files WHERE folded_name >= ? AND folded_name < ? ORDER BY folded_name,path LIMIT ?"
+             q upper (min limit max-candidates)))
+          (define pinyin-rows
+            (query-rows
+             connection
+             (string-append
+              "SELECT files.name,files.path FROM file_pinyin "
+              "JOIN files ON files.path=file_pinyin.path "
+              "WHERE file_pinyin.term >= ? AND file_pinyin.term < ? "
+              "ORDER BY file_pinyin.term,files.path LIMIT ?")
+             q upper (min limit max-candidates)))
+          (define hits
+            (remove-duplicates
+             (append (map row->hit stem-rows)
+                     (map row->hit prefix-rows)
+                     (map row->hit pinyin-rows))
+             string=?
+             #:key cdr))
+          (take hits (min limit (length hits)))))])
+       (if hits
+           (file-index-query hits 'ok)
+           (file-index-query '() 'error)))]))
+
+(define (file-index-search path query [limit 8])
+  (file-index-query-hits (file-index-search/status path query limit)))
 
 (define (file-index-remove-paths! path paths)
   (call-with-index

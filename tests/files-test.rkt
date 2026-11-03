@@ -5,6 +5,7 @@
 ;; elsewhere.
 
 (require racket/file
+         racket/path
          racket/async-channel
          racket/list
          racket/string
@@ -128,6 +129,34 @@
   ;; The query is neutralized for both SQL and PowerShell single quotes.
   (check-false (string-contains? script "o'brien"))
   (check-true (string-contains? script "o''brien")))
+
+(test-case "failed local index reports an error instead of false no matches"
+  (define dir (make-temporary-file "fulcrum-broken-search-~a" 'directory))
+  (dynamic-wind
+    void
+    (lambda ()
+      (define blocker (build-path dir "not-a-directory"))
+      (define db (build-path blocker "file-index.sqlite3"))
+      (display-to-file "blocker" blocker)
+      (let ([absent
+             (file-search/status
+              "report" 8 #:os 'unix #:resolve (lambda (_) #f)
+              #:index-path db)])
+        (check-equal? (file-search-result-status absent) 'index-error)
+        (check-equal? (file-search-result-hits absent) '()))
+      ;; A usable platform index can still provide valid results even if
+      ;; Fulcrum's optional local cache is temporarily inaccessible.
+      (let ([platform
+             (file-search/status
+              "report" 8 #:os 'unix #:resolve (lambda (_) "/usr/bin/locate")
+              #:run (lambda (_program _args #:timeout-ms [_timeout-ms 3000]
+                                           #:cancel-evt [_cancel-evt never-evt])
+                      "/home/me/report.md\n")
+              #:index-path db)])
+        (check-equal? (file-search-result-status platform) 'ok)
+        (check-equal? (file-search-result-hits platform)
+                      '(("report.md" . "/home/me/report.md")))))
+    (lambda () (delete-directory/files dir))))
 
 (test-case "Linux find fallback reports timeout instead of an empty success"
   (define (find-only program)

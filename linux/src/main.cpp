@@ -876,7 +876,7 @@ void show_about_dialog(GtkWindow* parent) {
   gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(dialog), rivet_app::kVersion);
   std::string const comments =
       tr("aboutContent") + "\n" + tr("aboutReportIssue") +
-      ": github.com/turinglambdaai/fulcrum/issues";
+      ": github.com/turlamai/fulcrum/issues";
   gtk_about_dialog_set_comments(GTK_ABOUT_DIALOG(dialog), comments.c_str());
   std::string const license = tr("aboutLicense");
   gtk_about_dialog_set_license(GTK_ABOUT_DIALOG(dialog), license.c_str());
@@ -919,6 +919,9 @@ struct Launcher {
   // GNOME's stock activate-window-menu binding owns Alt+Space: the tray
   // grows a one-click fix while the conflict stands.
   bool hotkey_shadowed{false};
+  // A failed portal bind must remain visible after the backend finishes
+  // starting or language/settings changes re-paint the routine Ready text.
+  std::optional<std::string> hotkey_diagnostic;
   GtkApplication* app{nullptr};
   std::vector<ResultRow> rows;
   guint search_source{0};
@@ -966,6 +969,41 @@ struct Launcher {
 
   void set_status(std::string const& message) {
     gtk_label_set_text(status, message.c_str());
+  }
+
+  void set_ready_status() {
+    set_status(hotkey_diagnostic.value_or(tr("ready")));
+  }
+
+  void set_hotkey_diagnostic(std::string message) {
+    hotkey_diagnostic = std::move(message);
+    set_ready_status();
+  }
+
+  void clear_hotkey_diagnostic() {
+    hotkey_diagnostic.reset();
+  }
+
+  // Bind outcomes can arrive from a portal worker. Marshal updates to the
+  // GTK thread and record the diagnostic before applying the label.
+  static void post_hotkey_diagnostic(std::string message) {
+    g_idle_add([](gpointer user_data) -> int {
+      std::unique_ptr<std::string> diagnostic(
+          static_cast<std::string*>(user_data));
+      Launcher::instance().set_hotkey_diagnostic(std::move(*diagnostic));
+      return G_SOURCE_REMOVE;
+    }, new std::string(std::move(message)));
+  }
+
+  static void post_hotkey_bound(std::string message) {
+    g_idle_add([](gpointer user_data) -> int {
+      std::unique_ptr<std::string> text(
+          static_cast<std::string*>(user_data));
+      auto& launcher = Launcher::instance();
+      launcher.clear_hotkey_diagnostic();
+      launcher.set_status(*text);
+      return G_SOURCE_REMOVE;
+    }, new std::string(std::move(message)));
   }
 
   // Marshal a status string from any worker thread onto the main loop.
@@ -1911,7 +1949,7 @@ struct Launcher {
           }, job);
         });
 
-    set_status(tr("ready"));
+    set_ready_status();
     run_search("");
     start_silent_update_check();
     pull_host_settings();
@@ -1957,7 +1995,7 @@ void set_i18n_language(std::string const& lang) {
         ? launcher.rows[static_cast<std::size_t>(index)].id : "";
     launcher.refresh_results(arg, id);
   }
-  if (changed && launcher.api != nullptr) launcher.set_status(tr("ready"));
+  if (changed && launcher.api != nullptr) launcher.set_ready_status();
   apply_tray_language();
   refresh_settings_language();
 }
@@ -3209,16 +3247,20 @@ void on_activate(GtkApplication* app, gpointer) {
         [](rivet::system::GlobalShortcutBindResult const& result) {
           switch (result.status) {
             case rivet::system::GlobalShortcutBindStatus::cancelled:
-              Launcher::post_status(
+              Launcher::post_hotkey_diagnostic(
                   "Hotkey permission was dismissed. Reopen Fulcrum and allow "
                   "the shortcut, or bind `fulcrum --toggle` in Settings.");
               check_hotkey_shadowing("Alt+Space");
               g_idle_add(show_on_main, nullptr);
               break;
             case rivet::system::GlobalShortcutBindStatus::failed:
-              Launcher::post_status(
-                  "Portal hotkey failed: " + result.message +
-                  ". Bind `fulcrum --toggle` in desktop Settings.");
+              Launcher::post_hotkey_diagnostic(
+                  result.message.find("An app id is required") != std::string::npos
+                  ? "GNOME denied the global shortcut because this process has "
+                    "no recognized desktop app identity. In Settings > Keyboard "
+                    "> Custom Shortcuts, bind `fulcrum --toggle` as a workaround."
+                  : "Portal hotkey failed: " + result.message +
+                    ". Bind `fulcrum --toggle` in desktop Settings.");
               check_hotkey_shadowing("Alt+Space");
               g_idle_add(show_on_main, nullptr);
               break;
@@ -3230,7 +3272,7 @@ void on_activate(GtkApplication* app, gpointer) {
                   !result.bindings[0].trigger_description.empty()) {
                 std::string const trigger =
                     result.bindings[0].trigger_description;
-                Launcher::post_status("Summon hotkey: " + trigger);
+                Launcher::post_hotkey_bound("Summon hotkey: " + trigger);
                 check_hotkey_shadowing(trigger);
               }
               break;

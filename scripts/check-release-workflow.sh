@@ -46,7 +46,7 @@ require 'release_id: ${{ steps.create-release.outputs.id }}'
 require 'id: create-release'
 require 'tag_name: ${{ github.ref_name }}'
 require 'target_commitish: ${{ github.sha }}'
-require 'Confirm exact draft identity before uploading stable aliases'
+require 'Confirm exact draft identity before pruning stale assets'
 require 'RELEASE_ID: ${{ steps.create-release.outputs.id }}'
 require 'RELEASE_ID: ${{ needs.github-release.outputs.release_id }}'
 require '(.target_commitish == $sha)'
@@ -72,11 +72,12 @@ require 'published_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"'
   exit 1
 }
 require '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease)'
-# Ensure creation identity gate precedes versionless public-facing aliases.
-draft_gate_line="$(grep -n -m1 'name: Confirm exact draft identity before uploading stable aliases' "$release" | cut -d: -f1)"
-alias_step_line="$(grep -n -m1 'name: Stable alias copies (versionless direct-download links)' "$release" | cut -d: -f1)"
-[[ "$draft_gate_line" -lt "$alias_step_line" ]] || {
-  echo 'release-safety: draft identity gate must precede stable aliases' >&2
+# Rerun cleanup must never delete an existing asset until the draft's
+# REST identity (numeric id, tag, SHA, channel) has been verified.
+draft_gate_line="$(grep -n -m1 'name: Confirm exact draft identity before pruning stale assets' "$release" | cut -d: -f1)"
+prune_step_line="$(grep -n -m1 'name: Prune stale or build-only draft assets' "$release" | cut -d: -f1)"
+[[ -n "$draft_gate_line" && -n "$prune_step_line" && "$draft_gate_line" -lt "$prune_step_line" ]] || {
+  echo 'release-safety: draft identity gate must precede cleanup of stale assets' >&2
   exit 1
 }
 if grep -Fq 'gh release view "$tag" --json isDraft' "$release"; then
