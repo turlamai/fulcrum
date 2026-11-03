@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  RIVET_PIN: 8ccc95530af43287d1b7e94e1ae69e10279b4db4
+  RIVET_PIN: 9355362e6b1fdf72787559277ecdf66ec22b3df1
   FULCRUM_UPDATE_E2E_TESTING: "1"
 
 concurrency:
