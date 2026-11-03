@@ -57,6 +57,10 @@ struct UpdatePanelView: View {
             Text(controller.t("updateChecking"))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
+            Button(controller.t("updateClose")) {
+                controller.dismissPanel()
+            }
+            .keyboardShortcut(.cancelAction)
         }
         .frame(minHeight: 120)
     }
