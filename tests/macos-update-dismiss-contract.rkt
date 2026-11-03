@@ -18,8 +18,8 @@
 
 (test-case "all update Close controls dismiss the actual native panel"
   (check-false (string-contains? panel "controller.panelVisible = false"))
-  (check-true (>= (length (regexp-match* #rx"controller\\.dismissPanel\\(\\)" panel)) 4)
-              "up-to-date, available, failed, and downloading Close paths")
+  (check-true (>= (length (regexp-match* #rx"controller\\.dismissPanel\\(\\)" panel)) 5)
+              "checking, up-to-date, available, failed, and downloading Close paths")
   (check-true (string-contains? controller "AppDelegate.shared?.hideUpdatePanel()"))
   (check-true (string-contains? app "updateWindow?.orderOut(nil)")))
 
