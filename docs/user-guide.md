@@ -326,38 +326,36 @@ Local files include clipboard/snippet data, AI history, ai-keys.json, and a rebu
 
 ---
 
-## Coming from Raycast?
+## Product principles and current limits
 
-Here is what transfers, what is different, and why:
+Fulcrum follows a keyboard-first workflow: summon the panel, type a query,
+select a result, and press Enter. Application launching, file search,
+clipboard history, snippets, quicklinks, calculator, system commands,
+window management, settings, AI actions and plugins use that same surface.
 
-**The same:** the hotkey → type → Enter loop. App launching. Clipboard
-history. Snippets. Quicklinks. Calculator. Window management. File
-search (macOS). Web search. System commands. Extensions (plugins).
-Themes. Dark mode.
+- **Local ownership.** Settings, snippets, clipboard history and the
+  rebuildable filename index reside in the user's data directory. The
+  filename index is not synchronized.
+- **Cross-platform native hosts.** Windows uses WinUI 3, macOS uses
+  SwiftUI and Linux uses GTK4, all backed by Racket through Rivet.
+  System permissions, shortcut handling and some capabilities differ by
+  operating system and desktop session.
+- **User-configured AI providers.** Fulcrum does not require a hosted
+  account. When an AI action runs, its selected prompt/context is sent
+  directly to the configured provider, which may charge separately.
+- **Extensible plugins.** Plugins may be written in any language that
+  implements the documented process protocol. Plugins run with the
+  user's OS permissions; manifest permissions are advisory, not sandbox
+  enforcement.
+- **Explicit network boundaries.** AI requests, web searches, plugin
+  actions, currency refreshes, update checks and user-configured
+  folder sync may contact external services. See the privacy and
+  security sections before enabling those features.
 
-**Different by design:**
-
-- **Free, no account.** No login, no account system, no telemetry.
-  The entire local product — everything on this page — is free. New multi-step workflow Pro is planned but not on sale; existing BYOK, plugins and BYO-folder sync stay free.
-- **Cross-platform, equally.** macOS, Windows, and Linux get the same
-  features, same keyboard, same native UI. Not one first-class platform
-  and two afterthoughts.
-- **BYOK AI, no subscription.** Use your own API key. No monthly fee,
-  no per-query cost, no data through Fulcrum's servers.
-- **Local-first.** Your data never leaves your device unless you
-  explicitly ask it to (AI prompt, web search). No cloud account
-  required for sync — use any folder-syncing service you already have.
-- **Plugins in any language.** Raycast requires TypeScript. Fulcrum
-  accepts any program that reads stdin and writes JSON — Python, Go,
-  Rust, a shell script.
-- **Focused, not bloated.** Fulcrum does launcher things well and
-  doesn't try to be a window manager, a note-taking app, or an AI
-  chatbot. When we add AI features, they solve launcher problems.
-
-**Not yet (honest list):** the extension ecosystem is young (26
-first-party plugins vs. Raycast's 2,500+ store extensions); clipboard
-history is text only (no images); snippet
-auto-expansion does not work on Linux.
+**Current limitations:** clipboard history captures text rather than
+images; Linux snippet auto-expansion is not available; file catalog
+coverage and live filesystem updates are still under development.
+Use `file search status` to inspect the local catalog state.
 
 ---
 
@@ -412,11 +410,9 @@ embedded in each platform's native UI — SwiftUI on macOS, WinUI 3 on
 Windows, GTK4 on Linux. Not Electron. Not a web wrapper. The Windows
 app is a Windows app; the macOS app is a macOS app.
 
-We are a latecomer. That means we studied what Raycast users complain
-about — AI features prioritised over core stability, complexity
-creep, Pro-tier gating — and made different choices. Fulcrum
-prioritises fundamentals: fast search, reliable actions, honest
-errors, and your data staying on your machine.
+Fulcrum prioritises responsive search, predictable native interactions,
+clear errors, recoverable updates and user-controlled local data. Feature
+limits and platform differences are documented rather than hidden.
 
 Source-available (BUSL-1.1, MIT after the change date). Plugin
 protocol MIT. No telemetry. No account. No cloud.
