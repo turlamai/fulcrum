@@ -49,6 +49,7 @@
          ai-rows
          ai-ask-row
          ai-copy-last-answer
+         ai-paste-last-answer
          ai-effective-provider
          ai-history
          ai-last-answer
@@ -458,6 +459,14 @@
       (cons "copied" (list (cons 'copy-to-clipboard answer)))
       (cons "no AI answer yet" '())))
 
+;; Pure action decision: the calling RPC owns sending the event. Keeping
+;; this separate makes the contract testable without a live Rivet emitter.
+(define (ai-paste-last-answer)
+  (define answer (ai-last-answer))
+  (if (non-empty-string? answer)
+      (cons "copied" (list (cons 'paste-to-frontmost answer)))
+      (cons "no AI answer yet" '())))
+
 (define (ai-rows query)
   (define trimmed (string-trim query))
   (define lowered (string-downcase trimmed))
@@ -685,11 +694,7 @@
      (cons "ok" (list (cons 'notify "ai summarize · ai clean · ai translate <lang> · ai explain · ai model <name> · ai <question>")))]
     [(ai.run) (ai-run! engine arg)]
     [(ai.copy) (ai-copy-last-answer)]
-    [(ai.paste)
-     (define answer (ai-last-answer))
-     (if (non-empty-string? answer)
-         (cons "copied" (list (cons 'paste-to-frontmost answer)))
-         (cons "no AI answer yet" '()))]
+    [(ai.paste) (ai-paste-last-answer)]
     [(ai.reset)
      (ai-session-reset! ai-service)
      (cons "ok" (list (cons 'notify "AI conversation reset")))]
