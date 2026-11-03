@@ -75,7 +75,7 @@ private enum MenuBarIcon {
 /// AppKit delegates run on the main thread; Swift 6 concurrency makes that
 /// explicit with @MainActor.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var panel: NSPanel?
     /// EventHotKeyID.id namespaces: 1 = summon, 1000+ = command bindings.
     static let commandHotkeyBaseID: UInt32 = 1000
@@ -282,6 +282,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: update panel
 
+    /// One native dismissal path for SwiftUI's Close buttons and the
+    /// AppKit title-bar close button. The controller owns the check state;
+    /// the delegate owns whether the actual NSWindow is on screen.
+    func hideUpdatePanel() {
+        updateWindow?.orderOut(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow,
+              closing === updateWindow else { return }
+        updateController?.dismissPanel()
+    }
+
     /// The update panel lives in its own small window: the launcher panel is
     /// transient (Esc hides it), while the update flow must survive focus
     /// changes until the user decides.
@@ -290,8 +303,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             let controller = self.updateController ?? UpdateController()
             self.updateController = controller
+            // The panel may have been dismissed before the queued show task
+            // ran. Do not resurrect it after a successful check or Close.
+            guard controller.panelVisible else { return }
             let window = self.updateWindow ?? Self.makeUpdateWindow(controller: controller)
             self.updateWindow = window
+            window.delegate = self
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }
