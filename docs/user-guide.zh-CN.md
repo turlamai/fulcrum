@@ -233,6 +233,12 @@ Fulcrum 的 AI 用你自己的 OpenAI、Anthropic 或本地 Ollama 密钥。Fulc
 
 - **macOS 上粘贴回前台没反应。** 授权辅助功能：系统设置 → 隐私与安全性 → 辅助功能 → 勾选 Fulcrum。
 
+- **Ubuntu GNOME Wayland 提示“An app id is required”。** 部分启动路径无法向
+  桌面门户提供所需的 systemd 应用身份，导致全局快捷键授权失败。Fulcrum 会保留该
+  错误提示，而不是用“就绪”覆盖。可暂时在 GNOME「设置 → 键盘 → 查看和自定义
+  快捷键 → 自定义快捷键」中设置命令 `fulcrum --toggle`，绑定一个未被占用的
+  组合键。这只是可操作的替代方式，不代表门户快捷键已成功注册。
+
 - **Linux 上粘贴回前台。** X11 开箱即用。Wayland 装 `wtype`。
 
 - **AI 说没有密钥。** 先选服务商再运行 `ai key <密钥>`。Ollama 不需要密钥。
