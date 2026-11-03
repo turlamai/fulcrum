@@ -109,10 +109,14 @@ function Assert-InstalledColdLaunch([string]$label) {
             [System.Windows.Automation.TreeScope]::Descendants, $statusCondition)
           if ($null -ne $query) { $observed.QueryBoxFound = $true }
           if ($null -ne $status) { $observed.LastStatus = $status.Current.Name }
-          # An error status still exposes the same widgets. Require a
-          # positive ready message, not merely "not starting".
+          # The production launcher may already have completed its
+          # startup update check before the UIA probe sees StatusText.
+          # "Update available" / "发现新版本" is a legitimate backend-ready
+          # state, not a startup failure. Still require the real QueryBox
+          # and an explicitly positive status; never treat an arbitrary
+          # non-starting error as successful boot.
           if ($null -ne $query -and $null -ne $status -and
-              $status.Current.Name -match '^(Ready|就绪)') {
+              $status.Current.Name -match '^(Ready|就绪|Update available:|发现新版本：)') {
             $ready = $true
             break
           }
