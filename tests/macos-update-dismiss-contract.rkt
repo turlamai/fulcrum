@@ -65,6 +65,10 @@
                                 "FULCRUM_ACCEPTANCE\"] == \"1\""))
   (check-true (string-contains? acceptance-source
                                 "visibleCompletedUpdatePanel()"))
+  (check-true (string-contains? panel
+                                ".accessibilityIdentifier(\"fulcrum-update-close\")"))
+  (check-true (string-contains? acceptance-source
+                                "findByIdentifier(updatePanel, \"fulcrum-update-close\")"))
   (check-true (string-contains? acceptance-source
                                 "AXUIElementPerformAction(close, kAXPressAction"))
   (check-true (string-contains? acceptance-source
