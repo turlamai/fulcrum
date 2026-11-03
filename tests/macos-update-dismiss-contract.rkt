@@ -12,9 +12,13 @@
 (define-runtime-path view "../macos-host/Sources/RivetHost/UpdatePanelView.swift")
 (define-runtime-path host "../macos-host/Sources/RivetHost/RivetHostApp.swift")
 
-(define controller (file->string updater))
-(define panel (file->string view))
-(define app (file->string host))
+;; Windows checkout/worktree tools may preserve CRLF. The regression
+;; contract concerns Swift syntax, not the host line-ending convention.
+(define (source-text path)
+  (regexp-replace* #rx"\r\n?" (file->string path) "\n"))
+(define controller (source-text updater))
+(define panel (source-text view))
+(define app (source-text host))
 
 (test-case "all update Close controls dismiss the actual native panel"
   (check-false (string-contains? panel "controller.panelVisible = false"))
