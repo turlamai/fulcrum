@@ -67,9 +67,20 @@ function Assert-InstalledColdLaunch([string]$label) {
     # actual copy the MSI placed in Program Files.
     $env:FULCRUM_DATA_DIR = $dataDir
     $env:FULCRUM_INSTANCE_ID = "site.jrtx.fulcrum.installed-smoke.$PID.$label"
-    $process = Start-Process -FilePath $exe -PassThru
+    $stdout = Join-Path $root ("startup-" + $label + ".stdout.log")
+    $stderr = Join-Path $root ("startup-" + $label + ".stderr.log")
+    $process = Start-Process -FilePath $exe -PassThru `
+      -RedirectStandardOutput $stdout `
+      -RedirectStandardError $stderr
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
     $ready = $false
+    $observed = [ordered]@{
+      ProcessId = $process.Id
+      WindowCount = 0
+      LastWindow = "<none>"
+      QueryBoxFound = $false
+      LastStatus = "<missing>"
+    }
     $desktop = [System.Windows.Automation.AutomationElement]::RootElement
     $processCondition = [System.Windows.Automation.PropertyCondition]::new(
       [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
@@ -83,13 +94,21 @@ function Assert-InstalledColdLaunch([string]$label) {
         throw "Installed Fulcrum ($label) exited before presenting its launcher (exit $($process.ExitCode))"
       }
       try {
-        $window = $desktop.FindFirst(
+        # A process can expose more than one top-level HWND during WinUI
+        # initialization. The first unrelated window is not proof the
+        # launcher is missing; inspect every live top-level candidate.
+        $windows = $desktop.FindAll(
           [System.Windows.Automation.TreeScope]::Children, $processCondition)
-        if ($null -ne $window) {
+        $observed.WindowCount = $windows.Count
+        for ($i = 0; $i -lt $windows.Count; $i++) {
+          $window = $windows[$i]
+          $observed.LastWindow = $window.Current.Name
           $query = $window.FindFirst(
             [System.Windows.Automation.TreeScope]::Descendants, $queryCondition)
           $status = $window.FindFirst(
             [System.Windows.Automation.TreeScope]::Descendants, $statusCondition)
+          if ($null -ne $query) { $observed.QueryBoxFound = $true }
+          if ($null -ne $status) { $observed.LastStatus = $status.Current.Name }
           # An error status still exposes the same widgets. Require a
           # positive ready message, not merely "not starting".
           if ($null -ne $query -and $null -ne $status -and
@@ -98,13 +117,23 @@ function Assert-InstalledColdLaunch([string]$label) {
             break
           }
         }
+        if ($ready) { break }
       } catch [System.Windows.Automation.ElementNotAvailableException] {
         # The window may be re-parented during first native activation.
       }
       Start-Sleep -Milliseconds 250
     }
     if (-not $ready) {
-      throw "Installed Fulcrum ($label) did not expose a ready WinUI QueryBox and StatusText in 45s"
+      $diagnostic = ConvertTo-Json -InputObject $observed -Compress
+      Write-Host "Installed launch diagnostic: $diagnostic"
+      foreach ($log in @($stdout, $stderr)) {
+        if (Test-Path -LiteralPath $log -PathType Leaf) {
+          Write-Host "Startup output from $log"
+          Get-Content -LiteralPath $log -Tail 30 -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host $_ }
+        }
+      }
+      throw "Installed Fulcrum ($label) did not expose a ready WinUI QueryBox and StatusText in 45s; $diagnostic"
     }
     Write-Host "PASS: $label installed EXE launched real WinUI and initialized backend"
   } finally {
