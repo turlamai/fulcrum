@@ -640,6 +640,14 @@
                                     (cdr hit) "doc" "" ""
                                     (car hit)
                                     85))))]
+                   [(index-error)
+                    (list
+                     (result "noop"
+                             "Local file index cannot be read"
+                             "The filename cache is inaccessible or could not be recovered; check file index, storage permissions and disk health"
+                             "File" "" "doc" "" "Index error"
+                             "find file search index error"
+                             85))]
                    [(timeout)
                     (list
                      (result "noop"
