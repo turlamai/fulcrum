@@ -181,20 +181,22 @@
                      "entropy is a measure of disorder")
        (check-equal? (car (ai-copy-last-answer)) "copied")
 
-       ;; The ⌘K panel offers paste-back. The request reaches the event
-       ;; boundary and must not claim that there is no answer. Older Rivet
-       ;; adapters reject an absent event emitter, while newer adapters
-       ;; accept an unobserved local emit; both are valid without a live
-       ;; host. The actual event delivery is verified in backend-wire-test.
+       ;; The ⌘K panel offers paste-back. Validate the *pure action*
+       ;; including exact event payload, without depending on whether
+       ;; Rivet's unhosted event emitter throws or silently drops events.
+       ;; tests/backend-wire-test.rkt verifies real delivery over RVT1.
        (define panel (row-actions-for "ai.copy" "entropy is a measure of disorder"))
        (check-equal? (list-ref (car panel) 0) "ai.paste")
-       (define paste-outcome
-         (with-handlers ([exn:fail? exn-message])
-           (run-action "ai.paste" "")))
-       (check-true
-        (or (equal? paste-outcome "copied")
-            (and (string? paste-outcome)
-                 (string-contains? paste-outcome "no Rivet event emitter"))))
+       (check-equal?
+        (ai-paste-last-answer)
+        (cons "copied"
+              (list (cons 'paste-to-frontmost
+                          "entropy is a measure of disorder"))))
+       (ai-set-last-answer! "")
+       (check-equal?
+        (ai-paste-last-answer)
+        (cons "no AI answer yet" '()))
+       (ai-set-last-answer! "entropy is a measure of disorder")
 
        ;; "ai model <name>" saves the model through the settings route;
        ;; bare "ai model" offers the syntax with the current value.
