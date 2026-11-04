@@ -3280,7 +3280,11 @@ void on_activate(GtkApplication* app, gpointer) {
                   "Hotkey permission was dismissed. Reopen Fulcrum and allow "
                   "the shortcut, or bind `fulcrum --toggle` in Settings.");
               check_hotkey_shadowing("Alt+Space");
-              g_idle_add(show_on_main, nullptr);
+              // A login item stays resident even when portal consent is
+              // unavailable; interactive starts still show the recovery UI.
+              if (!g_login_background_start) {
+                g_idle_add(show_on_main, nullptr);
+              }
               break;
             case rivet::system::GlobalShortcutBindStatus::failed:
               Launcher::post_hotkey_diagnostic(
@@ -3291,7 +3295,11 @@ void on_activate(GtkApplication* app, gpointer) {
                   : "Portal hotkey failed: " + result.message +
                     ". Bind `fulcrum --toggle` in desktop Settings.");
               check_hotkey_shadowing("Alt+Space");
-              g_idle_add(show_on_main, nullptr);
+              // A login item stays resident even when portal consent is
+              // unavailable; interactive starts still show the recovery UI.
+              if (!g_login_background_start) {
+                g_idle_add(show_on_main, nullptr);
+              }
               break;
             case rivet::system::GlobalShortcutBindStatus::bound:
               // The compositor owns the final combo; say what it chose —
