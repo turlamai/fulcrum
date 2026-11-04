@@ -35,6 +35,14 @@ the panel has been active once, otherwise the summon operation can erase itself.
 
 ## Entry and settings parity
 
+The optional **Start at login** setting is native, OS-owned and
+per-device: ServiceManagement Login Items on macOS, HKCU Run on Windows,
+and an XDG autostart desktop file on Linux. An OS-initiated login launch
+stays resident without showing a new search panel or activating an
+existing instance. It never enters the synced backend settings schema.
+OS-specific approval or registration failure is shown in native Settings.
+
+
 Every host exposes Open, Settings, Check for Updates, About and Quit through its
 native resident surface (menu bar or tray) and exposes Settings/About/Update as
 searchable launcher rows. Keep the launcher search field free of app-lifecycle
