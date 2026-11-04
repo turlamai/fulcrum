@@ -68,6 +68,43 @@ int main() {
   XInitThreads();
   load_i18n(executable_path().parent_path());
   gtk_init();
+  // Exercise the actual XDG autostart writer without changing the runner's
+  // login session or touching the user's real ~/.config.
+  GError* temp_error = nullptr;
+  char* login_fixture = g_dir_make_tmp("fulcrum-login-test-XXXXXX", &temp_error);
+  check(login_fixture != nullptr, "create isolated XDG login-item fixture");
+  if (login_fixture != nullptr) {
+    char const* previous_config = g_getenv("XDG_CONFIG_HOME");
+    std::string const saved_config = previous_config ? previous_config : "";
+    bool const had_config = previous_config != nullptr;
+    g_setenv("XDG_CONFIG_HOME", login_fixture, TRUE);
+    std::string login_error;
+    check(!fulcrum_autostart_enabled(), "autostart disabled by default");
+    check(fulcrum_set_autostart(true, "/proc/self/exe", login_error),
+          "enable login startup with real executable");
+    check(fulcrum_autostart_enabled(),
+          "XDG desktop file reflects enabled login startup");
+    gchar* desktop_entry = nullptr;
+    if (g_file_get_contents(fulcrum_autostart_path().string().c_str(),
+                            &desktop_entry, nullptr, nullptr)) {
+      std::string const text(desktop_entry);
+      check(text.find("Exec=") != std::string::npos &&
+            text.find(" --background") != std::string::npos,
+            "XDG entry starts only the background launcher");
+    } else {
+      check(false, "read XDG autostart desktop entry");
+    }
+    g_free(desktop_entry);
+    check(fulcrum_set_autostart(false, "/proc/self/exe", login_error),
+          "disable login startup by removing only own entry");
+    check(!fulcrum_autostart_enabled(), "XDG login item removed");
+    if (had_config) g_setenv("XDG_CONFIG_HOME", saved_config.c_str(), TRUE);
+    else g_unsetenv("XDG_CONFIG_HOME");
+    std::filesystem::remove_all(login_fixture);
+    g_free(login_fixture);
+  } else if (temp_error != nullptr) {
+    g_error_free(temp_error);
+  }
   // Pure positioning checks exercise coordinate math independent of a
   // particular CI virtual monitor topology. Negative origins and smaller
   // work areas are common with laptop + external-display setups.
