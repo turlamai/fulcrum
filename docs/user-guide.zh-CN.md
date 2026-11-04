@@ -160,6 +160,8 @@ Fulcrum 的 AI 用你自己的 OpenAI、Anthropic 或本地 Ollama 密钥。Fulc
 
 ## 设置
 
+**macOS 登录时启动：** 在原生设置窗口的 **General（常规）→ Start at login（登录时启动）** 中开启。此项默认关闭，启用后登录本机时后台启动 Fulcrum，不会通过同步传到其他设备。macOS 可能要求在「系统设置 → 登录项」中批准；失败时界面会显示实际错误，并提供系统设置入口。这项功能仅针对 macOS，不能据此声称 Windows/Linux 的登录启动已经完成。
+
 输入 `settings`，运行对应的行即可修改：
 
 | 设置 | 说明 |
