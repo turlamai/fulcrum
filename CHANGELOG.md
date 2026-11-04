@@ -6,6 +6,16 @@ independently per platform packaging run.
 
 ## [Unreleased]
 
+### Added
+
+- **Optional native Start at login on macOS, Windows, and Linux.**
+  The login item is off by default, managed by each OS for the current
+  user and never synced. Repeated login activation does not summon the
+  existing launcher. Settings surfaces show actual registration state
+  and native errors; Linux uses an XDG desktop entry, Windows HKCU Run,
+  and macOS ServiceManagement Login Items. Migrated safely from the
+  obsolete v0.14.1 release PR #104.
+
 ### Fixed
 
 - **macOS update dialog Close now actually dismisses the window.** The
