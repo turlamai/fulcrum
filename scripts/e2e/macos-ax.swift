@@ -234,6 +234,9 @@ do {
     guard findByIdentifier(settingsWindow, "settings-record-hotkey") != nil else {
         throw DriverError.failure("settings hotkey recorder is unavailable")
     }
+    guard findByIdentifier(settingsWindow, "settings-start-at-login") != nil else {
+        throw DriverError.failure("native Start at login setting is unavailable")
+    }
     guard !contains(settingsWindow, fragment: "Feed base URL"),
           !contains(settingsWindow, fragment: "update-base-url"),
           !contains(settingsWindow, fragment: "releases/latest/download") else {
@@ -247,7 +250,7 @@ do {
         contains(settingsWindow, fragment: "Fulcrum checks signed releases automatically") ? true : nil
     }
     try writeJSON(snapshot(application), to: output.appendingPathComponent("settings-accessibility.json"))
-    try writeJSON(["platform": "macos", "actions": ["copy:clipboard-fixture", "set:FulcrumQuery=clip", "set:FulcrumQuery=12*12", "press:Return", "press:CommandComma", "press:settings-sidebar-sync", "press:completed-update", "press:update-close", "reopen:update-close"], "assertions": ["packaged SwiftUI window activated", "FulcrumQuery exposed through Accessibility", "macOS pasteboard watcher recorded text through RVT1", "clip query listed clipboard history", "query crossed RVT1 into the embedded backend", "native result list contains 144", "run-action emitted 144 to the native clipboard", "all five settings destinations are directly accessible", "global hotkey uses a recorder control", "internal update feed is absent", "Sync & Updates opens without a toolbar overflow menu", "native update panel Close hides the actual AppKit window", "completed update panel can be reopened and closed again without a spinner"]], to: output.appendingPathComponent("interaction-trace.json"))
+    try writeJSON(["platform": "macos", "actions": ["copy:clipboard-fixture", "set:FulcrumQuery=clip", "set:FulcrumQuery=12*12", "press:Return", "press:CommandComma", "press:settings-sidebar-sync", "press:completed-update", "press:update-close", "reopen:update-close"], "assertions": ["packaged SwiftUI window activated", "FulcrumQuery exposed through Accessibility", "macOS pasteboard watcher recorded text through RVT1", "clip query listed clipboard history", "query crossed RVT1 into the embedded backend", "native result list contains 144", "run-action emitted 144 to the native clipboard", "all five settings destinations are directly accessible", "global hotkey uses a recorder control", "native Login Items control is available in General settings", "internal update feed is absent", "Sync & Updates opens without a toolbar overflow menu", "native update panel Close hides the actual AppKit window", "completed update panel can be reopened and closed again without a spinner"]], to: output.appendingPathComponent("interaction-trace.json"))
     guard let running = NSRunningApplication(processIdentifier: pid), running.terminate() else { throw DriverError.failure("native application rejected termination") }
 } catch {
     if let application = diagnosticApplication, let output = diagnosticOutput { try? writeJSON(snapshot(application), to: output.appendingPathComponent("accessibility-failure.json")) }
