@@ -25,7 +25,7 @@ env:
   # lockstep by hand.
   # Unified immutable upstream revision containing AppImage handoff,
   # branded-DMG signature preservation, and macOS update rollback safety.
-  RIVET_PIN: 9355362e6b1fdf72787559277ecdf66ec22b3df1
+  RIVET_PIN: 1a38a5cebb17cc883411b7fbcc238023e9c1f950
 permissions:
   contents: write
   actions: read
@@ -143,7 +143,7 @@ jobs:
             rpm desktop-file-utils
       - name: Set up embeddable Racket CS (Linux)
         if: matrix.platform == 'linux'
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@9355362e6b1fdf72787559277ecdf66ec22b3df1
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@1a38a5cebb17cc883411b7fbcc238023e9c1f950
       # Installed after the embeddable runtime so Rivet's catalog closure and
       # Fulcrum's SQLite dependency (db-lib) resolve against the minimal build.
       - name: Install Rivet (catalog)
