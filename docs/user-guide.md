@@ -263,6 +263,8 @@ Write your own plugin: one manifest + one script. See
 
 ## Settings
 
+On **macOS**, open the native Settings window → **General** → **Start at login** to opt in to a quiet launch after sign-in. This is **off by default**, stored by macOS for this Mac only (not synced), and may require approval in System Settings → Login Items. The control reports registration failures and links to the OS approval page. Windows/Linux startup integration remains separate; do not assume this macOS setting enables it on other computers.
+
 Query `settings` and run a row to change it:
 
 | Setting | What it does |
