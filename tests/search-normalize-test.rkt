@@ -2,12 +2,22 @@
 
 (require rackunit
          "../app/core/fuzzy.rkt"
+         "../app/core/pinyin-data.rkt"
          "../app/core/search-normalize.rkt")
 
 (define (derived-score query text)
   (fuzzy-score-fields query
                       (search-fields-with-pinyin
                        (list (cons 1.0 text)))))
+
+(test-case "the pinyin table ships as a compiled module constant, not a runtime-path file"
+  ;; The desktop packager flattened the old data/pinyin.rktd subpath, so
+  ;; every packaged app since 0.14.0 failed the first Han-character query.
+  ;; Pin the module-constant contract and the data integrity together.
+  (define table (load-pinyin-table))
+  (check-true (hash? table))
+  (check-true (> (hash-count table) 40000))
+  (check-equal? (hash-ref table (char->integer #\中)) #("zhong")))
 
 (test-case "full pinyin and initials discover Chinese names"
   (check-true (exact-integer? (derived-score "weixin" "微信")))

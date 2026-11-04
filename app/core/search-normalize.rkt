@@ -7,18 +7,20 @@
 (require racket/contract
          racket/list
          racket/promise
-         racket/runtime-path
-         racket/string)
+         racket/string
+         "pinyin-data.rkt")
 
 (provide pinyin-variants
          search-fields-with-pinyin)
 
-(define-runtime-path pinyin-data-path "data/pinyin.rktd")
 (define max-variants 8)
 
+;; The table is a compiled module constant (see pinyin-data.rkt), not a
+;; runtime-path file: packaged apps cannot lose it, and the table build is
+;; still deferred until the first query containing Han characters.
 (define pinyin-table
   (delay
-    (call-with-input-file pinyin-data-path read)))
+    (load-pinyin-table)))
 
 (define (possible-han? ch)
   (define cp (char->integer ch))
