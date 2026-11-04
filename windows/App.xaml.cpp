@@ -2,6 +2,7 @@
 #include "App.xaml.h"
 #include "MainWindow.xaml.h"
 #include "WindowsInstance.h"
+#include "Autostart.h"
 
 namespace winrt::RivetHost::implementation {
 
@@ -29,6 +30,12 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
   instance_lease_ = std::make_unique<rivet::system::SingleInstanceLease>(
       application_id);
   if (!instance_lease_->is_primary()) {
+    // Login item activation must be silent when Fulcrum is already resident:
+    // do not summon the launcher or show an install-recovery dialog.
+    if (fulcrum::windows::BackgroundLaunch()) {
+      Microsoft::UI::Xaml::Application::Current().Exit();
+      return;
+    }
     // MSI handoff/repair may launch while the prior process is still
     // releasing the lease, before its WinUI window is discoverable. Do not
     // silently exit a launch that has neither summoned the owner nor
