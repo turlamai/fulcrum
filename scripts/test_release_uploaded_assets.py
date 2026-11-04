@@ -96,7 +96,13 @@ class UploadedAssetTests(unittest.TestCase):
             self.validate()
 
     def test_missing_checksum_is_rejected(self) -> None:
-        self.checksums = b"\n".join(self.checksums.splitlines()[1:]) + b"\n"
+        # Drop one non-RPM entry so we exercise the exact-inventory gate,
+        # not the separate one-RPM-per-architecture precondition.
+        missing = f"fulcrum-{VERSION}-windows-x64.msi"
+        self.checksums = b"".join(
+            row for row in self.checksums.splitlines(keepends=True)
+            if not row.decode().rstrip().endswith(f"  {missing}")
+        )
         with self.assertRaisesRegex(ValueError, "missing="):
             self.validate()
 
