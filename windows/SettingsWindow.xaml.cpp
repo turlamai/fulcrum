@@ -532,7 +532,7 @@ void SettingsWindow::Toggle_Toggled(
     } else {
       ClearError();
     }
-    return;
+    return;  // never send machine-local startup state over settings-set
   }
   Write(tag_key(sender), toggle.IsOn() ? "on" : "off");
 }
