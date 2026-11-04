@@ -96,8 +96,9 @@
      2))
   (check-equal? (car (car ranked)) "微信计划.md"))
 
-(test-case "windows backend runs the index-first script inside one command"
+(test-case "Windows explicit find checks known folders before Windows Search"
   (define captured #f)
+  (define captured-timeout-ms #f)
   (define result
     (file-search/status
      "o'brien" 8
@@ -106,16 +107,20 @@
      #:run (lambda (program args #:timeout-ms [timeout-ms 3000]
                                #:cancel-evt [_cancel-evt never-evt])
              (set! captured (cons program args))
+             (set! captured-timeout-ms timeout-ms)
              "file:///C:/Users/me/obrien.txt\n")))
-  ;; The call stays a single PowerShell invocation with the 3s budget.
+  ;; Only explicit Windows find receives a longer bounded deadline.
+  (check-equal? captured-timeout-ms 9000)
   (check-equal? (car captured) "powershell.exe")
   (check-equal? (cadr captured) "-NoProfile")
   (check-equal? (file-search-result-status result) 'ok)
   (check-equal? (file-search-result-hits result)
                 '(("obrien.txt" . "C:/Users/me/obrien.txt")))
   (define script (cadddr captured))
-  ;; Index-first: SYSTEMINDEX query, then the honest scan fallback — both
-  ;; inside the same invocation so any index failure still answers.
+  ;; Local known folders precede the optional, sometimes-hung OLE DB index.
+  (check-true (string-contains? script "GetFolderPath('MyDocuments')"))
+  (check-true (string-contains? script "OneDriveConsumer"))
+  (check-true (string-contains? script "if($out.Count -eq 0){try{"))
   (check-true (string-contains? script "SYSTEMINDEX"))
   (check-true (string-contains? script "CONTAINS(System.FileName,"))
   (check-true (string-contains? script "FREETEXT(System.FileName,"))
@@ -129,6 +134,30 @@
   ;; The query is neutralized for both SQL and PowerShell single quotes.
   (check-false (string-contains? script "o'brien"))
   (check-true (string-contains? script "o''brien")))
+
+(test-case "Windows find returns a real Downloads file using the production PowerShell"
+  (when (eq? (system-type 'os) 'windows)
+    (define profile (getenv "USERPROFILE"))
+    (when profile
+      (define downloads (build-path profile "Downloads"))
+      (define existed? (directory-exists? downloads))
+      (define fixture-name (format "fulcrum-find-~a.txt"
+                                   (current-process-milliseconds)))
+      (define fixture (build-path downloads fixture-name))
+      (define query (substring fixture-name 0 (- (string-length fixture-name) 4)))
+      (make-directory* downloads)
+      (dynamic-wind
+        (lambda () (display-to-file "fixture" fixture #:exists 'truncate))
+        (lambda ()
+          (define found (file-search/status query 8 #:os 'windows))
+          (check-equal? (file-search-result-status found) 'ok)
+          (check-true (for/or ([hit (in-list (file-search-result-hits found))])
+                        (string-ci=? (car hit) fixture-name))))
+        (lambda ()
+          (when (file-exists? fixture) (delete-file fixture))
+          (unless existed?
+            (with-handlers ([exn:fail? (lambda (_) (void))])
+              (delete-directory downloads))))))))
 
 (test-case "failed local index reports an error instead of false no matches"
   (define dir (make-temporary-file "fulcrum-broken-search-~a" 'directory))

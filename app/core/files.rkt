@@ -243,7 +243,7 @@
             void
             (lambda ()
               (runner program args
-                      #:timeout-ms 3000
+                      #:timeout-ms (if (eq? os 'windows) 9000 3000)
                       #:cancel-evt (semaphore-peek-evt cancel)))
             (lambda () (release-file-search! cancel))))
         (cond
@@ -277,14 +277,13 @@
 (define (file-search query [limit 8])
   (file-search-result-hits (file-search/status query limit)))
 
-;; ---- windows: index-first search script -----------------------------------
+;; ---- Windows: known folders before index and bounded fallback -----------
 
-;; One PowerShell invocation, two tiers inside the same 3-second budget:
-;;   1. the Windows Search index (SYSTEMINDEX) — filename prefix match,
-;;      then FREETEXT for the mid-word case; millisecond-fast when the
-;;      service is healthy
-;;   2. a bounded Get-ChildItem scan of the user profile — the honest
-;;      fallback when the index is off, empty or errors
+;; One PowerShell invocation for explicit find only, inside a 9-second budget:
+;;   1. User's shell-known Desktop, Documents and Downloads, including
+;;      redirected OneDrive folders — avoid being starved by broken OLE DB.
+;;   2. Windows Search (SYSTEMINDEX), but only if no known-folder matches.
+;;   3. Bounded user-profile fallback, when neither earlier tier found files.
 ;; The script is defensive on purpose: any index failure lands in the
 ;; catch and the scan still answers. Two query spellings travel in the
 ;; script: $q is the raw text (the scan's -Filter wants it literal) and
@@ -304,7 +303,19 @@
    "$out=@();"
    "$q='" (ps-literal raw-q) "';"
    "$qs='" (ps-literal sql-q) "';"
-   "try{"
+   "$roots=@([Environment]::GetFolderPath('DesktopDirectory'),"
+   "[Environment]::GetFolderPath('MyDocuments'),"
+   "(Join-Path $env:USERPROFILE 'Downloads'));"
+   "foreach($cloud in @($env:OneDriveConsumer,$env:OneDrive)){"
+   "if($cloud){$roots+=@((Join-Path $cloud 'Desktop'),"
+   "(Join-Path $cloud 'Documents'))}};"
+   "foreach($root in ($roots|Where-Object{$_ -and (Test-Path -LiteralPath $_ -PathType Container)}|Select-Object -Unique)){"
+   "try{$out+=@(Get-ChildItem -LiteralPath $root -Recurse -Depth 4 -File "
+   "-Filter ('*'+$q+'*') -ErrorAction SilentlyContinue|"
+   "Select-Object -First 128 -ExpandProperty FullName)}catch{};"
+   "if($out.Count -ge 128){break}"
+   "};"
+   "if($out.Count -eq 0){try{"
    "$c=New-Object System.Data.OleDb.OleDbConnection(\"Provider=Search.CollatorDSO;Extended Properties='Application=Windows'\");"
    "$c.Open();$cmd=$c.CreateCommand();"
    "$cmd.CommandText=\"SELECT TOP 128 System.ItemUrl FROM SYSTEMINDEX WHERE CONTAINS(System.FileName,'`\"$qs*`\"') AND SCOPE='file:'\";"
@@ -314,12 +325,12 @@
    "$r=$cmd.ExecuteReader();while($r.Read()){$out+=$r.GetString(0)};$r.Close()"
    "}"
    "$c.Close()"
-   "}catch{};"
+   "}catch{}};"
    "if($out.Count -gt 0){"
    ;; Preserve the original file: URLs. parse-paths does the one and only
    ;; decode and knows how to retain UNC authorities and arbitrary drives.
    ;; Stripping file:/+ here destroyed the leading //server/share.
-   "$out|Select-Object -First 128"
+   "$out|Select-Object -Unique -First 128"
    "}else{"
    "Get-ChildItem -Path $env:USERPROFILE -Recurse -Depth 3 -Filter ('*'+$q+'*') -File -ErrorAction SilentlyContinue|Select-Object -First 128 -ExpandProperty FullName"
    "}"))
