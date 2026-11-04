@@ -3,11 +3,10 @@
 #include "pch.h"
 #include "SettingsWindow.g.h"
 #include "GeneratedBackend.hpp"
-#include "winui_window.hpp"
 
 #include <map>
-#include <memory>
 #include <string>
+#include <vector>
 
 namespace winrt::RivetHost::implementation {
 
@@ -22,9 +21,17 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   SettingsWindow();
 
   // Hooked up by MainWindow once the backend is ready (and again on every
-  // show, which reloads). Each worker keeps its own shared API lease;
-  // the backend stays alive even if the window closes while an RPC runs.
-  void Attach(std::shared_ptr<rivet_app::API> api);
+  // show, which reloads). The API outlives this window: MainWindow owns it.
+  void Attach(rivet_app::API* api);
+
+  // Native five-section settings IA. The same backend keys are used by
+  // macOS, Windows and Linux; only the host controls differ.
+  void Navigation_SelectionChanged(
+      Microsoft::UI::Xaml::Controls::NavigationView const&,
+      Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const&);
+  void Hotkey_KeyDown(
+      winrt::Windows::Foundation::IInspectable const&,
+      Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const&);
 
   // XAML handlers (SettingsWindow.xaml).
   void Toggle_Toggled(winrt::Windows::Foundation::IInspectable const&,
@@ -47,13 +54,19 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   void Apply(std::map<std::string, std::string> values, std::string ai_status);
   void Write(std::string key, std::string value);
   void RefreshAiStatus();
+  void LoadBindings();
+  void ShowBindings(std::vector<std::vector<std::string>> commands,
+                    std::vector<std::vector<std::string>> bindings);
+  void SaveBinding(std::string id, std::string alias, std::string hotkey);
+  void ClearBinding(std::string id);
+  void NavigateTo(std::string const& section);
   void ApplyLocalization(std::string const& language);
   void SaveKey();
   void CommitText(Microsoft::UI::Xaml::Controls::TextBox const& box);
   void ShowError(std::wstring const& message);
   void ClearError();
 
-  std::shared_ptr<rivet_app::API> api_;
+  rivet_app::API* api_{nullptr};
   // True while Apply pushes values into the controls, so their change
   // handlers do not write them straight back.
   bool loading_{false};
