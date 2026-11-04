@@ -17,6 +17,10 @@ grep -Fq 'run: bash scripts/version-release-preflight.sh' "$ROOT/.github/workflo
   exit 1
 }
 bash "$ROOT/scripts/test-release-draft-identity.sh"
+python3 "$ROOT/scripts/test_release_public_assets.py"
+require 'python3 scripts/check_release_public_assets.py "$version" public'
+require 'cp release/update-manifest.json release/manifest.json public/'
+require '(cd public && sha256sum -c SHA256SUMS)'
 require 'Validate independent platform signing modes'
 require 'scripts/check-release-signing-modes.sh "$MACOS_SIGNING_MODE" "$WINDOWS_SIGNING_MODE"'
 require "if: matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id'"

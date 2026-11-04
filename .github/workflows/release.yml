@@ -446,6 +446,7 @@ jobs:
     outputs:
       release_id: ${{ steps.create-release.outputs.id }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -464,7 +465,12 @@ jobs:
             test -s "release/$name" || { echo "::error::Missing or empty $name"; exit 1; }
             cp "release/$name" "public/$name"
           done < release/SHA256SUMS
-          cp release/SHA256SUMS release/update-manifest.json release/manifest.json public/
+          cp release/update-manifest.json release/manifest.json public/
+          # Fail closed on missing/extra installer formats or RPM revisions.
+          # Hash the exact public inventory, including BOTH signed feed names.
+          tag_version="${GITHUB_REF_NAME#v}"
+          version="${tag_version%%-rc.*}"
+          python3 scripts/check_release_public_assets.py "$version" public
           (cd public && sha256sum -c SHA256SUMS)
           ls -la public/
       - uses: softprops/action-gh-release@v2
