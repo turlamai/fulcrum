@@ -202,6 +202,27 @@ try {
         }
         return $null
     }
+    # Validate all five Settings destinations, then prove the Commands tab
+    # reveals actual bindings controls, not a decorative sidebar entry.
+    foreach ($section in @('general','features','ai','commands','sync')) {
+        [void](Wait-Until "settings sidebar $section" {
+            Find-ById $settingsWindow "settings-sidebar-$section"
+        })
+    }
+    $commandsTab = Find-ById $settingsWindow 'settings-sidebar-commands'
+    $commandsSelection = [System.Windows.Automation.SelectionItemPattern]$commandsTab.GetCurrentPattern(
+        [System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $commandsSelection.Select()
+    [void](Wait-Until 'visible Commands editor' {
+        $title = Find-ById $settingsWindow 'settings-commands-title'
+        if ($title -and -not $title.Current.IsOffscreen) { return $title }
+        return $null
+    })
+    $generalTab = Find-ById $settingsWindow 'settings-sidebar-general'
+    $generalSelection = [System.Windows.Automation.SelectionItemPattern]$generalTab.GetCurrentPattern(
+        [System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $generalSelection.Select()
+
     $startupControl = Wait-Until 'native Start at login toggle' {
         Find-ById $settingsWindow 'FulcrumStartAtLogin'
     }
@@ -337,8 +358,8 @@ try {
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('set:QueryBox=12*12','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
+        actions = @('set:QueryBox=12*12','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:five-native-tabs','settings:commands-editor','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','five native Settings destinations and visible Commands editor','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
     $env:FULCRUM_DATA_DIR = $savedData
