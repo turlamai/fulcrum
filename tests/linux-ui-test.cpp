@@ -68,6 +68,43 @@ int main() {
   XInitThreads();
   load_i18n(executable_path().parent_path());
   gtk_init();
+  // Exercise the actual XDG autostart writer without changing the runner's
+  // login session or touching the user's real ~/.config.
+  GError* temp_error = nullptr;
+  char* login_fixture = g_dir_make_tmp("fulcrum-login-test-XXXXXX", &temp_error);
+  check(login_fixture != nullptr, "create isolated XDG login-item fixture");
+  if (login_fixture != nullptr) {
+    char const* previous_config = g_getenv("XDG_CONFIG_HOME");
+    std::string const saved_config = previous_config ? previous_config : "";
+    bool const had_config = previous_config != nullptr;
+    g_setenv("XDG_CONFIG_HOME", login_fixture, TRUE);
+    std::string login_error;
+    check(!fulcrum_autostart_enabled(), "autostart disabled by default");
+    check(fulcrum_set_autostart(true, "/proc/self/exe", login_error),
+          "enable login startup with real executable");
+    check(fulcrum_autostart_enabled(),
+          "XDG desktop file reflects enabled login startup");
+    gchar* desktop_entry = nullptr;
+    if (g_file_get_contents(fulcrum_autostart_path().string().c_str(),
+                            &desktop_entry, nullptr, nullptr)) {
+      std::string const text(desktop_entry);
+      check(text.find("Exec=") != std::string::npos &&
+            text.find(" --background") != std::string::npos,
+            "XDG entry starts only the background launcher");
+    } else {
+      check(false, "read XDG autostart desktop entry");
+    }
+    g_free(desktop_entry);
+    check(fulcrum_set_autostart(false, "/proc/self/exe", login_error),
+          "disable login startup by removing only own entry");
+    check(!fulcrum_autostart_enabled(), "XDG login item removed");
+    if (had_config) g_setenv("XDG_CONFIG_HOME", saved_config.c_str(), TRUE);
+    else g_unsetenv("XDG_CONFIG_HOME");
+    std::filesystem::remove_all(login_fixture);
+    g_free(login_fixture);
+  } else if (temp_error != nullptr) {
+    g_error_free(temp_error);
+  }
   // Pure positioning checks exercise coordinate math independent of a
   // particular CI virtual monitor topology. Negative origins and smaller
   // work areas are common with laptop + external-display setups.
@@ -94,6 +131,70 @@ int main() {
   auto& launcher = Launcher::instance();
   // The test executable has no adjacent runtime: startup stops before boot.
   check(launcher.api == nullptr, "UI fixture does not start the backend");
+  // Do not map the empty GTK shell during interactive startup. The first
+  // backend search completion (including a failure) releases this gate.
+  launcher.hide();
+  launcher.initial_results_ready = false;
+  launcher.show();
+  check(!gtk_widget_get_visible(GTK_WIDGET(launcher.window)) &&
+            launcher.summon_when_ready,
+        "interactive first frame stays hidden until native search rows");
+  Launcher::SearchOutcome initial;
+  initial.ok = true;
+  initial.rows.push_back(parse_row(
+      {"settings.open", "Settings…", "Preferences", "Setting", "", "", "", ""}));
+  launcher.apply_search(std::move(initial));
+  check(launcher.initial_results_ready &&
+            gtk_widget_get_visible(GTK_WIDGET(launcher.window)) &&
+            !launcher.summon_when_ready,
+        "first native results reveal the requested launcher once");
+
+  launcher.hide();
+  launcher.initial_results_ready = false;
+  launcher.show();
+  Launcher::SearchOutcome failure;
+  failure.ok = false;
+  failure.error = "test startup failure";
+  launcher.apply_search(std::move(failure));
+  check(launcher.initial_results_ready &&
+            gtk_widget_get_visible(GTK_WIDGET(launcher.window)) &&
+            std::string(gtk_label_get_text(launcher.status)).find(
+                "test startup failure") != std::string::npos,
+        "initial search failure reveals actionable diagnostic");
+
+  launcher.hide();
+  launcher.initial_results_ready = false;
+  g_login_background_start = true;
+  Launcher::SearchOutcome loginResult;
+  loginResult.ok = true;
+  loginResult.rows.push_back(parse_row(
+      {"settings.open", "Settings…", "Preferences", "Setting", "", "", "", ""}));
+  launcher.apply_search(std::move(loginResult));
+  check(launcher.initial_results_ready &&
+            !gtk_widget_get_visible(GTK_WIDGET(launcher.window)) &&
+            !launcher.summon_when_ready,
+        "login item receives results without presenting the launcher");
+  g_login_background_start = false;
+  launcher.show();
+  check(gtk_widget_get_visible(GTK_WIDGET(launcher.window)),
+        "a later explicit summon reopens the login-started launcher");
+  // The five navigation pages are real GtkStack children rather than
+  // unlabelled sections in a single 760px scrolling form.
+  settings_build();
+  check(GTK_IS_STACK(g_settings_form->stack),
+        "Settings uses a native GTK page stack");
+  for (auto const* name : {"general", "features", "ai", "commands", "sync"}) {
+    check(gtk_stack_get_child_by_name(GTK_STACK(g_settings_form->stack), name) != nullptr,
+          "all five Settings destinations exist");
+  }
+  check(g_settings_form->commands_list != nullptr &&
+            g_settings_form->commands_message != nullptr,
+        "Commands destination owns a real backend editor and status");
+  check(has_label(GTK_WIDGET(g_settings_form->window), "Start at login"),
+        "device-local login control is discoverable in Settings");
+  gtk_window_destroy(g_settings_form->window);
+  delete g_settings_form;
+  g_settings_form = nullptr;
   // Ubuntu Wayland's portal may reject CreateSession before embedded Racket
   // is ready. A later Ready/status refresh must never erase the only
   // explanation that the global shortcut cannot summon the launcher.

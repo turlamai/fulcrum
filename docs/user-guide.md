@@ -263,6 +263,17 @@ Write your own plugin: one manifest + one script. See
 
 ## Settings
 
+**Start at login (optional, off by default):** Open the native Settings
+window and enable **Start at login** in General. On macOS, approve the login
+item in System Settings if prompted; on Windows the app uses the current
+user's Run entry; on Linux it creates an XDG autostart desktop entry in the
+current user's configuration directory. Login launches stay in the
+menu bar/tray and do not raise a second search window. This switch is
+**per-device and not synced**. Turn it off in the same native Settings
+window. These changes ship only after their PR is merged and a new
+version is released.
+
+
 Query `settings` and run a row to change it:
 
 | Setting | What it does |

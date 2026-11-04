@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MainWindow.xaml.h"
+#include "Autostart.h"
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
 #endif
@@ -1069,6 +1070,12 @@ void MainWindow::FinishNativeSetup() {
                         self->ShowAbout();
                         return 0;
                       }
+                      // Acceptance-only path exercises real native Settings.
+                      if (msg == fulcrum::windows::kAcceptanceSettingsMessage &&
+                          self != nullptr && is_acceptance_run()) {
+                        self->ShowSettings();
+                        return 0;
+                      }
                       if (msg == WM_NCHITTEST && self != nullptr) {
                         // The borderless panel has no titlebar to drag by,
                         // and the macOS panel stays movable through its
@@ -1638,7 +1645,10 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
   UpdateEnterChips();
   if (!startup_presented_) {
     startup_presented_ = true;
-    ShowLauncher(false);  // show only after the first native rows are built
+    // Login-run stays resident in the tray/hotkey, without flashing the UI.
+    if (!fulcrum::windows::BackgroundLaunch()) {
+      ShowLauncher(false);  // show only after the first native rows are built
+    }
   }
 }
 
