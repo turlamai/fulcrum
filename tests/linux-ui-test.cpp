@@ -131,6 +131,23 @@ int main() {
   auto& launcher = Launcher::instance();
   // The test executable has no adjacent runtime: startup stops before boot.
   check(launcher.api == nullptr, "UI fixture does not start the backend");
+  // The five navigation pages are real GtkStack children rather than
+  // unlabelled sections in a single 760px scrolling form.
+  settings_build();
+  check(GTK_IS_STACK(g_settings_form->stack),
+        "Settings uses a native GTK page stack");
+  for (auto const* name : {"general", "features", "ai", "commands", "sync"}) {
+    check(gtk_stack_get_child_by_name(GTK_STACK(g_settings_form->stack), name) != nullptr,
+          "all five Settings destinations exist");
+  }
+  check(g_settings_form->commands_list != nullptr &&
+            g_settings_form->commands_message != nullptr,
+        "Commands destination owns a real backend editor and status");
+  check(has_label(GTK_WIDGET(g_settings_form->window), "Start at login"),
+        "device-local login control is discoverable in Settings");
+  gtk_window_destroy(g_settings_form->window);
+  delete g_settings_form;
+  g_settings_form = nullptr;
   // Ubuntu Wayland's portal may reject CreateSession before embedded Racket
   // is ready. A later Ready/status refresh must never erase the only
   // explanation that the global shortcut cannot summon the launcher.
