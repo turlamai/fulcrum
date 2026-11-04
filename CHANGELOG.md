@@ -4,6 +4,21 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [Unreleased]
+
+### Fixed
+
+- **Chinese queries search again in packaged apps.** Since 0.14.0 every
+  installed app failed the first query containing Han characters with
+  `open-input-file: cannot open input file`: the pinyin recall table
+  shipped as a runtime-path data file whose `data/` subpath the desktop
+  packager flattened, so packaged apps could not open it (English search
+  never touched the table, which is why CI acceptance stayed green).
+  The table now ships as a compiled module constant embedded in the
+  release binary — it cannot be lost in packaging — with the generator
+  updated to emit that module and the table integrity pinned by a
+  regression test.
+
 ## [0.15.0] - 2026-11-04
 
 ### Added
