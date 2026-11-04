@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "SettingsWindow.xaml.h"
+#include "Autostart.h"
 #include "GeneratedI18n.hpp"
 #if __has_include("SettingsWindow.g.cpp")
 #include "SettingsWindow.g.cpp"
@@ -95,6 +96,10 @@ double number_or(std::string const& value, double fallback) {
 
 SettingsWindow::SettingsWindow() {
   InitializeComponent();
+  // The Win32 login entry is local state, not a synced RVT1 setting.
+  loading_ = true;
+  LoginStartupSwitch().IsOn(fulcrum::windows::AutostartEnabled());
+  loading_ = false;
   Title(L"Fulcrum Settings");
   try {
     // Mica like the Windows Settings app; a regular title bar stays — this
@@ -164,6 +169,7 @@ void SettingsWindow::Apply(std::map<std::string, std::string> values,
   ApplyLocalization(get("language"));
   select_choice(LanguageBox(), get("language"));
   select_choice(ThemeBox(), get("theme"));
+  LoginStartupSwitch().IsOn(fulcrum::windows::AutostartEnabled());
   HotkeyBox().Text(to_wide(get("hotkey")));
   MaxResultsBox().Value(number_or(get("max-results"), 12));
   ClipboardSwitch().IsOn(get("clipboard-enabled") == "on");
@@ -324,6 +330,18 @@ void SettingsWindow::Toggle_Toggled(
   auto toggle = sender.try_as<mxc::ToggleSwitch>();
   if (toggle == nullptr) {
     return;
+  }
+  if (tag_key(sender) == "local-login-startup") {
+    if (!fulcrum::windows::SetAutostart(toggle.IsOn())) {
+      // Reflect the actual OS registry state after a failed write.
+      loading_ = true;
+      LoginStartupSwitch().IsOn(fulcrum::windows::AutostartEnabled());
+      loading_ = false;
+      ShowError(L"Unable to update this PC's login startup setting.");
+    } else {
+      ClearError();
+    }
+    return;  // never send machine-local startup state over settings-set
   }
   Write(tag_key(sender), toggle.IsOn() ? "on" : "off");
 }
