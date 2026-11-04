@@ -932,6 +932,10 @@ struct Launcher {
   // as visible-but-inactive while it resolves activation; hiding during that
   // handoff made the v0.13.1 summon hotkey look completely dead on Ubuntu.
   bool activated_since_show{false};
+  // The first visible frame must contain real backend rows or a boot error.
+  // A login-item start deliberately has no pending summon.
+  bool initial_results_ready{false};
+  bool summon_when_ready{false};
   int host_settings_generation{0};
   int theme_revision{0};
   int hotkey_revision{0};
@@ -1440,10 +1444,12 @@ struct Launcher {
   void apply_search(SearchOutcome result) {
     if (!result.ok) {
       set_status("Search failed: " + result.error);
+      finish_initial_presentation();
       return;
     }
     rows = std::move(result.rows);
     refresh_results(result.selected_arg);
+    finish_initial_presentation();
   }
 
   void scroll_to_selection() {
@@ -1780,7 +1786,23 @@ struct Launcher {
     }).detach();
   }
 
-  void show(guint32 user_time = GDK_CURRENT_TIME) {
+  // Complete the startup frame gate at most once. The backend may finish
+  // after a user summon or during a quiet login item; only the former opens.
+  void finish_initial_presentation() {
+    if (initial_results_ready) return;
+    initial_results_ready = true;
+    if (summon_when_ready) {
+      summon_when_ready = false;
+      show(GDK_CURRENT_TIME, false);
+    }
+  }
+
+  void show(guint32 user_time = GDK_CURRENT_TIME,
+            bool start_search = true) {
+    if (!initial_results_ready) {
+      summon_when_ready = true;
+      return;
+    }
     cancel_focus_loss();
     activated_since_show = false;
     actions_mode = false;
@@ -1790,7 +1812,7 @@ struct Launcher {
     dismiss_ai_panel();
     dismiss_detail_panel();
     gtk_editable_set_text(GTK_EDITABLE(search), "");
-    run_search("");
+    if (start_search) run_search("");
     // Position before mapping to avoid showing the launcher on the wrong
     // monitor for a frame. Wayland compositor positioning remains unchanged.
     gtk_widget_realize(GTK_WIDGET(window));
@@ -1824,6 +1846,7 @@ struct Launcher {
 
   void hide() {
     cancel_focus_loss();
+    summon_when_ready = false;
     gtk_widget_set_visible(GTK_WIDGET(window), FALSE);
   }
 
@@ -1851,6 +1874,7 @@ struct Launcher {
         !std::filesystem::exists(core)) {
       set_status("Missing Rivet runtime layout (runtime/*.boot, res/core.zo) "
                  "next to the executable. Build with raco rivet build/dev.");
+      finish_initial_presentation();
       return;
     }
 
@@ -1914,10 +1938,12 @@ struct Launcher {
     }
     if (!error.empty()) {
       set_status("Fulcrum backend failed to start: " + error);
+      finish_initial_presentation();
       return;
     }
     if (backend == nullptr) {
       set_status("Fulcrum backend error: startup completed without a backend");
+      finish_initial_presentation();
       return;
     }
 
