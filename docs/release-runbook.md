@@ -85,7 +85,13 @@ x64, Windows x64, Linux x64):
    (macOS clients are served the portable zip for their architecture),
    verifies the exact payload bytes, assembles one deterministic
    `SHA256SUMS` from the sidecars, and drafts the GitHub release with
-   only versioned binaries, signed update metadata and that checksum file. Manifest URLs are tag-pinned
+   only versioned binaries, signed update metadata and that checksum file.
+   Before promotion, the independent publish job rechecks the exact
+   **21-asset remote inventory** (18 versioned payloads, both signed feed
+   names, and `SHA256SUMS`) against the verified draft-job checksum file.
+   Each asset must be fully uploaded, nonempty and match GitHub's own
+   SHA-256 digest; any missing, duplicate, unexpected or corrupted upload
+   leaves the draft unpublished. Manifest URLs are tag-pinned
    (`releases/download/<tag>/<artifact>`) — never re-upload under an
    existing version URL. The app itself fetches `manifest.json` under its
    `update-base-url` setting (default
