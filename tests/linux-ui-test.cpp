@@ -131,6 +131,53 @@ int main() {
   auto& launcher = Launcher::instance();
   // The test executable has no adjacent runtime: startup stops before boot.
   check(launcher.api == nullptr, "UI fixture does not start the backend");
+  // Do not map the empty GTK shell during interactive startup. The first
+  // backend search completion (including a failure) releases this gate.
+  launcher.hide();
+  launcher.initial_results_ready = false;
+  launcher.show();
+  check(!gtk_widget_get_visible(GTK_WIDGET(launcher.window)) &&
+            launcher.summon_when_ready,
+        "interactive first frame stays hidden until native search rows");
+  Launcher::SearchOutcome initial;
+  initial.ok = true;
+  initial.rows.push_back(parse_row(
+      {"settings.open", "Settings…", "Preferences", "Setting", "", "", "", ""}));
+  launcher.apply_search(std::move(initial));
+  check(launcher.initial_results_ready &&
+            gtk_widget_get_visible(GTK_WIDGET(launcher.window)) &&
+            !launcher.summon_when_ready,
+        "first native results reveal the requested launcher once");
+
+  launcher.hide();
+  launcher.initial_results_ready = false;
+  launcher.show();
+  Launcher::SearchOutcome failure;
+  failure.ok = false;
+  failure.error = "test startup failure";
+  launcher.apply_search(std::move(failure));
+  check(launcher.initial_results_ready &&
+            gtk_widget_get_visible(GTK_WIDGET(launcher.window)) &&
+            std::string(gtk_label_get_text(launcher.status)).find(
+                "test startup failure") != std::string::npos,
+        "initial search failure reveals actionable diagnostic");
+
+  launcher.hide();
+  launcher.initial_results_ready = false;
+  g_login_background_start = true;
+  Launcher::SearchOutcome loginResult;
+  loginResult.ok = true;
+  loginResult.rows.push_back(parse_row(
+      {"settings.open", "Settings…", "Preferences", "Setting", "", "", "", ""}));
+  launcher.apply_search(std::move(loginResult));
+  check(launcher.initial_results_ready &&
+            !gtk_widget_get_visible(GTK_WIDGET(launcher.window)) &&
+            !launcher.summon_when_ready,
+        "login item receives results without presenting the launcher");
+  g_login_background_start = false;
+  launcher.show();
+  check(gtk_widget_get_visible(GTK_WIDGET(launcher.window)),
+        "a later explicit summon reopens the login-started launcher");
   // The five navigation pages are real GtkStack children rather than
   // unlabelled sections in a single 760px scrolling form.
   settings_build();
