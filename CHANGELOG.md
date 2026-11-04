@@ -16,6 +16,14 @@ independently per platform packaging run.
   and macOS ServiceManagement Login Items. Migrated safely from the
   obsolete v0.14.1 release PR #104.
 
+### Changed
+
+- **Rivet pin moved to 1a38a5c**, which standardizes plain DMG
+  drag-to-Applications installation, hardens macOS DMG detachment and
+  qualifies Windows MSI repair, and hardens packaging hashing behind a
+  lazy Ed25519 provider. This also carries the earlier MSI-repair pin
+  (9355362) adopted across the build and acceptance jobs in #165.
+
 ### Fixed
 
 - **macOS update dialog Close now actually dismisses the window.** The
