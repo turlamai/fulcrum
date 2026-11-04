@@ -44,6 +44,7 @@
 #include "GeneratedBackend.hpp"
 #include "system_services.hpp"
 #include "update_handoff.hpp"
+#include "autostart.hpp"
 #include "x11_hotkey.hpp"
 
 namespace {
@@ -2310,6 +2311,23 @@ void refresh_settings_language() {
   }
 }
 
+void on_linux_startup_toggle(GObject* object, GParamSpec*, gpointer) {
+  if (!g_settings_form || g_settings_form->loading) return;
+  bool const enabled = gtk_switch_get_active(GTK_SWITCH(object));
+  char const* appimage = std::getenv("APPIMAGE");
+  std::string const executable = appimage && *appimage
+      ? std::string(appimage) : executable_path().string();
+  std::string error;
+  if (!fulcrum_set_autostart(enabled, executable, error)) {
+    g_settings_form->loading = true;
+    gtk_switch_set_active(GTK_SWITCH(object), !enabled);
+    g_settings_form->loading = false;
+    settings_show_error("Start at login: " + error);
+  } else {
+    settings_show_error("");
+  }
+}
+
 void settings_build() {
   g_settings_form = new SettingsForm();
   auto* window = gtk_window_new();
@@ -2340,6 +2358,15 @@ void settings_build() {
                 "f1–f12, comma, period, minus, equal, tab. Applies immediately; "
                 "a taken combo falls back to Ctrl+Alt+Space.");
   settings_add_number(general, "Maximum results", "max-results", 5, 25);
+  auto* startup_toggle = gtk_switch_new();
+  gtk_switch_set_active(GTK_SWITCH(startup_toggle), fulcrum_autostart_enabled());
+  gtk_accessible_update_property(GTK_ACCESSIBLE(startup_toggle),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "Fulcrum start at login", -1);
+  settings_row(general, "Start at login", startup_toggle);
+  g_signal_connect(startup_toggle, "notify::active",
+                   G_CALLBACK(on_linux_startup_toggle), nullptr);
+  settings_hint(general, "Starts quietly at sign-in on this device; not synced.");
 
   auto* features = settings_section(page, "Features");
   settings_add_toggle(features, "Record clipboard history", "clipboard-enabled");
@@ -3031,6 +3058,8 @@ void on_window_active_changed(GObject* obj, GParamSpec*, gpointer) {
   }, nullptr);
 }
 
+bool g_login_background_start = false;
+
 void on_activate(GtkApplication* app, gpointer) {
   Launcher& launcher = Launcher::instance();
   launcher.app = app;  // tray quit routes through GApplication's shutdown
@@ -3302,6 +3331,8 @@ void on_activate(GtkApplication* app, gpointer) {
       activate_on_main(nullptr);
       return G_SOURCE_REMOVE;
     }, nullptr);
+  } else if (g_login_background_start) {
+    launcher.hide();
   } else {
     launcher.show();
   }
@@ -3334,7 +3365,8 @@ void on_shutdown(GApplication*, gpointer) {
 
 }  // namespace
 
-int run_application(bool toggle_requested = false) {
+int run_application(bool toggle_requested = false, bool login_background = false) {
+  g_login_background_start = login_background;
   // The first-party rivet lease replaces the old pid-file + SIGUSR1 scheme:
   // second desktop launches show the primary. Explicit --toggle from a
   // compositor binding retains true toggle semantics.
@@ -3345,6 +3377,8 @@ int run_application(bool toggle_requested = false) {
           : "site.jrtx.fulcrum";
   rivet::system::SingleInstanceLease lease(application_id);
   if (!lease.is_primary()) {
+    // OS login startup must not summon an already running launcher.
+    if (login_background) return 0;
     if (!lease.forward_arguments({toggle_requested ? "--toggle" : "--show"})) {
       std::cerr << "fulcrum: running instance not reachable\n";
       return 1;
@@ -3375,5 +3409,7 @@ int run_application(bool toggle_requested = false) {
 int main(int argc, char** argv) {
   bool const toggle_requested = argc > 1 &&
       std::string_view(argv[1]) == "--toggle";
-  return run_application(toggle_requested);
+  bool const login_background = argc > 1 &&
+      std::string_view(argv[1]) == "--background";
+  return run_application(toggle_requested, login_background);
 }
