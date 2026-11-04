@@ -4,7 +4,7 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
-## [Unreleased]
+## [0.15.0] - 2026-11-04
 
 ### Added
 
@@ -49,6 +49,66 @@ independently per platform packaging run.
   REST id with delete-then-upload clobber semantics instead of resolving
   through the detached tag name, and the offline contract tests and the
   CI static gate pin the new shape in both directions.
+- **Release assets ship from a strict canonical inventory.** The release
+  pipeline stages verified canonical payloads without duplicate aliases,
+  requires the complete native Linux installers (deb/rpm/AppImage) and
+  signed consolidated checksums, and fails closed before publication
+  when staged assets are missing, duplicated, mismatched or extra. The
+  site's download resolver selects canonical versioned assets with a
+  safe fallback and recognizes SemVer tags.
+- **File search reports what happened instead of pretending to be
+  empty.** An empty `find` result now states that the local index is
+  still building (with progress) or which scopes were searched, and an
+  inaccessible local index is reported as a failure rather than folded
+  into a valid zero-hit answer.
+- **Live `find` queries refresh while the first-use catalog builds.**
+  Catalog batches feed the shared search-revision nudge, so results
+  arrive in the open query without retyping.
+- **Windows file search keeps UNC shares and Unicode names in the local
+  index.** Indexed UNC paths lost their server segment and non-ASCII
+  filenames were mangled on the way out; both survive transport now,
+  covered by regression tests.
+- **Windows explicit `find` restores known-folder-first coverage.** The
+  Windows Search query could burn its whole time budget before reaching
+  Desktop/Documents/Downloads, yielding nothing on normal machines;
+  known folders are checked first again without regressing UNC parsing.
+- **Search results stay monotonic under concurrent workers.** Plugin and
+  file-index workers published revision nudges out of order, which could
+  leave a stale result set on screen; revision publication is serialized
+  and failure recovery is covered by concurrency tests.
+- **Windows native RPC workers keep the backend and API alive.** Detached
+  Settings and launcher RPC workers could outlive the objects they
+  touched and capture dangling pointers; ownership is now held across
+  the detached lifetime.
+- **Windows tray About opens as a real window again.** The tray menu's
+  About entry rendered into a window that never got activated or shown,
+  so nothing appeared. About is now its own independently visible
+  top-level window, asserted by packaged acceptance without summoning
+  the launcher.
+- **Windows survives a stuck resident instance and MSI replacement.** A
+  pending launch recovers from a stale resident lease within seconds and
+  reports a nonresponsive owner instead of hanging, and the resident
+  process now exits cooperatively when MSI Restart Manager needs to
+  replace the app during install or upgrade.
+- **Launching Fulcrum from the desktop shows the launcher on Linux.** A
+  desktop relaunch of the resident instance only toggled visibility when
+  explicitly requested (`--toggle`), leaving ordinary launches silent on
+  some sessions. Desktop launches now always present the panel; toggling
+  stays an explicit act.
+- **GNOME Wayland portal hotkey failures stay visible on Linux.** The
+  portal's app-id rejection used to be overwritten once the backend
+  reported Ready, hiding why the summon hotkey was dead; the failure is
+  preserved through readiness and settings refresh, with the manual
+  shortcut fallback documented.
+- **Every shipped link points at the canonical `turlamai` owner.** About
+  dialogs (Windows issue reporter, Linux and macOS hosts), docs,
+  registry links and the update-feed default now name the renamed owner;
+  the old name is again registrable, so stale links would break silently.
+- **Stable tags are gated by an independent signing preflight.** Before
+  minting an immutable tag, each platform's signing mode (macOS ad-hoc
+  or Developer ID, Windows unsigned or Authenticode) is validated with
+  its own required credentials, decoupling optional paid signing from
+  the release decision.
 
 ## [0.14.2] - 2026-11-02
 
