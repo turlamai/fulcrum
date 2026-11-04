@@ -1,24 +1,12 @@
 name: Release
 
-# Tag-driven pipeline producing versioned, architecture-suffixed artifacts —
-# fulcrum-<version>-macos-<arch>.dmg + .zip, fulcrum-<version>-windows-x64.msi
-# + .zip, fulcrum-<version>-linux-<arch>.tar.gz/.zip plus the native Linux
-# installers (fulcrum-<version>-linux-*.deb/.rpm/.AppImage, named by rivet per
-# ecosystem) on both x64 and arm64 — each with a .sha256 checksum, a combined
-# SHA256SUMS, and the signed stable-channel manifest (update-manifest.json;
-# a byte-identical manifest.json rides along while pre-0.8.0 clients are in
-# the field). Stable tags MUST use `raco rivet release` with Windows
-# Authenticode, macOS Developer ID/notarization, Linux Ed25519, and the
-# independent Ed25519 signed update channel; missing secrets stop publishing.
-#
-# One explicit exception exists: setting the repository variable
-# FULCRUM_UNSIGNED_RELEASE_APPROVED=true ships an honestly-labeled UNSIGNED
-# release for macOS/Windows while publisher accounts are being procured.
-# The update feed stays Ed25519-signed and Linux keeps its production
-# artifact signatures; macOS packages are ad-hoc signed and Windows packages
-# unsigned, and the release notes carry a prominent unsigned warning. The
-# channel is explicit, never a silent fallback: without the variable a
-# stable tag with missing credentials still fails closed.
+# Stable tags require successful CI and Product Acceptance on the tagged
+# commit and explicit stable-promotion approval. Platform signing modes are
+# independent (docs/release-signing-policy.md):
+#   FULCRUM_MACOS_SIGNING_MODE:  adhoc (default) | developer-id
+#   FULCRUM_WINDOWS_SIGNING_MODE: unsigned (default) | authenticode
+# Linux artifact signing and the independent Ed25519 update feed remain
+# mandatory. Requested signed/notarized modes never downgrade silently.
 
 on:
   push:
@@ -37,7 +25,7 @@ env:
   # lockstep by hand.
   # Unified immutable upstream revision containing AppImage handoff,
   # branded-DMG signature preservation, and macOS update rollback safety.
-  RIVET_PIN: e18c28e6b6b18ab0f59559e82e30c51c4229d91f
+  RIVET_PIN: 9355362e6b1fdf72787559277ecdf66ec22b3df1
 permissions:
   contents: write
   actions: read
@@ -60,6 +48,13 @@ jobs:
           PACKAGE_VERSION="$(tr -d '\r\n' < VERSION)"
           grep -q "^## \[${PACKAGE_VERSION}\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## [${PACKAGE_VERSION}]' section"; exit 1; }
 
+
+      - name: Validate independent platform signing modes
+        shell: bash
+        env:
+          MACOS_SIGNING_MODE: ${{ vars.FULCRUM_MACOS_SIGNING_MODE }}
+          WINDOWS_SIGNING_MODE: ${{ vars.FULCRUM_WINDOWS_SIGNING_MODE }}
+        run: bash scripts/check-release-signing-modes.sh "$MACOS_SIGNING_MODE" "$WINDOWS_SIGNING_MODE"
 
       # Manual tag pushes and workflow_dispatch must not bypass the same
       # exact-commit CI + packaged Product Acceptance gate as VERSION bumps.
@@ -148,7 +143,7 @@ jobs:
             rpm desktop-file-utils
       - name: Set up embeddable Racket CS (Linux)
         if: matrix.platform == 'linux'
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@e18c28e6b6b18ab0f59559e82e30c51c4229d91f
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@9355362e6b1fdf72787559277ecdf66ec22b3df1
       # Installed after the embeddable runtime so Rivet's catalog closure and
       # Fulcrum's SQLite dependency (db-lib) resolve against the minimal build.
       - name: Install Rivet (catalog)
@@ -173,10 +168,10 @@ jobs:
           brew install librsvg
           bash scripts/render-dmg-background.sh
           python3 scripts/check-macos-dmg-layout.py
-      # Production code-signing and notarization are mandatory for stable
-      # tags. Credentials only enter trusted tag runners, never PR jobs.
+      # Requested Developer ID mode requires real Apple credentials; no
+      # silent fallback to ad-hoc is allowed. PR jobs never receive secrets.
       - name: Configure macOS Developer ID and notary profile
-        if: matrix.platform == 'macos' && vars.FULCRUM_UNSIGNED_RELEASE_APPROVED != 'true'
+        if: matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id'
         shell: bash
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
@@ -211,7 +206,7 @@ jobs:
           echo "RIVET_MACOS_SIGN_IDENTITY=$MACOS_SIGN_IDENTITY" >> "$GITHUB_ENV"
           echo "RIVET_MACOS_NOTARY_PROFILE=fulcrum-notary" >> "$GITHUB_ENV"
       - name: Configure Windows Authenticode identity
-        if: matrix.platform == 'windows' && vars.FULCRUM_UNSIGNED_RELEASE_APPROVED != 'true'
+        if: matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE == 'authenticode'
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
@@ -249,7 +244,7 @@ jobs:
       # The channel manifest is separately Ed25519-signed. Build and verify
       # production-signed artifacts first; only then stage anything for publish.
       - name: Release (production signed)
-        if: vars.FULCRUM_UNSIGNED_RELEASE_APPROVED != 'true' || matrix.platform == 'linux'
+        if: matrix.platform == 'linux' || (matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id') || (matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE == 'authenticode')
         env:
           RIVET_UPDATE_BASE_URL: https://github.com/turlamai/fulcrum/releases/download/${{ github.ref_name }}
           RIVET_UPDATE_KEY_ID: ${{ secrets.RIVET_UPDATE_KEY_ID }}
@@ -276,14 +271,10 @@ jobs:
           raco rivet release
           raco rivet verify --production
         shell: bash
-      # The explicitly approved unsigned channel (FULCRUM_UNSIGNED_RELEASE_
-      # APPROVED=true): macOS packages are ad-hoc signed, Windows packages
-      # carry no Authenticode signature, and the release notes must warn
-      # about it. The Ed25519 update feed still signs, so in-app updates
-      # verify byte integrity exactly as signed releases do. Linux never
-      # takes this branch — its production signing credentials are complete.
-      - name: Release (unsigned, honestly labeled)
-        if: vars.FULCRUM_UNSIGNED_RELEASE_APPROVED == 'true' && matrix.platform != 'linux'
+      # Independent no-certificate modes. The update feed remains signed;
+      # Linux always uses its Ed25519 artifact signatures.
+      - name: Release (platform no-certificate mode)
+        if: (matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE != 'developer-id') || (matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE != 'authenticode')
         env:
           RIVET_UPDATE_BASE_URL: https://github.com/turlamai/fulcrum/releases/download/${{ github.ref_name }}
           RIVET_UPDATE_KEY_ID: ${{ secrets.RIVET_UPDATE_KEY_ID }}
@@ -320,17 +311,14 @@ jobs:
         if: matrix.platform == 'macos'
         shell: bash
         env:
-          UNSIGNED_RELEASE: ${{ vars.FULCRUM_UNSIGNED_RELEASE_APPROVED }}
+          MACOS_SIGNING_MODE: ${{ vars.FULCRUM_MACOS_SIGNING_MODE }}
         run: |
           set -euo pipefail
           bash scripts/test-macos-dmg.sh
           dmg=(dist/fulcrum-*.dmg)
           test -f "${dmg[0]}"
-          # Notarization gates only exist for production-signed releases; the
-          # unsigned channel is ad-hoc signed (the app inside verifies, the
-          # DMG container itself stays unsigned), so the DMG codesign check
-          # plus stapler/spctl cannot pass and are skipped.
-          if [[ "$UNSIGNED_RELEASE" != "true" ]]; then
+          # Only Developer ID mode may claim notarization; ad-hoc is not trusted.
+          if [[ "$MACOS_SIGNING_MODE" == "developer-id" ]]; then
             codesign --verify --verbose=2 "${dmg[0]}"
             xcrun stapler validate "${dmg[0]}"
             spctl --assess --type open --context context:primary-signature "${dmg[0]}"
@@ -455,7 +443,10 @@ jobs:
     name: Draft GitHub release
     needs: channel-manifest
     runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.id }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -467,47 +458,81 @@ jobs:
           cp artifacts/channel-manifest/update-manifest.json release/
           # byte-identical alias for pre-0.8.0 clients polling manifest.json
           cp artifacts/channel-manifest/manifest.json release/
-          (cd release && cat *.sha256 > SHA256SUMS)
-          ls -la release/
+          # Verify all release payloads before staging public downloads.
+          (cd release && cat *.sha256 | sed 's/ \*/  /' | LC_ALL=C sort -k2 > SHA256SUMS && sha256sum -c SHA256SUMS)
+          mkdir -p public
+          while read -r _ name; do
+            test -s "release/$name" || { echo "::error::Missing or empty $name"; exit 1; }
+            cp "release/$name" "public/$name"
+          done < release/SHA256SUMS
+          cp release/update-manifest.json release/manifest.json public/
+          # Fail closed on missing/extra installer formats or RPM revisions.
+          # Hash the exact public inventory, including BOTH signed feed names.
+          tag_version="${GITHUB_REF_NAME#v}"
+          version="${tag_version%%-rc.*}"
+          python3 scripts/check_release_public_assets.py "$version" public
+          (cd public && sha256sum -c SHA256SUMS)
+          ls -la public/
       - uses: softprops/action-gh-release@v2
+        id: create-release
         with:
+          tag_name: ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
           draft: true
           prerelease: ${{ contains(github.ref_name, '-rc.') }}
           make_latest: ${{ contains(github.ref_name, '-rc.') && 'false' || 'true' }}
           generate_release_notes: true
           files: |
-            release/fulcrum-*
-            release/SHA256SUMS
-            release/update-manifest.json
-            release/manifest.json
-      - name: Stable alias copies (versionless direct-download links)
-        if: ${{ !contains(github.ref_name, '-rc.') }}
+            public/fulcrum-*
+            public/SHA256SUMS
+            public/update-manifest.json
+            public/manifest.json
+      - name: Confirm exact draft identity before pruning stale assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.create-release.outputs.id }}
+        shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          # Family rule: download buttons point at
-          # releases/latest/download/<alias>, so every release also ships
-          # versionless copies of the primary installers. Aliases are
-          # overwritten on each release; the versioned assets stay canonical.
-          mkdir -p stable-alias
-          for pair in \
-            "fulcrum-${VERSION}-macos-arm64.dmg fulcrum-macos-arm64.dmg" \
-            "fulcrum-${VERSION}-macos-x64.dmg fulcrum-macos-x64.dmg" \
-            "fulcrum-${VERSION}-windows-x64.msi fulcrum-windows-x64.msi" \
-            "fulcrum-${VERSION}-linux-x64.tar.gz fulcrum-linux-x64.tar.gz" \
-            "fulcrum-${VERSION}-linux-arm64.tar.gz fulcrum-linux-arm64.tar.gz" \
-            "fulcrum-${VERSION}-linux-amd64.deb fulcrum-linux-x64.deb" \
-            "fulcrum-${VERSION}-linux-arm64.deb fulcrum-linux-arm64.deb" \
-            "fulcrum-${VERSION}-linux-x86_64.AppImage fulcrum-linux-x64.AppImage" \
-            "fulcrum-${VERSION}-linux-aarch64.AppImage fulcrum-linux-arm64.AppImage"; do
-            src="${pair%% *}"; dst="${pair##* }"
-            # Native Linux installers may be absent in a release; aliases
-            # follow what the release actually contains.
-            if [ -f "release/$src" ]; then cp "release/$src" "stable-alias/$dst"; fi
-          done
-          gh release upload "$GITHUB_REF_NAME" stable-alias/* --clobber --repo "$GITHUB_REPOSITORY"
+          [[ "$RELEASE_ID" =~ ^[0-9]+$ ]] || {
+            echo "::error::Release creator did not return a numeric REST id"
+            exit 1
+          }
+          prerelease=false
+          if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then prerelease=true; fi
+          release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
+          # For a draft whose tag_name references an existing ref (the gate
+          # mints the tag before dispatching this workflow), GitHub detaches
+          # the name server-side and reports an untagged-<hash> placeholder
+          # until publication (#146). Draft identity is anchored on the
+          # numeric REST id; the tag name is accepted in both its requested
+          # and detached shapes. Everything else stays strict, and the
+          # publication check keeps demanding the exact tag name.
+          printf '%s\n' "$release_json" | jq -e --arg tag "$GITHUB_REF_NAME" \
+            --argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA" \
+            --argjson prerelease "$prerelease" \
+            '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
+            echo "::error::Created GitHub draft identity does not match the requested release; refusing further release actions"
+            exit 1
+          }
+      - name: Prune stale or build-only draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.create-release.outputs.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Reruns prune sidecars and aliases; the draft's exact identity
+          # was already verified against the tag, SHA, and numeric REST id.
+          gh api "repos/$GH_REPO/releases/$RELEASE_ID/assets?per_page=100" \
+            --jq '.[] | [.id, .name] | @tsv' |
+            while IFS=$'\t' read -r id name; do
+              if [[ ! -f "public/$name" ]]; then
+                gh api -X DELETE "repos/$GH_REPO/releases/assets/$id" >/dev/null
+              fi
+            done
 
   publish:
     name: Verify assets and publish release
@@ -519,71 +544,71 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ needs.github-release.outputs.release_id }}
         shell: bash
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          # `gh release view --json id` returns a GraphQL node id, while the
-          # REST update endpoint requires the numeric database id. The tagged
-          # release endpoint returns 404 for drafts, so locate it in the
-          # authenticated releases collection before publishing.
-          release_id="$(
-            gh api "repos/$GH_REPO/releases?per_page=100" \
-              --jq ".[] | select(.tag_name == \"$tag\" and .draft == true) | .id" \
-              | head -n1
-          )"
+          # Preserve the numeric REST id emitted by the exact creation step.
+          # Searching releases by tag cannot locate GitHub's untagged-* draft
+          # anomalies and can accidentally select an unrelated old draft.
+          release_id="${RELEASE_ID}"
           [[ "$release_id" =~ ^[0-9]+$ ]] || {
-            echo "::error::Could not resolve numeric draft release id for $tag"
+            echo "::error::Creation job did not provide a numeric draft release id for $tag"
+            exit 1
+          }
+          release_json="$(gh api "repos/$GH_REPO/releases/$release_id")"
+          # GitHub may temporarily detach an existing version tag from a
+          # draft and report an untagged-<hash> placeholder (#146).
+          # Anchor the resolver to the exact numeric REST id, commit SHA,
+          # draft state and channel, as the other draft gates already do.
+          prerelease=false
+          if [[ "$tag" == *-rc.* ]]; then prerelease=true; fi
+          printf '%s\n' "$release_json" | jq -e --arg tag "$tag" \
+            --argjson id "$release_id" --arg sha "$GITHUB_SHA" \
+            --argjson prerelease "$prerelease" \
+            '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
+            echo "::error::Release id does not identify the requested version-tag draft"
             exit 1
           }
           echo "id=$release_id" >> "$GITHUB_OUTPUT"
 
-      - name: Disclose GNOME 50 first-consent limitation in v0.14.1 release notes
-        if: ${{ github.ref_name == 'v0.14.1' }}
+      - name: Disclose platform-specific trust before publishing
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_ID: ${{ steps.release.outputs.id }}
+          MACOS_SIGNING_MODE: ${{ vars.FULCRUM_MACOS_SIGNING_MODE }}
+          WINDOWS_SIGNING_MODE: ${{ vars.FULCRUM_WINDOWS_SIGNING_MODE }}
+        if: ${{ !contains(github.ref_name, '-rc.') }}
         shell: bash
         run: |
           set -euo pipefail
+          macos_mode="${MACOS_SIGNING_MODE:-adhoc}"
+          windows_mode="${WINDOWS_SIGNING_MODE:-unsigned}"
+          if [[ "$macos_mode" == "developer-id" && "$windows_mode" == "authenticode" ]]; then exit 0; fi
+          macos_trust="macOS ad-hoc signed, NOT notarized (Gatekeeper may warn)"
+          windows_trust="Windows MSI/ZIP unsigned (SmartScreen may warn)"
+          if [[ "$macos_mode" == "developer-id" ]]; then macos_trust="macOS Developer ID signed and notarization verified by release gate"; fi
+          if [[ "$windows_mode" == "authenticode" ]]; then windows_trust="Windows Authenticode verified by release gate"; fi
           body="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID" --jq '.body')"
-          notice='> **Ubuntu 26.04 GNOME 50 Wayland known limitation:** On affected desktops, the first global-shortcut permission prompt may stall in GNOME GlobalShortcutsProvider. The app-id fix and Alt+Space activation after consent were verified on a real arm64 GNOME 50.1 VM, but Settings hotkey changes and denied-consent UX were not fully verified. If authorization stalls, create a GNOME custom shortcut running `fulcrum --toggle`. See [issue #111](https://github.com/turlamai/fulcrum/issues/111).'
-          if [[ "$body" != *"GNOME 50 Wayland known limitation"* ]]; then
-            gh api -X PATCH "repos/$GH_REPO/releases/$RELEASE_ID" \
-              -f body="$(printf '%s\n\n%s' "$notice" "$body")" >/dev/null
-          fi
-      - name: Banner unsigned releases before they go public
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_ID: ${{ steps.release.outputs.id }}
-          FULCRUM_UNSIGNED_RELEASE_APPROVED: ${{ vars.FULCRUM_UNSIGNED_RELEASE_APPROVED }}
-        if: ${{ !contains(github.ref_name, '-rc.') }}
-        run: |
-          set -euo pipefail
-          [[ "$FULCRUM_UNSIGNED_RELEASE_APPROVED" == "true" ]] || exit 0
-          body="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID" --jq '.body')"
-          banner="> ⚠️ **Unsigned release.** Publisher accounts are not provisioned yet: macOS packages are ad-hoc signed (right-click the app → Open on first launch), Windows packages carry no Authenticode signature (SmartScreen will warn). The update channel itself is Ed25519-signed, and Linux artifacts keep their detached signatures."
+          banner="> ⚠️ **Release trust status:** $macos_trust; $windows_trust. The update manifest remains Ed25519-signed, and Linux artifacts retain detached signatures."
           [[ "$body" == "$banner"* ]] || \
             gh api -X PATCH "repos/$GH_REPO/releases/$RELEASE_ID" \
               -f body="$(printf '%s\n\n%s' "$banner" "$body")" >/dev/null
-
       - name: Verify installers and signed feed exist before publishing
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_ID: ${{ steps.release.outputs.id }}
           FULCRUM_STABLE_RELEASE_APPROVED: ${{ vars.FULCRUM_STABLE_RELEASE_APPROVED }}
-          FULCRUM_UNSIGNED_RELEASE_APPROVED: ${{ vars.FULCRUM_UNSIGNED_RELEASE_APPROVED }}
         shell: bash
         run: |
           set -euo pipefail
           # Manual tags must not bypass the authorization applied before
           # automatic version-bump tagging. RCs have their own prerelease
           # safety policy; never promote a stable tag without approval. The
-          # unsigned channel is a second, equally explicit approval: it
-          # changes the signing posture, never the approval requirement.
+          # Platform signing is independent of stable release authorization.
           if [[ "$GITHUB_REF_NAME" != *-rc.* \
                 && "$FULCRUM_STABLE_RELEASE_APPROVED" != "true" ]]; then
             echo "::error::Stable release promotion is not approved; draft remains unpublished"
@@ -599,36 +624,64 @@ jobs:
             prerelease=true
             make_latest=false
           fi
-          gh release view "$tag" --json isDraft --jq '.isDraft' | grep -Fx true
-          gh release view "$tag" --json isPrerelease --jq '.isPrerelease' | grep -Fx "$prerelease"
-          assets="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+          # gh release view by tag may fail for drafts. The numeric REST release
+          # id was resolved above; verify it is still the expected draft before
+          # checking assets. Never accept a different tag or published release.
+          # The tag name may still be GitHub's untagged-<hash> placeholder for
+          # a draft referencing an existing ref (#146); the publication PATCH
+          # below rebinds it, and the post-publish check demands it exactly.
+          release_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
+          printf '%s\n' "$release_json" | jq -e --arg tag "$tag" \
+            --argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA" \
+            --argjson prerelease "$prerelease" \
+            '((.tag_name == $tag) or (.tag_name | startswith("untagged-"))) and (.draft == true) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
+            echo "::error::Draft release metadata mismatch for $tag"; exit 1;
+          }
+          assets="$(printf '%s\n' "$release_json" | jq -r '.assets[].name')"
           required=(
             "fulcrum-${version}-macos-arm64.dmg" \
             "fulcrum-${version}-macos-x64.dmg" \
             "fulcrum-${version}-windows-x64.msi" \
+            "fulcrum-${version}-macos-arm64.zip" \
+            "fulcrum-${version}-macos-x64.zip" \
+            "fulcrum-${version}-windows-x64.zip" \
+            "fulcrum-${version}-linux-arm64.zip" \
+            "fulcrum-${version}-linux-x64.zip" \
+            "fulcrum-${version}-linux-amd64.deb" \
+            "fulcrum-${version}-linux-arm64.deb" \
+            "fulcrum-${version}-linux-x86_64.AppImage" \
+            "fulcrum-${version}-linux-aarch64.AppImage" \
             "fulcrum-${version}-linux-x64.tar.gz" \
             "fulcrum-${version}-linux-arm64.tar.gz" \
             "fulcrum-${version}-linux-x64.tar.gz.sig" \
             "fulcrum-${version}-linux-arm64.tar.gz.sig" \
             "update-manifest.json" "manifest.json" "SHA256SUMS")
-          # Native Linux installers (deb/rpm/AppImage) are optional: they are
-          # absent while the rivet linux-formats packaging bug is pinned out.
-          if [[ "$prerelease" == false ]]; then
-            # Versionless download aliases; native Linux installers are
-            # optional while the rivet linux-formats bug is pinned out.
-            required+=(
-              "fulcrum-macos-arm64.dmg"
-              "fulcrum-macos-x64.dmg"
-              "fulcrum-windows-x64.msi")
-          fi
+          # Complete stable releases require all native Linux installers.
+          # RPM uses a distinct package build revision.
           for name in "${required[@]}"; do
             printf '%s\n' "$assets" | grep -Fx "$name" || {
               echo "::error::Missing release asset $name"; exit 1;
             }
           done
+          for rpm_arch in x86_64 aarch64; do
+            printf '%s\n' "$assets" | grep -Eq "^fulcrum-${version}-[0-9]+-linux-${rpm_arch}\.rpm$" || {
+              echo "::error::Missing Linux RPM for $rpm_arch"; exit 1;
+            }
+          done
+          if printf '%s\n' "$assets" | grep -Eq '(\.sha256$|^fulcrum-(macos|windows|linux)-)'; then
+            echo "::error::Redundant checksum sidecar or versionless alias leaked to release"
+            exit 1
+          fi
           gh api -X PATCH "repos/$GH_REPO/releases/$RELEASE_ID" \
             -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f name="$tag" \
             -F draft=false -F prerelease="$prerelease" \
             -f make_latest="$make_latest" >/dev/null
-          gh release view "$tag" --json isDraft,isPrerelease \
-            --jq '[.isDraft, .isPrerelease] | @tsv' | grep -Fx $'false\t'"$prerelease"
+          # Verify publication through the same REST id; do not rely on tag
+          # lookup behavior for the draft-to-published transition.
+          published_json="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID")"
+          printf '%s\n' "$published_json" | jq -e --arg tag "$tag" \
+            --argjson id "$RELEASE_ID" --arg sha "$GITHUB_SHA" \
+            --argjson prerelease "$prerelease" \
+            '(.tag_name == $tag) and (.draft == false) and (.prerelease == $prerelease) and (.id == $id) and (.target_commitish == $sha)' >/dev/null || {
+            echo "::error::Published release metadata mismatch for $tag"; exit 1;
+          }

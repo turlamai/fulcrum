@@ -37,6 +37,24 @@
   (check-equal? (cdr (car parsed)) "C:/Users/me/Reports/q3.md")
   (check-equal? (cdr (cadr parsed)) "C:/Users/me/My Notes.md"))
 
+
+(test-case "file URL transport keeps arbitrary Windows volumes and UNC authorities"
+  ;; Volume labels must never be a fixed list of C:/D:/E:. Indexed
+  ;; Windows Search can emit another assigned letter or a network share.
+  (check-equal?
+   (parse-paths
+    "file:///Z:/Work/report.txt\nfile:///Q:/Users/%E6%96%87%E6%A1%A3.txt\nfile://storage.example/Team%20Space/report.txt\n"
+    8)
+   '(("report.txt" . "Z:/Work/report.txt")
+     ("文档.txt" . "Q:/Users/文档.txt")
+     ("report.txt" . "//storage.example/Team Space/report.txt"))))
+
+(test-case "file URL transport retains POSIX absolute paths"
+  (check-equal?
+   (parse-paths "file:///home/runner/notes.txt\nfile:/mnt/archive/log.txt\n")
+   '(("notes.txt" . "/home/runner/notes.txt")
+     ("log.txt" . "/mnt/archive/log.txt"))))
+
 (test-case "Windows scan paths with backslashes are retained"
   ;; Get-ChildItem -ExpandProperty FullName emits native backslashes.  The old
   ;; slash-only filter silently discarded every fallback result. PowerShell's
@@ -78,7 +96,7 @@
      2))
   (check-equal? (car (car ranked)) "微信计划.md"))
 
-(test-case "windows find script prioritizes known folders and preserves index fallback"
+(test-case "Windows explicit find checks known folders before Windows Search"
   (define captured #f)
   (define captured-timeout-ms #f)
   (define result
@@ -91,22 +109,17 @@
              (set! captured (cons program args))
              (set! captured-timeout-ms timeout-ms)
              "file:///C:/Users/me/obrien.txt\n")))
-  ;; The explicit find command gets a Windows-specific 9s budget; ordinary
-  ;; launcher typing never invokes this search.
+  ;; Only explicit Windows find receives a longer bounded deadline.
   (check-equal? captured-timeout-ms 9000)
-  ;; The call stays a single PowerShell invocation with known-folder first
-  ;; and Windows Search / bounded profile fallback.
   (check-equal? (car captured) "powershell.exe")
   (check-equal? (cadr captured) "-NoProfile")
   (check-equal? (file-search-result-status result) 'ok)
   (check-equal? (file-search-result-hits result)
                 '(("obrien.txt" . "C:/Users/me/obrien.txt")))
   (define script (cadddr captured))
-  ;; A failed/hung Windows Search provider must not starve a real file in
-  ;; Documents or in redirected OneDrive. Search common folders before OLE DB.
+  ;; Local known folders precede the optional, sometimes-hung OLE DB index.
   (check-true (string-contains? script "GetFolderPath('MyDocuments')"))
   (check-true (string-contains? script "OneDriveConsumer"))
-  (check-true (string-contains? script "OutputEncoding"))
   (check-true (string-contains? script "if($out.Count -eq 0){try{"))
   (check-true (string-contains? script "SYSTEMINDEX"))
   (check-true (string-contains? script "CONTAINS(System.FileName,"))
@@ -114,38 +127,65 @@
   (check-true (string-contains? script "Get-ChildItem"))
   (check-true (string-contains? script "SELECT TOP 128"))
   (check-true (string-contains? script "Select-Object -First 128"))
+  (check-true (string-contains? script "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)")
+              "Windows PowerShell must emit UTF-8 path names to the Racket UTF-8 reader")
+  (check-false (string-contains? script "-replace '^file:/+'")
+               "indexed file URLs must preserve UNC //server/share authorities")
   ;; The query is neutralized for both SQL and PowerShell single quotes.
   (check-false (string-contains? script "o'brien"))
   (check-true (string-contains? script "o''brien")))
 
-(test-case "Windows explicit find resolves a real fixture with the production PowerShell runner"
+(test-case "Windows find returns a real Downloads file using the production PowerShell"
   (when (eq? (system-type 'os) 'windows)
-    ;; Native backend smoke, not a string-mock: proves the Windows scanner
-    ;; returns usable filesystem paths even when SYSTEMINDEX is disabled.
-    (let ([profile (getenv "USERPROFILE")])
-      (when profile
-        (let* ([downloads (build-path profile "Downloads")]
-               [already-exists? (directory-exists? downloads)]
-               [fixture-name (format "fulcrum-find-smoke-~a.txt"
-                                     (current-process-milliseconds))]
-               [fixture (build-path downloads fixture-name)]
-               [query (substring fixture-name 0
-                                 (- (string-length fixture-name) 4))])
-          (make-directory* downloads)
-          (dynamic-wind
-            (lambda ()
-              (display-to-file "test" fixture #:exists 'truncate))
-            (lambda ()
-              (define result (file-search/status query 8 #:os 'windows))
-              (check-equal? (file-search-result-status result) 'ok)
-              (check-true
-               (for/or ([hit (in-list (file-search-result-hits result))])
-                 (string-ci=? (car hit) fixture-name))))
-            (lambda ()
-              (when (file-exists? fixture) (delete-file fixture))
-              (when (not already-exists?)
-                (with-handlers ([exn:fail? (lambda (_) (void))])
-                  (delete-directory downloads))))))))))
+    (define profile (getenv "USERPROFILE"))
+    (when profile
+      (define downloads (build-path profile "Downloads"))
+      (define existed? (directory-exists? downloads))
+      (define fixture-name (format "fulcrum-find-~a.txt"
+                                   (current-process-milliseconds)))
+      (define fixture (build-path downloads fixture-name))
+      (define query (substring fixture-name 0 (- (string-length fixture-name) 4)))
+      (make-directory* downloads)
+      (dynamic-wind
+        (lambda () (display-to-file "fixture" fixture #:exists 'truncate))
+        (lambda ()
+          (define found (file-search/status query 8 #:os 'windows))
+          (check-equal? (file-search-result-status found) 'ok)
+          (check-true (for/or ([hit (in-list (file-search-result-hits found))])
+                        (string-ci=? (car hit) fixture-name))))
+        (lambda ()
+          (when (file-exists? fixture) (delete-file fixture))
+          (unless existed?
+            (with-handlers ([exn:fail? (lambda (_) (void))])
+              (delete-directory downloads))))))))
+
+(test-case "failed local index reports an error instead of false no matches"
+  (define dir (make-temporary-file "fulcrum-broken-search-~a" 'directory))
+  (dynamic-wind
+    void
+    (lambda ()
+      (define blocker (build-path dir "not-a-directory"))
+      (define db (build-path blocker "file-index.sqlite3"))
+      (display-to-file "blocker" blocker)
+      (let ([absent
+             (file-search/status
+              "report" 8 #:os 'unix #:resolve (lambda (_) #f)
+              #:index-path db)])
+        (check-equal? (file-search-result-status absent) 'index-error)
+        (check-equal? (file-search-result-hits absent) '()))
+      ;; A usable platform index can still provide valid results even if
+      ;; Fulcrum's optional local cache is temporarily inaccessible.
+      (let ([platform
+             (file-search/status
+              "report" 8 #:os 'unix #:resolve (lambda (_) "/usr/bin/locate")
+              #:run (lambda (_program _args #:timeout-ms [_timeout-ms 3000]
+                                           #:cancel-evt [_cancel-evt never-evt])
+                      "/home/me/report.md\n")
+              #:index-path db)])
+        (check-equal? (file-search-result-status platform) 'ok)
+        (check-equal? (file-search-result-hits platform)
+                      '(("report.md" . "/home/me/report.md")))))
+    (lambda () (delete-directory/files dir))))
 
 (test-case "Linux find fallback reports timeout instead of an empty success"
   (define (find-only program)
@@ -265,10 +305,15 @@
       ;; on a shared CI runner. In that case a visible timeout explanation is
       ;; the correct product behavior; never mistake it for missing tools.
       (check-true
-       (or (andmap (lambda (r) (equal? (row-id r) "file.open")) file-rows)
+       (or (and (pair? file-rows)
+                (andmap (lambda (r) (equal? (row-id r) "file.open")) file-rows))
            (and (= (length file-rows) 1)
                 (equal? (row-id (car file-rows)) "noop")
-                (string-contains? (list-ref (car file-rows) 1) "timed out"))))
+                (let ([title (list-ref (car file-rows) 1)])
+                  (or (string-contains? title "timed out")
+                      ;; Empty system results no longer silently return
+                      ;; zero rows. The index/scope limitation is explicit.
+                      (string-contains? title "No matching files"))))))
       ;; Everywhere else: exactly one honest explanation, which runs to a
       ;; quiet refusal.
       (begin

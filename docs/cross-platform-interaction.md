@@ -32,14 +32,16 @@ the panel has been active once, otherwise the summon operation can erase itself.
   update already-open surfaces without restarting.
 - Platform-specific diagnostic entries are allowed only when the mechanism is
   platform-specific. The GNOME Alt+Space repair action is one such exception.
-- Search glyph and placeholder must share a single horizontal centerline on
-  all hosts. Linux uses a native, centered GtkImage beside GtkEntry rather
-  than GtkSearchEntry's independently padded built-in search icon.
-- A resident-ready status is **not** a visible launcher row when the launcher
-  is already open. Host startup failures, update progress/errors, and
-  platform-specific hotkey recovery remain visible and actionable when needed.
 
 ## Entry and settings parity
+
+The optional **Start at login** setting is native, OS-owned and
+per-device: ServiceManagement Login Items on macOS, HKCU Run on Windows,
+and an XDG autostart desktop file on Linux. An OS-initiated login launch
+stays resident without showing a new search panel or activating an
+existing instance. It never enters the synced backend settings schema.
+OS-specific approval or registration failure is shown in native Settings.
+
 
 Every host exposes Open, Settings, Check for Updates, About and Quit through its
 native resident surface (menu bar or tray) and exposes Settings/About/Update as
@@ -53,37 +55,6 @@ feature would incorrectly suggest a different product model.
 
 Settings and snippets remain backend-owned. Hosts may render different native
 form layouts, but keys, values, descriptions and availability must agree.
-
-### Settings information architecture (Windows / macOS)
-
-Windows and macOS must expose the same five settings areas: General, Features,
-AI, Commands, and Sync & Updates. Both use a fixed category sidebar and a
-single current section (native NavigationView + Mica/cards on WinUI, native
-sidebar + grouped Form on SwiftUI). The shared Racket backend owns validation,
-command alias/global bindings, AI key storage and updates; hosts must not
-silently omit the Commands editor on Windows. The summon hotkey and command
-bindings use native in-window key recording, without exposing canonical
-`mod+key` grammar in the default flow. Windows regular titled windows must
-show the product icon from the packaged numeric icon resource; borderless
-launcher windows do not need a fake titlebar or caption icon. macOS follows
-AppKit window decoration, not Win32 caption-icon conventions.
-
-Linux now uses a GTK StackSidebar + five scrollable native content pages
-(General, Features, AI, Commands, Sync & Updates). Its Commands editor uses
-the same backend validation API for aliases/shortcuts as WinUI and SwiftUI;
-Linux records its global summon shortcut directly with GTK key capture.
-Its Commands page edits aliases through the shared backend, but desktop-wide
-*per-command* hotkeys are currently unsupported on Linux; that input is
-visibly disabled rather than accepting inert bindings. Supporting per-command
-X11 grabs and Wayland portal bindings is a remaining explicit parity gap.
-The GTK widget and packaged Wayland acceptance suites must pass.
-
-Start at login is a **per-device opt-in** in General on all three hosts, not
-a synced Racket setting: macOS uses SMAppService and system approval, Windows
-uses HKCU Run, and Linux writes its own XDG autostart .desktop entry. An OS
-login launches a resident *hidden* host; an ordinary interactive launch keeps
-the existing summon behavior. Background login for an already running host
-must never toggle its visible panel.
 
 ## Acceptance contract
 
@@ -105,4 +76,4 @@ global input.
 
 先收敛交互与真实更新/签名门禁，再做窄范围的新增工作流 Pro。保留已有免费能力，平台机制遵循原生惯例。
 
-执行场景与完成标准见[本仓审查 issue](https://github.com/turinglambdaai/fulcrum/issues/88)及家族[交付标准](https://github.com/turinglambdaai/turinglambdaai.github.io/blob/master/docs/PRODUCT-STANDARD.md)。未完成的跨平台、硬件或真实支付验证仍是显式门禁；本节不表示这些验证已通过。后续一次认领一个切片，证据回填本文件与 issue。
+执行场景与完成标准见[本仓审查 issue](https://github.com/turlamai/fulcrum/issues/88)及家族[交付标准](https://github.com/turlamai/turlamai.github.io/blob/master/docs/PRODUCT-STANDARD.md)。未完成的跨平台、硬件或真实支付验证仍是显式门禁；本节不表示这些验证已通过。后续一次认领一个切片，证据回填本文件与 issue。

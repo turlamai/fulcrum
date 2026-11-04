@@ -94,7 +94,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Start at login" Style="{StaticResource RowLabel}" />
                             <ToggleSwitch x:Name="LoginStartupSwitch" Grid.Column="1" Tag="local-login-startup"
-                                          AutomationProperties.AutomationId="settings-start-at-login"
+                                          AutomationProperties.AutomationId="FulcrumStartAtLogin"
                                           OnContent="" OffContent="" MinWidth="0"
                                           VerticalAlignment="Center" Toggled="Toggle_Toggled" />
                         </Grid>

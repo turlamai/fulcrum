@@ -29,7 +29,7 @@ store with revenue share stays gated per [docs/business.md](business.md)
    the ecosystem's quality and safety story until automated enforcement
    exists (FPP2 staged permissions, [docs/fpp2.md](fpp2.md)).
 
-## Repository layout (`turinglambdaai/fulcrum-gallery`)
+## Repository layout (`turlamai/fulcrum-gallery`)
 
 ```text
 fulcrum-gallery/
@@ -66,7 +66,7 @@ release. The client never parses anything humans edit.
       "name": "Epoch",
       "version": "1.2.0",
       "description": "Unix timestamp ↔ date conversions",
-      "author": "turinglambdaai",
+      "author": "turlamai",
       "category": "Developer",
       "icon": "plugin",
       "protocol": 1,

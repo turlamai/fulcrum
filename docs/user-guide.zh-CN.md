@@ -160,17 +160,13 @@ Fulcrum 的 AI 用你自己的 OpenAI、Anthropic 或本地 Ollama 密钥。Fulc
 
 ## 设置
 
-**开机启动（登录后启动）：** 三平台均可在 **General（常规）→ Start at login** 自行开启或关闭，默认关闭，仅对当前设备生效，不随同步复制。登录系统后会在后台常驻，不自动弹出搜索界面。macOS 可能需要在系统设置的登录项中批准；Windows 使用当前用户的启动项；Ubuntu/Linux 使用 XDG 自动启动。AppImage 用户开启后请勿随意移动安装文件。
+**登录时启动（可选，默认关闭）：** 在原生「设置 → 常规」中开启「Start at login」。
+macOS 可能需要在「系统设置 → 登录项」中批准；Windows 使用当前用户的
+Run 注册表项；Linux 在当前用户的 XDG 配置目录创建自动启动 .desktop 文件。
+登录后仅驻留菜单栏或托盘，**不会自动弹出搜索框，也不会唤醒已运行的实例**。
+此开关只影响本机，**不参与设置同步**；要关闭则在同一设置页面操作。
+此项变更须合并 PR 并发布新版本后才会出现在正式安装包中。
 
-Linux 设置界面改为与 macOS、Windows 一致的五类侧边导航：General、Features、AI、Commands、Sync & Updates。Commands 可通过共同的后端编辑命令别名，但 Linux 的**单个命令全局快捷键**目前尚不支持执行，界面明确禁用以避免保存无效绑定。常规 General 中的全局唤出快捷键支持直接按键录制。Ubuntu 启动器会在首批搜索结果准备好后显示，避免只看到空白搜索框。
-
-**Ubuntu / Linux 启动器外观：** 搜索图标与「搜索应用、剪贴板、片段、网页…」提示在同一水平线上。面板已显示时，不再常驻展示「就绪 — 使用热键或 `fulcrum --toggle` 唤出」；需要从隐藏状态重新唤出时，仍可使用全局快捷键或 `fulcrum --toggle`。启动失败、快捷键冲突和更新失败等真正需要注意的状态信息仍会显示。
-
-**Ubuntu 26.04 GNOME 50 Wayland 全局热键：** 原生安装包使用持续存活的 D-Bus 连接注册 `site.jrtx.fulcrum`，再请求 `CreateSession`。已在真实 Ubuntu 26.04.1 GNOME 50.1 Wayland **arm64 虚拟机**验证：应用身份被正确识别，授权弹窗能出现，允许后 Alt+Space 会多次触发 `Activated`，重新启动和登录自启动后仍能工作（[Issue #111 实机证据](https://github.com/turlamai/fulcrum/issues/111)）。这不代表其他架构、所有授权分支都已验证。**已知限制：** 部分 GNOME 50 环境的上游 GlobalShortcutsProvider 会在首次授权时卡住；该虚拟机上的 Settings 修改热键、拒绝授权后的错误体验仍未完整验收。如果授权无法完成或热键失效，请在 GNOME 设置中配置**自定义键盘快捷键**，执行 `fulcrum --toggle`（此回退已在真实虚拟机验证）。不要关闭系统级 portal 安全机制。
-
-**Windows 更新操作：** 从系统托盘选择「Check for Updates（检查更新）」会直接打开可见的 `update` 页面。检查后会自动刷新下载操作；点击 Download（下载）获取并校验签名 MSI，等下载结束后点击 Quit and install（退出并安装），程序退出后由系统安装器升级并重新启动。如果 Windows 要求管理员确认，按系统提示操作；失败时可以查看错误或从更新页面打开下载目录。**便携 ZIP 版本不会被 MSI 原地替换**，建议从正式 MSI 安装版使用此自动升级路径。
-
-**macOS、Windows 和 Linux** 的设置窗口均使用左侧五类导航：**General（常规）**、**Features（功能）**、**AI**、**Commands（命令）**、**Sync & Updates（同步与更新）**，可从菜单栏、托盘或启动器进入。三平台都可在 General 中直接按组合键录制全局唤出快捷键（Esc 取消），无需输入 `alt+space` 等内部格式；Commands 均可编辑命令别名。**Linux 暂不支持单个命令的全局快捷键**，对应控件已禁用，不会保存无效绑定。Windows 使用 WinUI 原生控件和带品牌图标的设置标题栏；macOS 使用 AppKit/SwiftUI；Linux 使用 GTK4 原生侧边导航。
 
 输入 `settings`，运行对应的行即可修改：
 
@@ -222,20 +218,29 @@ Linux 设置界面改为与 macOS、Windows 一致的五类侧边导航：Genera
 
 ---
 
-## 从 Raycast 过来？
+## 产品原则与当前边界
 
-同样的地方：热键 → 输入 → 回车的循环。应用启动、剪贴板、片段、快捷链接、计算器、窗口管理、文件搜索、网页搜索、系统命令、扩展、深色模式——全都有。
+Fulcrum 采用统一的键盘操作流程：唤出面板、输入查询、选择结果、按回车。
+应用启动、文件搜索、剪贴板历史、片段、快捷链接、计算器、系统命令、
+窗口管理、设置、AI 操作和插件均通过同一入口完成。
 
-**我们不一样的地方，以及为什么：**
+- **本地数据归属。** 设置、片段、剪贴板历史和可重建的文件名索引存储在
+  用户数据目录；文件名索引不参与同步。
+- **跨平台原生宿主。** Windows 使用 WinUI 3、macOS 使用 SwiftUI、
+  Linux 使用 GTK4，核心逻辑统一由 Racket 和 Rivet 提供。系统权限、
+  快捷键行为及部分能力会因操作系统和桌面会话而不同。
+- **自选 AI 服务商。** 无须注册 Fulcrum 云账号。执行 AI 操作时，
+  用户选定的提示词与上下文直接发送至配置的服务商，服务商可能单独收费。
+- **开放插件协议。** 任何实现进程协议的语言均可编写插件。
+  插件继承当前用户的系统权限；清单中的权限声明仅用于提示，
+  并非操作系统强制隔离。
+- **明确的网络边界。** AI 请求、网页搜索、插件操作、汇率更新、
+  更新检查和用户配置的文件夹同步都可能访问外部服务；
+  开启前请查看隐私和安全说明。
 
-新增多步骤工作流 Pro 尚未开售；已有 BYOK、插件和自有文件夹同步保持免费。
-- **三平台平等。** macOS、Windows、Linux 功能相同、键位相同、原生 UI。不是一头优先两头将就。
-- **BYOK AI 不订阅。** 用你自己的密钥。没有月费，没有按次计费，数据不过 Fulcrum 的服务器。
-- **本地优先。** 你的数据不离开设备，除非你主动让它走（AI 提示、网页搜索）。同步不需要云账号——用你已有的文件夹同步服务。
-- **插件用任何语言。** Raycast 只收 TypeScript。Fulcrum 接受任何读 stdin 写 JSON 的程序——Python、Go、Rust、shell 脚本。
-- **专注，不臃肿。** Fulcrum 把启动器的事做好，不试图变成窗口管理器、笔记应用或 AI 聊天机器人。
-
-**还没做到的（诚实清单）：** 插件生态年轻（26 个内置 vs Raycast 商店的 2500+）；剪贴板只收文本；片段自动展开不支持 Linux。
+**当前限制：** 剪贴板历史只采集文本；Linux 暂不支持片段自动展开；
+文件索引覆盖范围和实时文件变更更新仍在完善中。可以通过
+`file search status` 查看本地索引状态。
 
 ---
 
@@ -244,6 +249,12 @@ Linux 设置界面改为与 macOS、Windows 一致的五类侧边导航：Genera
 - **热键没反应。** 组合键被占了。Fulcrum 自动退到 `Ctrl+Alt+Space` 并提示。也可以从托盘图标（Windows）、菜单栏（macOS）、`fulcrum --toggle`（Linux）。GNOME 上特别注意：系统自带的「激活窗口菜单」键位就是 Alt+Space，合成器会先把它吃掉——Fulcrum 启动时会检测这种遮蔽并在托盘菜单里给出「修复 Alt+Space 冲突」一键解除；手动修法：`gsettings set org.gnome.desktop.wm.keybindings activate-window-menu "[]"`。
 
 - **macOS 上粘贴回前台没反应。** 授权辅助功能：系统设置 → 隐私与安全性 → 辅助功能 → 勾选 Fulcrum。
+
+- **Ubuntu GNOME Wayland 提示“An app id is required”。** 部分启动路径无法向
+  桌面门户提供所需的 systemd 应用身份，导致全局快捷键授权失败。Fulcrum 会保留该
+  错误提示，而不是用“就绪”覆盖。可暂时在 GNOME「设置 → 键盘 → 查看和自定义
+  快捷键 → 自定义快捷键」中设置命令 `fulcrum --toggle`，绑定一个未被占用的
+  组合键。这只是可操作的替代方式，不代表门户快捷键已成功注册。
 
 - **Linux 上粘贴回前台。** X11 开箱即用。Wayland 装 `wtype`。
 
@@ -261,7 +272,7 @@ Linux 设置界面改为与 macOS、Windows 一致的五类侧边导航：Genera
 
 Fulcrum 建在 [Rivet](https://rivet.jrtx.site) 之上：一个 Racket 大脑嵌入每个平台的原生 UI——macOS 用 SwiftUI，Windows 用 WinUI 3，Linux 用 GTK4。不是 Electron，不是网页套壳。Windows 版就是 Windows 应用，macOS 版就是 macOS 应用。
 
-我们是后来者。这意味着我们研究了 Raycast 用户的抱怨——AI 功能挤占基础稳定性、功能膨胀、Pro 会员门槛——然后做了不同的选择。Fulcrum 把优先级放在：快速搜索、可靠操作、诚实的错误、你的数据留在你的机器上。
+Fulcrum 优先保证搜索响应、原生交互的可预期性、清晰的错误提示、可恢复的更新流程以及用户对本地数据的控制。尚未实现的能力和平台差异会明确写在文档中。
 
 源码可用（BUSL-1.1，到期转 MIT）。插件协议 MIT。无遥测。无账号。无云。
 

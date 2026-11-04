@@ -1,7 +1,7 @@
 #hasheq((name . "fulcrum")
         (display-name . "Fulcrum")
-        (version . "0.14.1")
-        (build . 21)
+        (version . "0.14.2")
+        (build . 22)
         (identifier . "site.jrtx.fulcrum")
         (release-channel . stable)
         (url-schemes . ("fulcrum"))
@@ -19,8 +19,6 @@
         (dmg-background . "assets/dmg-background.png")
         (windows-icon . "assets/fulcrum.ico")
         (linux-icon . "assets/fulcrum-icon-512.png")
-        ;; Explicit reverse-DNS desktop identity for GNOME 50 portal consent.
-        (linux-desktop-id . "site.jrtx.fulcrum")
         ;; Native Linux installers (deb installs /opt/fulcrum with a desktop
         ;; entry, rpm builds via rpmbuild, AppImage carries its own GTK4
         ;; closure) ride along with the tar.gz. The signed update feed carries

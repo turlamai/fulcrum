@@ -125,6 +125,55 @@ do {
     }
     _ = try waitFor("calculator result 144 from embedded backend") { contains(window, fragment: "144") ? true : nil }
 
+    // Exercise the real AppKit update NSWindow and SwiftUI Close button.
+    // An acceptance-only control simulates a completed signed-feed check:
+    // no live GitHub request or private signing key is involved. We explicitly
+    // close and reopen twice to catch a stale window / idle-spinner loop.
+    let completedUpdate: AXUIElement = try waitFor("completed-update fixture") {
+        findByIdentifier(window, "FulcrumAcceptanceCompletedUpdate")
+    }
+    func visibleCompletedUpdatePanel() -> AXUIElement? {
+        (attribute(application, kAXWindowsAttribute) as? [AXUIElement])?.first {
+            contains($0, fragment: "Fulcrum is up to date") ||
+            contains($0, fragment: "已是最新版本")
+        }
+    }
+    for attempt in 1...2 {
+        _ = AXUIElementSetAttributeValue(application, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        guard AXUIElementPerformAction(completedUpdate, kAXPressAction as CFString) == .success else {
+            throw DriverError.failure("could not show completed update panel (attempt \(attempt))")
+        }
+        let updatePanel: AXUIElement = try waitFor("completed update window (attempt \(attempt))") {
+            visibleCompletedUpdatePanel()
+        }
+        // First dismiss the in-panel SwiftUI button. On the second pass,
+        // dismiss the AppKit titlebar's red Close control (⌘W equivalent).
+        let close: AXUIElement?
+        if attempt == 1 {
+            // Native SwiftUI buttons expose an AXIdentifier reliably,
+            // while the localized visible label may be the AXDescription
+            // rather than AXTitle on different macOS/Xcode versions.
+            close = findByIdentifier(updatePanel, "fulcrum-update-close")
+        } else {
+            if let value = attribute(updatePanel, kAXCloseButtonAttribute as String),
+               CFGetTypeID(value) == AXUIElementGetTypeID() {
+                // A generic CFTypeRef needs a checked CoreFoundation cast;
+                // Swift 6 rejects 'as? AXUIElement' as always succeeding.
+                close = unsafeBitCast(value, to: AXUIElement.self)
+            } else {
+                close = nil
+            }
+        }
+        guard let close, AXUIElementPerformAction(close, kAXPressAction as CFString) == .success else {
+            try? writeJSON(snapshot(updatePanel), to: output.appendingPathComponent("update-close-failure-\(attempt).json"))
+            throw DriverError.failure("update window did not expose its expected Close control (attempt \(attempt)); update panel AX snapshot captured")
+        }
+        _ = try waitFor("update panel disappears after Close (attempt \(attempt))", timeout: 10) {
+            visibleCompletedUpdatePanel() == nil ? true : nil
+        }
+    }
+
     // Exercise the complete macOS capture path, not just backend store tests:
     // NSPasteboard change -> one-second host watcher -> clipboard-record RPC ->
     // the documented clip launcher query.
@@ -141,12 +190,29 @@ do {
         contains(window, fragment: "144") ? true : nil
     }
     try writeJSON(snapshot(application), to: output.appendingPathComponent("accessibility.json"))
-    guard AXUIElementSetAttributeValue(query, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else {
-        throw DriverError.failure("could not refocus FulcrumQuery before Return")
+    // Hosted macOS runners can briefly lose keyboard focus between the
+    // accessibility query edit and a synthesized Return. Retry the *same
+    // native keyboard action* after re-raising and refocusing the window;
+    // never replace the action assertion with a backend-only shortcut.
+    var copiedFromReturn = false
+    for attempt in 1...3 {
+        _ = AXUIElementSetAttributeValue(application, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        guard AXUIElementSetAttributeValue(query, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success else {
+            throw DriverError.failure("could not refocus FulcrumQuery before Return")
+        }
+        try pressReturn(pid: pid)
+        let copied: Bool? = try? waitFor("calculator action clipboard event", timeout: 12) {
+            NSPasteboard.general.string(forType: .string) == "144" ? true : nil
+        }
+        if copied == true {
+            copiedFromReturn = true
+            break
+        }
+        FileHandle.standardError.write(Data("Fulcrum macOS acceptance: Return attempt \(attempt) produced no clipboard event; refocusing\n".utf8))
     }
-    try pressReturn(pid: pid)
-    _ = try waitFor("calculator action clipboard event") {
-        NSPasteboard.general.string(forType: .string) == "144" ? true : nil
+    guard copiedFromReturn else {
+        throw DriverError.failure("timed out waiting for calculator action clipboard event after 3 focused Return attempts")
     }
 
     // Settings is a separate AppKit window. Exercise the real macOS Settings
@@ -168,8 +234,10 @@ do {
     guard findByIdentifier(settingsWindow, "settings-record-hotkey") != nil else {
         throw DriverError.failure("settings hotkey recorder is unavailable")
     }
+    // Inspect the real native login-item toggle, but do not mutate login
+    // items on hosted CI. The OS can require an explicit user grant.
     guard findByIdentifier(settingsWindow, "settings-start-at-login") != nil else {
-        throw DriverError.failure("native Start at login setting is unavailable")
+        throw DriverError.failure("macOS per-device Start at login switch is unavailable")
     }
     guard !contains(settingsWindow, fragment: "Feed base URL"),
           !contains(settingsWindow, fragment: "update-base-url"),
@@ -184,7 +252,7 @@ do {
         contains(settingsWindow, fragment: "Fulcrum checks signed releases automatically") ? true : nil
     }
     try writeJSON(snapshot(application), to: output.appendingPathComponent("settings-accessibility.json"))
-    try writeJSON(["platform": "macos", "actions": ["copy:clipboard-fixture", "set:FulcrumQuery=clip", "set:FulcrumQuery=12*12", "press:Return", "press:CommandComma", "press:settings-sidebar-sync"], "assertions": ["packaged SwiftUI window activated", "FulcrumQuery exposed through Accessibility", "macOS pasteboard watcher recorded text through RVT1", "clip query listed clipboard history", "query crossed RVT1 into the embedded backend", "native result list contains 144", "run-action emitted 144 to the native clipboard", "all five settings destinations are directly accessible", "global hotkey uses a recorder control", "Start at login is available in native General settings", "internal update feed is absent", "Sync & Updates opens without a toolbar overflow menu"]], to: output.appendingPathComponent("interaction-trace.json"))
+    try writeJSON(["platform": "macos", "actions": ["copy:clipboard-fixture", "set:FulcrumQuery=clip", "set:FulcrumQuery=12*12", "press:Return", "press:CommandComma", "assert:settings-start-at-login", "press:settings-sidebar-sync", "press:completed-update", "press:update-close", "reopen:update-close"], "assertions": ["packaged SwiftUI window activated", "FulcrumQuery exposed through Accessibility", "macOS pasteboard watcher recorded text through RVT1", "clip query listed clipboard history", "query crossed RVT1 into the embedded backend", "native result list contains 144", "run-action emitted 144 to the native clipboard", "all five settings destinations are directly accessible", "global hotkey uses a recorder control", "OS-owned Start at login toggle available", "internal update feed is absent", "Sync & Updates opens without a toolbar overflow menu", "native update panel Close hides the actual AppKit window", "completed update panel can be reopened and closed again without a spinner"]], to: output.appendingPathComponent("interaction-trace.json"))
     guard let running = NSRunningApplication(processIdentifier: pid), running.terminate() else { throw DriverError.failure("native application rejected termination") }
 } catch {
     if let application = diagnosticApplication, let output = diagnosticOutput { try? writeJSON(snapshot(application), to: output.appendingPathComponent("accessibility-failure.json")) }

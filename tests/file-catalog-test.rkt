@@ -64,11 +64,25 @@
      (touch alpha)
      (touch beta)
      (touch ignored)
-     (define first (start-file-catalog! db (list root) #:batch-size 1))
+     (define notifications (box '()))
+     (define first
+       (start-file-catalog!
+        db (list root) #:batch-size 1
+        #:on-progress
+        (lambda ()
+          ;; Notifications fire only after the new paths are committed.
+          (set-box! notifications
+                    (cons (file-index-count db) (unbox notifications))))))
      (define first-status (file-catalog-wait first 10))
      (check-not-false first-status)
      (check-equal? (file-catalog-status-state first-status) 'ready)
      (check-equal? (file-catalog-status-indexed first-status) 2)
+     (check-true (>= (length (unbox notifications)) 2)
+                 "one first-batch update and a final refresh")
+     (check-equal? (last (unbox notifications)) 1
+                   "the first batch must be visible before its nudge")
+     (check-equal? (car (unbox notifications)) 2
+                   "the finished index must be visible at the final nudge")
      (check-equal? (file-index-count db) 2)
      (check-equal? (map car (file-index-search db "alpha" 8))
                    '("alpha-report.txt"))
@@ -131,12 +145,16 @@
      (define root (build-path dir "Desktop"))
      (define db (build-path dir "index.sqlite3"))
      (touch (build-path root "launcher-plan.md"))
+     (define refresh-count (box 0))
      (define engine
        (make-engine #:clipboard-store #f
                     #:snippet-store #f
                     #:plugin-manager #f
                     #:file-index-path db
-                    #:file-catalog-roots (list root)))
+                    #:file-catalog-roots (list root)
+                    #:file-catalog-nudge
+                    (lambda ()
+                      (set-box! refresh-count (add1 (unbox refresh-count))))))
      (check-equal? (file-catalog-status-state
                     (engine-file-catalog-status engine))
                    'idle)
@@ -152,6 +170,8 @@
        (define status (engine-file-catalog-status engine))
        (cond
          [(eq? (file-catalog-status-state status) 'ready)
+          (check-true (positive? (unbox refresh-count))
+                      "native frontends need a query refresh after indexing")
          (check-equal? (map car (file-index-search db "launcher" 8))
                         '("launcher-plan.md"))
           (check-not-false

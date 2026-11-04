@@ -6,100 +6,106 @@ independently per platform packaging run.
 
 ## [Unreleased]
 
-## [0.14.1] - 2026-10-27
+### Added
 
-### Known limitations
-
-- **Ubuntu 26.04 GNOME 50 Wayland first-time shortcut consent:** On some
-  desktops the upstream GNOME GlobalShortcutsProvider stalls before the
-  authorization dialog responds. This was reproduced on a genuine GNOME 50.1
-  arm64 VM even with an alternative working launch identity. After approval,
-  repeated Alt+Space activation and login persistence passed; changing the
-  shortcut through Settings and the denied-consent status were not verified
-  in that VM. If the portal cannot authorize, create a GNOME custom shortcut
-  that executes `fulcrum --toggle`. See [issue #111](https://github.com/turlamai/fulcrum/issues/111).
-  This limitation requires an explicit release-owner acceptance before a
-  stable release; CI passing does not imply otherwise.
+- **Optional native Start at login on macOS, Windows, and Linux.**
+  The login item is off by default, managed by each OS for the current
+  user and never synced. Repeated login activation does not summon the
+  existing launcher. Settings surfaces show actual registration state
+  and native errors; Linux uses an XDG desktop entry, Windows HKCU Run,
+  and macOS ServiceManagement Login Items. Migrated safely from the
+  obsolete v0.14.1 release PR #104.
 
 ### Fixed
 
-- **Windows launcher no longer flashes an empty search panel.** It waits for
-  the embedded backend's first search result and builds the native rows before
-  showing the window. Startup failures surface a visible diagnostic instead.
-- **Windows second-launch behavior is recoverable.** Launching Fulcrum again
-  summons the resident panel and exits the secondary process cleanly, rather
-  than accumulating headless copies; activation respects the exact lease ID.
-- **Windows Quit releases the background process.** The tray Quit and verified
-  MSI installation paths unregister native hooks, shut down the embedded
-  Racket/RVT1 backend, and terminate WinUI. Esc and Alt+F4 still hide the
-  launcher without quitting the resident service.
+- **macOS update dialog Close now actually dismisses the window.** The
+  previous Close buttons only changed a SwiftUI boolean while the real
+  AppKit window stayed open. Since the idle state reused the checking
+  spinner, closing a finished update check looked like an endless new
+  check. The Close buttons and native title-bar close now hide the same
+  window, idle no longer spins, in-flight dismissed checks cannot revive
+  the panel, and reopening does not launch duplicate checks. A completed
+  manual check also suppresses the delayed startup auto-check, avoiding
+  immediately repeated network requests. Closing during download keeps
+  the download running; Cancel remains explicit.
+- **Stable releases promote unattended again.** For a draft referencing an
+  already-minted tag, GitHub detaches the tag name server-side and reports
+  an `untagged-<hash>` placeholder until publication — so the release
+  workflow's draft-identity gate demanded a field GitHub itself replaces,
+  and every gate-minted stable promotion failed at the last step
+  (v0.14.2's publish job; manual recovery applied). Draft identity is now
+  anchored on the numeric REST id and accepts both the requested and
+  detached tag-name shapes; version, commit, channel and draft state stay
+  strict, and the post-publication check still demands the exact tag name
+  on a published release. Stable alias uploads address the draft by its
+  REST id with delete-then-upload clobber semantics instead of resolving
+  through the detached tag name, and the offline contract tests and the
+  CI static gate pin the new shape in both directions.
 
-- **Windows Settings now matches the macOS navigation model.** A native WinUI
-  NavigationView exposes General, Features, AI, Commands, and Sync & Updates
-  as individual pages; users can edit command aliases and shortcuts, and
-  record the global summon shortcut without typing the backend key grammar.
-- **Windows updater remains visible from the tray.** Check for Updates now opens
-  the launcher directly in its update workflow, refreshes authenticated
-  download actions after checks, keeps native download progress visible,
-  and presents the verified MSI Install action immediately after download.
-  The existing signed Ed25519 manifest, bounded download/SHA-256 checks, and
-  external MSI quit/install/relaunch handoff remain the trust boundary.
-- **Windows Settings shows Fulcrum's brand icon in the title bar.** The window
-  now installs the embedded resource ID 1 through `SetIcon(IconId)` instead of
-  passing `RivetHost.exe` to the `.ico`-path overload.
-- **Windows explicit `find <filename>` search works even if Windows Search is
-  unavailable.** The PowerShell command now searches the user's actual
-  Documents, Desktop, Downloads and redirected OneDrive locations before
-  trying the Windows Search index or a bounded profile fallback; it handles
-  UTF-8 paths. File results remain behind the explicit `find` command —
-  plain searches and the search placeholder are deliberately unchanged.
+## [0.14.2] - 2026-11-02
 
-- **Linux GTK search icon aligns with the search placeholder.** The themed
-  magnifying-glass glyph and editable query now occupy one vertically centered
-  horizontal row instead of relying on GtkSearchEntry's internally padded icon.
-- **Linux hides the redundant resident-ready banner.** The normal `Ready —
-  hotkey or fulcrum --toggle` status no longer sits permanently above search
-  results when the launcher is visible. Actual startup failures, hotkey
-  conflicts, download errors, and progress notices remain discoverable.
+### Fixed
 
-- **Linux no longer flashes an empty startup search window.** Initial
-  launcher presentation waits for native search results from the embedded
-  backend. Failed boot still shows a visible diagnostic instead of hiding it.
-- **Linux Settings uses native five-section navigation.** General, Features,
-  AI, Commands and Sync & Updates now share one GTK sidebar/stack, matching
-  the information architecture of macOS and Windows; Commands uses the same
-  bindings-commands/list/set/clear backend API for aliases; desktop-wide
-  command hotkey execution is explicitly disabled on Linux until a native
-  binding runner is implemented.
-- **Start at login is available as an opt-in per-device control on all hosts.**
-  Linux uses XDG Autostart, Windows uses the current-user Run key, and macOS
-  uses SMAppService's main-app Login Item with system approval. No automatic
-  sync or default enablement; Windows/Linux login launches stay resident
-  without popping open the launcher.
+- **Windows Settings title bar shows the app icon again.** The window
+  passed its exe path to `AppWindow.SetIcon`, whose String overload wants
+  an `.ico` file — the call failed silently inside the constructor's
+  `try/catch` and the slot stayed blank in v0.14.1. It now uses rivet's
+  `ApplyAppIcon` helper (already in the pinned rivet), which loads the
+  embedded `RT_GROUP_ICON` resource and hands `SetIcon` an `IconId`;
+  missing resources keep the native default. A static contract test
+  rejects the exe-path overload and locks the helper in.
+- **File search resolves UNC shares and POSIX paths from file URLs.** The
+  URL-to-path decoder stripped every leading slash, so Windows Search
+  results on UNC shares (`file://host/share/...`) lost their server and
+  an absolute POSIX file URL collapsed into a relative path. Only the
+  scheme and the drive's URI prefix are removed now; UNC, POSIX and
+  arbitrary-volume forms survive intact, covered by regression tests.
+- **The default update feed points at the canonical repository.** The
+  backend's fallback feed URL still named the pre-rename
+  `turinglambdaai` org path, which serves no releases — installs relying
+  on the default would never see an update. It now uses `turlamai`,
+  matching the shipped updater configuration.
+- **Draft releases publish reliably.** The release workflow pins the
+  created draft's numeric REST id and commit SHA and verifies that exact
+  identity before uploading stable aliases and before promotion, and the
+  gate refuses untagged drafts early instead of failing verification with
+  a confusing mismatch after promotion.
 
-### Regression coverage
+## [0.14.1] - 2026-10-30
 
-- Ubuntu 26.04 GNOME 50 Wayland portal identity: native installs
-  register `site.jrtx.fulcrum` on a retained shared D-Bus connection.
-  A real Ubuntu 26.04.1 GNOME 50.1 Wayland **arm64** VM verified
-  `Registry.Register`, `CreateSession`, consent approval, repeated
-  `Activated`, and login-startup persistence; see issue #111.
-  This is not evidence for other architectures or all denial/settings paths.
-- Linux widget tests cover the deferred first frame, five Settings sections,
-  and enable/disable round-trip of a temporary XDG login entry. Windows and
-  macOS host checks and packaged acceptance remain release gates.
-- Windows backend tests and packaged WinUI acceptance seed a real user file
-  and require `find <name>` to return its actual path, not simply invoke a
-  search subprocess. This check is a release gate on the final commit.
-- Linux GTK widget regression checks image/input vertical alignment and
-  routine-ready visibility while preserving actionable status messages; its
-  packaged Wayland/AT-SPI acceptance uses backend result readiness rather than
-  depending on a permanent idle status row.
-- Windows packaged native-UI acceptance exercises ready-on-first-frame,
-  duplicate-launch handoff, normal process exit, and clean restart. Stable
-  release remains subject to the exact-commit CI, installer, signing, and
-  publishing gates documented in the release runbook.
+### Changed
 
+- **Rivet pin moved to 79a01a4**, which makes DMG packaging resilient to
+  slow volume teardown on CI runners: the installer now probes the mount
+  point, retries the graceful detach across the busy window, treats an
+  already-torn-down volume as success, and only then falls back to the
+  forced detach. The pin also renames the server-absent emit error to
+  "no Rivet event emitter…"; the test asserting the old wording follows
+  it.
+
+### Fixed
+
+- **Recents no longer remember what you typed.** Only stable launcher
+  identities — app launches, system commands and window commands — are
+  recorded in the recent list; web searches, quicklinks, snippets, and
+  plugin arguments are excluded entirely, and startup scrubs legacy rows
+  that stored them. Read-only environments keep the sanitized in-memory
+  view when the cleanup cannot persist. Regression tests cover the
+  omission and the cleanup.
+- **Shortcut edits stay truthful when saves fail.** Setting or clearing a
+  hotkey now publishes to the resident host only after the atomic write
+  commits, so a failed save can no longer leave a binding live in memory
+  that storage never accepted. The failed set and clear paths are covered
+  by regression tests.
+- **Windows launches and quits as one resident instance.** The first frame
+  stays hidden until the resident process answers, a second launch targets
+  the resident window by its native HWND and exits, and quitting shuts the
+  resident process down so relaunches start clean. The packaged Windows E2E
+  suite asserts the blank-frame, secondary-exit, quit and relaunch behavior.
+- **Draft releases publish reliably.** The release workflow resolves GitHub
+  draft releases by their REST database id — `gh release view` returns a
+  GraphQL node id, which the publish endpoint rejects — instead of trusting
+  the tag-name lookup that 0.14.0 relied on.
 
 ## [0.14.0] - 2026-10-27
 

@@ -115,22 +115,6 @@ std::filesystem::path executable_path() {
   return std::filesystem::path(buffer);
 }
 
-// MSI updates must replace the executable we are about to relaunch. If
-// Fulcrum was unpacked from the portable ZIP, handing an MSI to Windows
-// Installer would upgrade a different Program Files copy while reopening
-// this old ZIP exe, so it would look like the update never took effect.
-// The official x64 MSI installs at %ProgramFiles%\\Fulcrum\\RivetHost.exe.
-bool running_official_msi_installation() {
-  wchar_t program_files[32768]{};
-  auto const length = ::GetEnvironmentVariableW(
-      L"ProgramFiles", program_files, static_cast<DWORD>(std::size(program_files)));
-  if (length == 0 || length >= std::size(program_files)) return false;
-  auto const installed = std::filesystem::path(program_files) /
-                         L"Fulcrum" / L"RivetHost.exe";
-  std::error_code ec;
-  return std::filesystem::equivalent(executable_path(), installed, ec) && !ec;
-}
-
 std::string utf8(std::filesystem::path const& path) {
   auto const wide = path.wstring();
   if (wide.empty()) {
@@ -911,7 +895,15 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
     dispatcher.TryEnqueue([weak, backend = std::move(backend)]() mutable {
       if (auto window = weak.get()) {
         window->backend_ = std::move(backend);
-        window->api_ = std::make_unique<rivet_app::API>(*window->backend_);
+        // A detached RPC may outlive its source window. Capturing the API
+        // handle keeps both the API and its referenced backend alive until
+        // the final worker exits; Shutdown can still reject a late RPC.
+        window->api_ = std::shared_ptr<rivet_app::API>(
+            new rivet_app::API(*window->backend_),
+            [backend = window->backend_](rivet_app::API* api) {
+              delete api;
+              (void)backend;  // hold the backend through API destruction
+            });
         window->SetStatusOk(t("readyStatus"));
         window->FinishNativeSetup();
         try {
@@ -1030,6 +1022,22 @@ void MainWindow::FinishNativeSetup() {
                     [](HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
                        UINT_PTR, DWORD_PTR dwRefData) -> LRESULT {
                       auto* self = reinterpret_cast<MainWindow*>(dwRefData);
+                      // MSI's Restart Manager uses ENDSESSION_CLOSEAPP to
+                      // request a clean shutdown before replacing in-use
+                      // files. A normal Alt+F4 stays hide-on-close; an
+                      // installer-driven end-session must actually release
+                      // the backend, hotkeys, tray and instance lease.
+                      // Do not exit on QUERY: another app may still veto.
+                      if (msg == WM_QUERYENDSESSION &&
+                          (lParam & ENDSESSION_CLOSEAPP) != 0) {
+                        return TRUE;
+                      }
+                      if (msg == WM_ENDSESSION && wParam != 0 &&
+                          (lParam & ENDSESSION_CLOSEAPP) != 0 &&
+                          self != nullptr) {
+                        self->QuitApplication();
+                        return 0;
+                      }
                       if (msg == WM_HOTKEY && self != nullptr &&
                           self->HandleHotkeyMessage(msg, wParam, lParam)) {
                         return 0;
@@ -1055,19 +1063,17 @@ void MainWindow::FinishNativeSetup() {
                         self->QuitApplication();
                         return 0;
                       }
+                      // Acceptance-only About invocation uses the same
+                      // code path as the tray while the launcher is hidden.
+                      if (msg == fulcrum::windows::kAcceptanceAboutMessage && self != nullptr &&
+                          is_acceptance_run()) {
+                        self->ShowAbout();
+                        return 0;
+                      }
+                      // Acceptance-only path exercises real native Settings.
                       if (msg == fulcrum::windows::kAcceptanceSettingsMessage &&
                           self != nullptr && is_acceptance_run()) {
                         self->ShowSettings();
-                        return 0;
-                      }
-                      if (msg == fulcrum::windows::kAcceptanceUpdateCheckMessage &&
-                          self != nullptr && is_acceptance_run()) {
-                        self->CheckForUpdates();
-                        return 0;
-                      }
-                      if (msg == fulcrum::windows::kAcceptanceHideMessage &&
-                          self != nullptr && is_acceptance_run()) {
-                        self->HideLauncher();
                         return 0;
                       }
                       if (msg == WM_NCHITTEST && self != nullptr) {
@@ -1444,7 +1450,7 @@ void MainWindow::PullHostSettings() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::string hotkey;
     std::string theme;
@@ -1579,7 +1585,7 @@ winrt::fire_and_forget MainWindow::SearchAsync(std::wstring const& query) {
   auto const generation = search_generation_.fetch_add(1) + 1;
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   auto const utf8_query = to_utf8(query);
 
   try {
@@ -1639,6 +1645,7 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
   UpdateEnterChips();
   if (!startup_presented_) {
     startup_presented_ = true;
+    // Login-run stays resident in the tray/hotkey, without flashing the UI.
     if (!fulcrum::windows::BackgroundLaunch()) {
       ShowLauncher(false);  // show only after the first native rows are built
     }
@@ -1676,7 +1683,7 @@ void MainWindow::ShowActionsForSelection() {
   search_rows_ = rows_;
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
 
   std::thread([weak, api, dispatcher, row]() mutable {
     try {
@@ -1722,7 +1729,7 @@ void MainWindow::RunSelected() {
   auto const row = rows_[static_cast<std::size_t>(index)];
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
 
   // Side effects (app launch, plugin run) belong off the UI thread; the
   // backend Events that follow drive the actual clipboard/URL work.
@@ -1753,19 +1760,15 @@ void MainWindow::RunSelected() {
             // ai-stream State drives the streaming panel.
             window->SetStatusOk(t("aiRunning"));
           } else if (status == "stay") {
-            // The backend has a new signed-feed candidate; refresh the
-            // visible update rows so Download appears without retyping.
-            // Do not replace an unrelated user query while the RPC ran.
-            if (row.id == "update.check" && window->QueryBox().Text() == L"update") {
-              window->SearchAsync(L"update");
-            }
+            // The result is meant to be read (update check, ...): the
+            // event already wrote the status line; keep the panel open.
           } else if (status == "detail") {
             // FPP2 plugin detail: fetch the payload and show it in the
             // panel slot. The RPC runs off the UI thread; the result
             // paints through the dispatcher (captured below — the
             // TryEnqueue lambda would not otherwise see it).
             window->DismissDetailPanel();
-            auto* api2 = window->api_.get();
+            auto api2 = window->api_;
             auto const row_id = row.id;   // rows are already UTF-8
             auto const row_arg = row.arg;
             std::thread([weak, dispatcher, api2, row_id, row_arg]() mutable {
@@ -1786,25 +1789,15 @@ void MainWindow::RunSelected() {
               }
             }).detach();
           } else if (status == "downloading") {
-            // Keep the update workflow visible. The earlier implementation
-            // hid the launcher and wrote progress into its *hidden* footer,
-            // leaving users with no visible way to install the MSI.
-            window->SetStatusOk(L"Downloading verified update…");
-            if (window->QueryBox().Text() == L"update") {
-              window->SearchAsync(L"update");
-            }
+            // The backend download thread owns the transfer; the host
+            // mirrors its progress into the status bar.
+            window->HideLauncher();
             window->StartUpdateProgressPoll();
           } else if (status == "quit-and-install" &&
                      row.id == "update.install") {
             try {
               if (!update_path) {
                 throw std::runtime_error("downloaded update path is missing");
-              }
-              if (!running_official_msi_installation()) {
-                throw std::runtime_error(
-                    "This copy was not launched from the official MSI installation. "
-                    "Open the verified MSI from the updates folder to install "
-                    "Fulcrum; the portable ZIP cannot be upgraded in place by MSI.");
               }
               auto const msi = std::filesystem::path(to_wide(*update_path));
               rivet::update::MsiHandoff::LaunchVerifiedInstaller(
@@ -1848,48 +1841,87 @@ void MainWindow::RunSelected() {
 
 // ---- about ----------------------------------------------------------------
 
-// The tray menu's "About Fulcrum" and the `about` launcher row land here:
-// one ContentDialog with version, tagline, license and the site/issue
-// links (taskly's OnAbout shape).
-winrt::fire_and_forget MainWindow::ShowAbout() {
+// Unlike the transient Alt+Space search panel, About owns an independent
+// titled window. A ContentDialog attached to Content().XamlRoot() remained
+// invisible while the launcher was hidden (#149).
+void MainWindow::ShowAbout() {
   namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
   namespace mx = winrt::Microsoft::UI::Xaml;
 
+  if (about_window_) {
+    about_window_.Activate();
+    if (HWND hwnd = rivet::system::NativeWindowHandle(about_window_)) {
+      ::SetForegroundWindow(hwnd);
+    }
+    return;
+  }
+
   auto panel = mxc::StackPanel{};
-  panel.Spacing(4);
+  panel.Spacing(10);
+
+  auto version = mxc::TextBlock{};
+  version.Text(winrt::hstring(L"Fulcrum v" + to_wide(rivet_app::kVersion)));
+  version.FontSize(22);
+  version.TextAlignment(mx::TextAlignment::Center);
+
   auto tagline = mxc::TextBlock{};
   tagline.Text(t("aboutContent"));
   tagline.TextAlignment(mx::TextAlignment::Center);
   tagline.TextWrapping(mx::TextWrapping::Wrap);
-  tagline.Margin({0, 0, 0, 8});
+
   auto license = mxc::TextBlock{};
   license.Text(t("aboutLicense"));
   license.TextAlignment(mx::TextAlignment::Center);
   license.FontSize(12);
   license.Opacity(0.75);
+
   auto website = mxc::HyperlinkButton{};
   website.Content(winrt::box_value(t("aboutWebsite")));
   website.NavigateUri(
       winrt::Windows::Foundation::Uri{L"https://fulcrum.jrtx.site"});
   website.HorizontalAlignment(mx::HorizontalAlignment::Center);
   website.Padding({0, 0, 0, 0});
+
   auto issue = mxc::HyperlinkButton{};
   issue.Content(winrt::box_value(t("aboutReportIssue")));
   issue.NavigateUri(winrt::Windows::Foundation::Uri{
-      L"https://github.com/turinglambdaai/fulcrum/issues"});
+      L"https://github.com/turlamai/fulcrum/issues"});
   issue.HorizontalAlignment(mx::HorizontalAlignment::Center);
   issue.Padding({0, 0, 0, 0});
+
+  panel.Children().Append(version);
   panel.Children().Append(tagline);
   panel.Children().Append(license);
   panel.Children().Append(website);
   panel.Children().Append(issue);
 
-  auto dialog = mxc::ContentDialog{};
-  dialog.Title(winrt::box_value(L"Fulcrum v" + to_wide(rivet_app::kVersion)));
-  dialog.Content(winrt::box_value(panel));
-  dialog.CloseButtonText(t("updateClose"));
-  dialog.XamlRoot(Content().XamlRoot());
-  co_await dialog.ShowAsync();
+  auto content = mxc::Border{};
+  content.Padding({24, 20, 24, 20});
+  content.Child(panel);
+
+  auto window = mx::Window{};
+  window.Title(L"About Fulcrum");
+  window.Content(content);
+  try {
+    if (auto appWindow = window.AppWindow()) {
+      appWindow.Resize(winrt::Windows::Graphics::SizeInt32{440, 330});
+    }
+    (void)rivet::system::ApplyAppIcon(window);
+  } catch (...) {
+    // Window sizing/icon are optional; never lose the About surface.
+  }
+
+  auto weak = get_weak();
+  window.Closed([weak](auto&&, auto&&) {
+    if (auto owner = weak.get()) {
+      owner->about_window_ = nullptr;
+    }
+  });
+  about_window_ = window;
+  about_window_.Activate();
+  if (HWND hwnd = rivet::system::NativeWindowHandle(about_window_)) {
+    ::SetForegroundWindow(hwnd);
+  }
 }
 
 // ---- settings -------------------------------------------------------------
@@ -1908,7 +1940,7 @@ void MainWindow::ShowSettings() {
     window.Closed([this](auto&&, auto&&) { settings_window_ = nullptr; });
     settings_window_ = window;
   }
-  winrt::get_self<SettingsWindow>(settings_window_)->Attach(api_.get());
+  winrt::get_self<SettingsWindow>(settings_window_)->Attach(api_);
   settings_window_.Activate();
 }
 
@@ -2013,7 +2045,7 @@ void MainWindow::RefreshExpansionData() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     bool enabled = true;
     std::vector<std::pair<std::wstring, std::wstring>> triggers;
@@ -2082,26 +2114,18 @@ void MainWindow::AttachStatusBarCopyAffordance() {
   StatusText().ContextFlyout(footer_flyout);
 }
 
-// Open the real update search workflow from the tray, even when Fulcrum
-// is resident and hidden. The footer alone is invisible in that state.
-void MainWindow::OpenUpdatesPanel() {
-  ShowLauncher();
-  if (!startup_presented_ || quitting_) return;
-  QueryBox().Text(L"update");
-  SearchAsync(L"update");
-}
-
-// Manual check bypasses the shared four-hour silent-check throttle, but
-// always returns the user to a visible, actionable update surface.
+// Manual check from the tray: manual=true bypasses the 4-hour family
+// throttle (the backend stamps the timestamp either way, per the update
+// trigger contract). Results surface in the footer; the `update` launcher
+// rows drive download and install from here.
 void MainWindow::CheckForUpdates() {
-  OpenUpdatesPanel();
   if (api_ == nullptr) {
     SetStatusError(L"Update check once the backend is ready.");
     return;
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::wstring line;
     bool is_error = false;
@@ -2133,11 +2157,6 @@ void MainWindow::CheckForUpdates() {
         } else {
           window->SetStatusOk(line);
         }
-        // The check updates the candidate in the Racket backend. A stale
-        // WinUI result list otherwise continues to show only Check again.
-        if (window->QueryBox().Text() == L"update") {
-          window->SearchAsync(L"update");
-        }
       }
     });
   }).detach();
@@ -2149,7 +2168,7 @@ void MainWindow::StartSilentUpdateCheck() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   // The 4-hour throttle and the manifest verification are backend-owned;
   // this is one cheap RPC the backend may decline (status "throttled").
   // Failures are silent by design — a resident launcher must never nag.
@@ -2178,7 +2197,7 @@ void MainWindow::StartUpdateProgressPoll() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_.get();
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     while (true) {
       try {
@@ -2187,11 +2206,6 @@ void MainWindow::StartUpdateProgressPoll() {
           dispatcher.TryEnqueue([weak]() mutable {
             if (auto window = weak.get()) {
               window->SetStatusOk(t("updateDownloadedStatusWin"));
-              // Download finished: replace the progress row with the real
-              // verified MSI Install row without requiring another query.
-              if (window->QueryBox().Text() == L"update") {
-                window->SearchAsync(L"update");
-              }
             }
           });
           break;
@@ -2203,9 +2217,6 @@ void MainWindow::StartUpdateProgressPoll() {
               std::wstring const detail =
                   message ? to_wide(*message) : t("updateUnknownError");
               window->SetStatusError(t_format("updateDownloadFailed", {detail}));
-              if (window->QueryBox().Text() == L"update") {
-                window->SearchAsync(L"update");
-              }
             }
           });
           break;

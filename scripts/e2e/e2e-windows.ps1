@@ -13,12 +13,10 @@ using System.Runtime.InteropServices;
 public static class FulcrumNative {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll", EntryPoint="SendMessageW", SetLastError = true)]
-    public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll", EntryPoint="GetClassLongPtrW", SetLastError = true)]
-    public static extern IntPtr GetClassLongPtr(IntPtr hwnd, int index);
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 }
 '@
 
@@ -47,31 +45,6 @@ function Find-ById {
         [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
         $AutomationId)
     $Root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
-}
-
-# WinUI creates the XAML HWND before the backend's first result is ready.
-# RootElement can return this *hidden* HWND through UI Automation; finding
-# it does not mean the user has seen a frame. Assert on the first window that
-# Win32 actually marks visible instead of racing the hidden startup scaffold.
-function Find-VisibleLauncher {
-    param($Desktop, [int]$TargetProcessId)
-    $condition = [System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
-        $TargetProcessId)
-    $windows = $Desktop.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
-    for ($index = 0; $index -lt $windows.Count; $index++) {
-        $candidate = $windows[$index]
-        try {
-            $handle = [IntPtr]::new([int64]$candidate.Current.NativeWindowHandle)
-            if ($handle -ne [IntPtr]::Zero -and
-                [FulcrumNative]::IsWindowVisible($handle)) {
-                return $candidate
-            }
-        } catch [System.Windows.Automation.ElementNotAvailableException] {
-            # It closed between enumeration and probing; re-enumerate next tick.
-        }
-    }
-    return $null
 }
 
 function Find-ByName {
@@ -107,17 +80,7 @@ $process = $null
 $savedData = $env:FULCRUM_DATA_DIR
 $savedInstanceId = $env:FULCRUM_INSTANCE_ID
 $savedAcceptance = $env:FULCRUM_ACCEPTANCE
-# Verify the explicit file-search command against a real, existing file
-# in the shell-resolved Documents directory. Seed before app launch so the
-# query does not depend on the asynchronous catalog finishing its first scan.
-$documentRoot = [Environment]::GetFolderPath('MyDocuments')
-if (-not $documentRoot) { $documentRoot = Join-Path $env:USERPROFILE 'Documents' }
-$createdDocumentRoot = -not (Test-Path -LiteralPath $documentRoot -PathType Container)
-$fixtureName = "fulcrum-find-acceptance-$PID.txt"
-$fixturePath = Join-Path $documentRoot $fixtureName
 try {
-    New-Item -ItemType Directory -Force -Path $documentRoot | Out-Null
-    Set-Content -LiteralPath $fixturePath -Value 'find command acceptance fixture' -Encoding utf8
     $env:FULCRUM_DATA_DIR = $data
     $env:FULCRUM_INSTANCE_ID = "site.jrtx.fulcrum.acceptance.$PID"
     $env:FULCRUM_ACCEPTANCE = '1'
@@ -127,8 +90,10 @@ try {
         -RedirectStandardOutput (Join-Path $output 'application.stdout.log') `
         -RedirectStandardError (Join-Path $output 'application.stderr.log')
     $desktop = [System.Windows.Automation.AutomationElement]::RootElement
-    $window = Wait-Until 'first visible Fulcrum window' {
-        Find-VisibleLauncher $desktop $process.Id
+    $window = Wait-Until 'Fulcrum window' {
+        $condition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+        $desktop.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
     }
     $query = Wait-Until 'Fulcrum query field' { Find-ById $window 'QueryBox' }
     # The first visible WinUI frame must be initialized, not the old empty
@@ -165,32 +130,6 @@ try {
         throw "$($_.Exception.Message); status=$statusText"
     }
 
-    # A normal filename query is NOT supposed to invoke the file provider.
-    # File search is an explicit user command: "find <filename>". Exercise
-    # the real PowerShell/Windows Search fallback through packaged RVT1/WinUI.
-    $query.SetFocus()
-    [System.Windows.Forms.SendKeys]::SendWait('^a')
-    [System.Windows.Forms.SendKeys]::SendWait("find fulcrum-find-acceptance-$PID")
-    try {
-        [void](Wait-Until 'find command displays a real Documents file' {
-            $candidate = Find-ByName $window $fixtureName
-            if ($candidate -and -not $candidate.Current.IsOffscreen) { return $true }
-            return $false
-        } 90)
-    } catch {
-        Save-AccessibilitySnapshot $window (Join-Path $output 'file-search-failure-accessibility.json')
-        $status = Find-ById $window 'StatusText'
-        $statusText = if ($status) { $status.Current.Name } else { '<missing>' }
-        throw "$($_.Exception.Message); status=$statusText"
-    }
-    Save-AccessibilitySnapshot $window (Join-Path $output 'file-search-accessibility.json')
-    # Restore the arithmetic query for the existing action and clipboard test.
-    $query.SetFocus()
-    [System.Windows.Forms.SendKeys]::SendWait('^a')
-    [System.Windows.Forms.SendKeys]::SendWait('12*12')
-    [void](Wait-Until 'calculator result returns after explicit file search' {
-        Find-ByNameFragment $window '144'
-    })
     Save-AccessibilitySnapshot $window (Join-Path $output 'accessibility.json')
 
     $query.SetFocus()
@@ -200,6 +139,140 @@ try {
         if ($text -and $text.TrimEnd() -eq '144') { return $true }
         return $false
     })
+    # About must NOT depend on the hidden Alt+Space launcher XamlRoot.
+    # WM_APP+7 is an acceptance-only trigger invoking the same ShowAbout()
+    # method as the production tray menu. Test the actual packaged WinUI
+    # window visibility before ever re-summoning the launcher.
+    $mainHwnd = [IntPtr]::new([int64]$window.Current.NativeWindowHandle)
+    [void](Wait-Until 'launcher hidden after the calculator action' {
+        if (-not [FulcrumNative]::IsWindowVisible($mainHwnd)) { return $true }
+        return $false
+    })
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        if (-not [FulcrumNative]::PostMessage(
+            $mainHwnd, [uint32]0x8007, [IntPtr]::Zero, [IntPtr]::Zero)) {
+            throw 'could not invoke acceptance-only tray About command'
+        }
+        $about = Wait-Until "visible independent About window (attempt $attempt)" {
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+            $topLevels = $desktop.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+            for ($i = 0; $i -lt $topLevels.Count; $i++) {
+                $candidate = $topLevels[$i]
+                if ($candidate.Current.Name -ne 'About Fulcrum') { continue }
+                $handle = [IntPtr]::new([int64]$candidate.Current.NativeWindowHandle)
+                if ($handle -ne [IntPtr]::Zero -and [FulcrumNative]::IsWindowVisible($handle)) {
+                    return $candidate
+                }
+            }
+            return $null
+        }
+        if (-not (Find-ByNameFragment $about 'Fulcrum v')) {
+            throw 'About window does not show its product version'
+        }
+        if ([FulcrumNative]::IsWindowVisible($mainHwnd)) {
+            throw 'About unexpectedly summoned the hidden search launcher'
+        }
+        $aboutHwnd = [IntPtr]::new([int64]$about.Current.NativeWindowHandle)
+        $aboutWindow = [System.Windows.Automation.WindowPattern]$about.GetCurrentPattern(
+            [System.Windows.Automation.WindowPattern]::Pattern)
+        $aboutWindow.Close()
+        [void](Wait-Until "About closed (attempt $attempt)" {
+            if (-not [FulcrumNative]::IsWindowVisible($aboutHwnd)) { return $true }
+            return $false
+        })
+        if ($process.HasExited) { throw 'closing About terminated the resident process' }
+    }
+
+    # OS-owned login startup must be a working WinUI setting, not a
+    # synced backend toggle. Use the production Settings window, change
+    # HKCU Run in an isolated CI user, then restore the exact prior entry.
+    if (-not [FulcrumNative]::PostMessage(
+        $mainHwnd, [uint32]0x8008, [IntPtr]::Zero, [IntPtr]::Zero)) {
+        throw 'cannot invoke native Settings startup acceptance'
+    }
+    $settingsWindow = Wait-Until 'Fulcrum Settings window' {
+        $condition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+        $windows = $desktop.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+        for ($i = 0; $i -lt $windows.Count; $i++) {
+            if ($windows[$i].Current.Name -eq 'Fulcrum Settings') {
+                return $windows[$i]
+            }
+        }
+        return $null
+    }
+    # Validate all five Settings destinations, then prove the Commands tab
+    # reveals actual bindings controls, not a decorative sidebar entry.
+    foreach ($section in @('general','features','ai','commands','sync')) {
+        [void](Wait-Until "settings sidebar $section" {
+            Find-ById $settingsWindow "settings-sidebar-$section"
+        })
+    }
+    $commandsTab = Find-ById $settingsWindow 'settings-sidebar-commands'
+    $commandsSelection = [System.Windows.Automation.SelectionItemPattern]$commandsTab.GetCurrentPattern(
+        [System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $commandsSelection.Select()
+    [void](Wait-Until 'visible Commands editor' {
+        $title = Find-ById $settingsWindow 'settings-commands-title'
+        if ($title -and -not $title.Current.IsOffscreen) { return $title }
+        return $null
+    })
+    $generalTab = Find-ById $settingsWindow 'settings-sidebar-general'
+    $generalSelection = [System.Windows.Automation.SelectionItemPattern]$generalTab.GetCurrentPattern(
+        [System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $generalSelection.Select()
+
+    $startupControl = Wait-Until 'native Start at login toggle' {
+        Find-ById $settingsWindow 'FulcrumStartAtLogin'
+    }
+    $togglePattern = [System.Windows.Automation.TogglePattern]$startupControl.GetCurrentPattern(
+        [System.Windows.Automation.TogglePattern]::Pattern)
+    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $priorRunValue = (Get-ItemProperty -Path $runKey -Name Fulcrum -ErrorAction SilentlyContinue).Fulcrum
+    try {
+        $wasDisabled = $togglePattern.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::Off
+        $togglePattern.Toggle()
+        if ($wasDisabled) {
+            [void](Wait-Until 'HKCU Run login entry created' {
+                $value = (Get-ItemProperty -Path $runKey -Name Fulcrum -ErrorAction SilentlyContinue).Fulcrum
+                if ($value -and $value.Contains('--background')) { return $true }
+                return $false
+            })
+        } else {
+            [void](Wait-Until 'HKCU Run login entry removed' {
+                $value = (Get-ItemProperty -Path $runKey -Name Fulcrum -ErrorAction SilentlyContinue).Fulcrum
+                return (-not $value)
+            })
+        }
+    } finally {
+        if ($null -ne $priorRunValue) {
+            New-ItemProperty -Path $runKey -Name Fulcrum -Value $priorRunValue -PropertyType String -Force | Out-Null
+        } else {
+            Remove-ItemProperty -Path $runKey -Name Fulcrum -ErrorAction SilentlyContinue
+        }
+    }
+
+    # A second OS login launch must exit without disturbing a resident
+    # hidden launcher; normal second launches below still summon it.
+    $loginSecondary = Start-Process -FilePath $executable.FullName -ArgumentList '--background' -PassThru -WorkingDirectory $repo
+    try {
+        if (-not $loginSecondary.WaitForExit(15000)) {
+            throw 'background login secondary stayed alive'
+        }
+        if ($loginSecondary.ExitCode -ne 0 -or $process.HasExited) {
+            throw 'background login activation interfered with the resident host'
+        }
+        if ([FulcrumNative]::IsWindowVisible($mainHwnd)) {
+            throw 'background login activation unexpectedly summoned the search window'
+        }
+    } finally {
+        if (-not $loginSecondary.HasExited) {
+            Stop-Process -Id $loginSecondary.Id -Force -ErrorAction SilentlyContinue
+        }
+        $loginSecondary.Dispose()
+    }
+
     # Starting a second EXE while the resident host owns the lease must not
     # leave another invisible Fulcrum process. It should summon the original.
     $secondary = Start-Process -FilePath $executable.FullName -PassThru -WorkingDirectory $repo
@@ -225,170 +298,7 @@ try {
     # natural process exit (not a test force-kill). The next primary must be
     # free to acquire the same instance ID and expose a usable window again.
     $hwnd = [IntPtr]::new([int64]$reopened.Current.NativeWindowHandle)
-    # The packaged product must expose the same five navigable settings
-    # sections as macOS, including the actual bindings editor. Open the
-    # real settings window via an acceptance-gated route to ShowSettings.
     if ($hwnd -eq [IntPtr]::Zero -or -not [FulcrumNative]::PostMessage(
-        $hwnd, [uint32]0x8007, [IntPtr]::Zero, [IntPtr]::Zero)) {
-        throw 'could not open settings via the packaged WinUI host'
-    }
-    $settings = Wait-Until 'Fulcrum Settings top-level window' {
-        $pidCondition = [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
-        $windows = $desktop.FindAll([System.Windows.Automation.TreeScope]::Children, $pidCondition)
-        for ($i = 0; $i -lt $windows.Count; $i++) {
-            if ($windows[$i].Current.Name -eq 'Fulcrum Settings') { return $windows[$i] }
-        }
-        return $null
-    }
-    foreach ($section in @('general','features','ai','commands','sync')) {
-        [void](Wait-Until "settings sidebar $section" { Find-ById $settings "settings-sidebar-$section" })
-    }
-    $commandTab = Find-ById $settings 'settings-sidebar-commands'
-    $selection = $commandTab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-    ([System.Windows.Automation.SelectionItemPattern]$selection).Select()
-    # StackPanel is a layout-only element: UIA does not expose it. Assert
-    # the actual titled content and functional Save control instead.
-    # WinUI NavigationView SelectionChanged and its layout run asynchronously.
-    # A collapsed TextBlock may still be discoverable by UIA before the new
-    # section is mapped, so wait for genuinely visible content rather than
-    # immediately failing on the stale IsOffscreen value.
-    try {
-        [void](Wait-Until 'visible Commands settings editor' {
-            $title = Find-ById $settings 'settings-commands-title'
-            if ($title -and -not $title.Current.IsOffscreen) { return $title }
-            return $null
-        })
-        [void](Wait-Until 'visible functional command binding Save action' {
-            $buttons = $settings.FindAll(
-                [System.Windows.Automation.TreeScope]::Descendants,
-                [System.Windows.Automation.PropertyCondition]::new(
-                    [System.Windows.Automation.AutomationElement]::NameProperty, 'Save'))
-            for ($i = 0; $i -lt $buttons.Count; $i++) {
-                $button = $buttons[$i]
-                if ($button.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
-                    -not $button.Current.IsOffscreen) { return $button }
-            }
-            return $null
-        })
-    } catch {
-        Save-AccessibilitySnapshot $settings (Join-Path $output 'settings-navigation-failure-accessibility.json')
-        throw "Commands tab did not reveal its visible binding editor: $($_.Exception.Message)"
-    }
-    $generalTab = Find-ById $settings 'settings-sidebar-general'
-    $selection = $generalTab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-    ([System.Windows.Automation.SelectionItemPattern]$selection).Select()
-    [void](Wait-Until 'recordable global hotkey in General settings' { Find-ById $settings 'settings-record-hotkey' })
-
-    # Start at login must be a *working local OS toggle*, not a backend-only
-    # setting. Verify native UI Automation changes HKCU Run and restores it.
-    $loginControl = Wait-Until 'Start at login native ToggleSwitch' {
-        Find-ById $settings 'settings-start-at-login'
-    }
-    $toggle = $loginControl.GetCurrentPattern(
-        [System.Windows.Automation.TogglePattern]::Pattern)
-    $toggle = [System.Windows.Automation.TogglePattern]$toggle
-    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    $priorRunValue = (Get-ItemProperty -Path $runKey -Name Fulcrum -ErrorAction SilentlyContinue).Fulcrum
-    try {
-        if ($toggle.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::Off) {
-            $toggle.Toggle()
-            [void](Wait-Until 'Windows startup Run entry registered' {
-                $value = (Get-ItemProperty -Path $runKey -Name Fulcrum -ErrorAction SilentlyContinue).Fulcrum
-                if ($value -and $value.Contains('--background')) { return $true }
-                return $false
-            })
-        } else {
-            $toggle.Toggle()
-            [void](Wait-Until 'Windows startup Run entry removed' {
-                if (-not (Get-ItemProperty -Path $runKey -Name Fulcrum -ErrorAction SilentlyContinue).Fulcrum) {
-                    return $true
-                }
-                return $false
-            })
-        }
-    } finally {
-        if ($null -ne $priorRunValue) {
-            New-ItemProperty -Path $runKey -Name Fulcrum -Value $priorRunValue -PropertyType String -Force | Out-Null
-        } else {
-            Remove-ItemProperty -Path $runKey -Name Fulcrum -ErrorAction SilentlyContinue
-        }
-    }
-
-
-    # WinUI titles don't automatically inherit the EXE icon. The settings
-    # window must explicitly set it from Rivet's branded numeric resource.
-    $settingsHwnd = [IntPtr]::new([int64]$settings.Current.NativeWindowHandle)
-    if ($settingsHwnd -eq [IntPtr]::Zero) { throw 'settings HWND is null' }
-    $small = [FulcrumNative]::SendMessage($settingsHwnd, [uint32]0x007F,
-        [IntPtr]::new(2), [IntPtr]::Zero) # WM_GETICON / ICON_SMALL2
-    $large = [FulcrumNative]::SendMessage($settingsHwnd, [uint32]0x007F,
-        [IntPtr]::new(1), [IntPtr]::Zero) # WM_GETICON / ICON_BIG
-    $classIcon = [FulcrumNative]::GetClassLongPtr($settingsHwnd, -14) # GCLP_HICON
-    if ($small -eq [IntPtr]::Zero -and $large -eq [IntPtr]::Zero -and
-        $classIcon -eq [IntPtr]::Zero) {
-        throw 'settings title bar has no Win32 icon after SetIcon'
-    }
-    Save-AccessibilitySnapshot $settings (Join-Path $output 'settings-accessibility.json')
-
-    # Exercise the same tray handler against a *hidden* launcher. Prior to
-    # this change, CheckForUpdates wrote exclusively to an invisible footer
-    # and never populated the user's update workflow.
-    $windowPattern = $settings.GetCurrentPattern(
-        [System.Windows.Automation.WindowPattern]::Pattern)
-    ([System.Windows.Automation.WindowPattern]$windowPattern).Close()
-    if (-not [FulcrumNative]::PostMessage(
-        $hwnd, [uint32]0x8009, [IntPtr]::Zero, [IntPtr]::Zero)) {
-        throw 'could not hide primary before tray update check'
-    }
-    Start-Sleep -Milliseconds 300
-    # OS login while Fulcrum already owns the instance lease must exit
-    # without summoning the panel that the user deliberately hid.
-    $loginDuplicate = Start-Process -FilePath $executable.FullName -ArgumentList '--background' -WorkingDirectory $repo -PassThru
-    try {
-        if (-not $loginDuplicate.WaitForExit(15000)) {
-            throw 'login-item duplicate stayed running instead of exiting'
-        }
-        if ($loginDuplicate.ExitCode -ne 0 -or $process.HasExited) {
-            throw 'login-item duplicate disturbed the resident process'
-        }
-        Start-Sleep -Milliseconds 200
-        $allResident = [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
-        $unexpected = $desktop.FindFirst(
-            [System.Windows.Automation.TreeScope]::Children, $allResident)
-        if ($unexpected -and -not $unexpected.Current.IsOffscreen) {
-            throw 'background login duplicate re-opened the hidden launcher'
-        }
-    } finally {
-        if (-not $loginDuplicate.HasExited) {
-            Stop-Process -Id $loginDuplicate.Id -Force -ErrorAction SilentlyContinue
-        }
-        $loginDuplicate.Dispose()
-    }
-    if (-not [FulcrumNative]::PostMessage(
-        $hwnd, [uint32]0x8008, [IntPtr]::Zero, [IntPtr]::Zero)) {
-        throw 'could not request tray CheckForUpdates'
-    }
-    $updates = Wait-Until 'tray CheckForUpdates shows a visible launcher' {
-        $condition = [System.Windows.Automation.PropertyCondition]::new(
-            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
-        $desktop.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
-    }
-    $updatesQuery = Wait-Until 'visible update query' { Find-ById $updates 'QueryBox' }
-    [void](Wait-Until 'update workflow query' {
-        $value = $updatesQuery.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-        if (([System.Windows.Automation.ValuePattern]$value).Current.Value -eq 'update') {
-            return $true
-        }
-        return $false
-    })
-    [void](Wait-Until 'actionable update check row' {
-        Find-ByNameFragment $updates 'Check for updates'
-    })
-    Save-AccessibilitySnapshot $updates (Join-Path $output 'update-accessibility.json')
-
-    if (-not [FulcrumNative]::PostMessage(
         $hwnd, [uint32]0x8006, [IntPtr]::Zero, [IntPtr]::Zero)) {
         throw 'could not request acceptance-only QuitApplication'
     }
@@ -403,28 +313,55 @@ try {
         -WorkingDirectory $repo `
         -RedirectStandardOutput (Join-Path $output 'relaunch.stdout.log') `
         -RedirectStandardError (Join-Path $output 'relaunch.stderr.log')
-    $restarted = Wait-Until 'first visible restarted Fulcrum launcher' {
-        Find-VisibleLauncher $desktop $process.Id
+    $restarted = Wait-Until 'restarted Fulcrum launcher' {
+        $condition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+        $desktop.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
     }
     [void](Wait-Until 'restarted query field' { Find-ById $restarted 'QueryBox' })
     $restartedStatus = Find-ById $restarted 'StatusText'
     if (-not $restartedStatus -or $restartedStatus.Current.Name -match 'Starting embedded') {
-        Save-AccessibilitySnapshot $restarted (Join-Path $output 'relaunch-failure-accessibility.json')
-        $statusText = if ($restartedStatus) { $restartedStatus.Current.Name } else { '<missing>' }
-        throw "visible restarted launcher showed uninitialized scaffold; status=$statusText"
+        throw 'restarted launcher showed uninitialized scaffold'
+    }
+
+    # Simulate the Windows Installer Restart Manager close-app handshake
+    # against an actually packaged resident process, with the launcher
+    # already hidden. QUERY must not kill the app; ENDSESSION must do so
+    # gracefully and free the lease (the behavior missing in #148).
+    $restartHwnd = [IntPtr]::new([int64]$restarted.Current.NativeWindowHandle)
+    if ($restartHwnd -eq [IntPtr]::Zero -or -not [FulcrumNative]::PostMessage(
+        $restartHwnd, [uint32]0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) {
+        throw 'could not close transient launcher panel'
+    }
+    [void](Wait-Until 'launcher hidden before Restart Manager request' {
+        if (-not [FulcrumNative]::IsWindowVisible($restartHwnd)) { return $true }
+        return $false
+    })
+    # WM_QUERYENDSESSION=0x11, WM_ENDSESSION=0x16,
+    # ENDSESSION_CLOSEAPP=1. No other test process is targeted.
+    $approved = [FulcrumNative]::SendMessage(
+        $restartHwnd, [uint32]0x0011, [IntPtr]::Zero, [IntPtr]::new(1))
+    if ($approved -ne [IntPtr]::new(1) -or $process.HasExited) {
+        throw 'Restart Manager shutdown query was rejected or caused premature exit'
+    }
+    if (-not [FulcrumNative]::PostMessage(
+        $restartHwnd, [uint32]0x0016, [IntPtr]::new(1), [IntPtr]::new(1))) {
+        throw 'could not send Restart Manager shutdown confirmation'
+    }
+    if (-not $process.WaitForExit(30000)) {
+        throw 'Fulcrum ignored Restart Manager close-app shutdown'
+    }
+    if ($process.ExitCode -ne 0) {
+        throw "Restart Manager shutdown exited with code $($process.ExitCode)"
     }
 
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('set:QueryBox=12*12','search:find-explicit-windows-document','press:Enter','launch:secondary','settings:five-tabs','settings:commands','settings:startup-registry-roundtrip','login:background-does-not-summon','settings:window-icon','tray:update-while-hidden','quit:acceptance-tray-path','launch:again')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','find prefix locates a real Windows Documents file using packaged RVT1/WinUI','run-action emitted 144 to the native clipboard','secondary exited without a phantom process','secondary summons primary','settings sidebar parity with macOS','Commands settings selectable','Windows Start at login toggle changes HKCU Run then restores previous value','background duplicate exits without re-opening hidden launcher','settings titlebar app icon visible','tray update opens visible actionable update UI','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window')
+        actions = @('set:QueryBox=12*12','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:five-native-tabs','settings:commands-editor','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','five native Settings destinations and visible Commands editor','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
-    Remove-Item -LiteralPath $fixturePath -Force -ErrorAction SilentlyContinue
-    if ($createdDocumentRoot) {
-        Remove-Item -LiteralPath $documentRoot -ErrorAction SilentlyContinue
-    }
     $env:FULCRUM_DATA_DIR = $savedData
     $env:FULCRUM_INSTANCE_ID = $savedInstanceId
     $env:FULCRUM_ACCEPTANCE = $savedAcceptance

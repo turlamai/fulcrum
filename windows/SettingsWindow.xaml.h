@@ -4,7 +4,10 @@
 #include "SettingsWindow.g.h"
 #include "GeneratedBackend.hpp"
 
+#include "winui_window.hpp"
+
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -22,7 +25,7 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
 
   // Hooked up by MainWindow once the backend is ready (and again on every
   // show, which reloads). The API outlives this window: MainWindow owns it.
-  void Attach(rivet_app::API* api);
+  void Attach(std::shared_ptr<rivet_app::API> api);
 
   // Native five-section settings IA. The same backend keys are used by
   // macOS, Windows and Linux; only the host controls differ.
@@ -66,7 +69,7 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   void ShowError(std::wstring const& message);
   void ClearError();
 
-  rivet_app::API* api_{nullptr};
+  std::shared_ptr<rivet_app::API> api_;
   // True while Apply pushes values into the controls, so their change
   // handlers do not write them straight back.
   bool loading_{false};

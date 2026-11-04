@@ -32,6 +32,7 @@
          "core/paths.rkt"
          "core/plugins.rkt"
          "core/quicklinks.rkt"
+         "core/revision-publisher.rkt"
          "core/store.rkt"
          (rename-in "core/settings.rkt" [settings-list core:settings-list])
          (rename-in "core/snippets.rkt" [snippet-list core:snippet-list])
@@ -48,6 +49,7 @@
          ai-rows
          ai-ask-row
          ai-copy-last-answer
+         ai-paste-last-answer
          ai-effective-provider
          ai-history
          ai-last-answer
@@ -72,7 +74,7 @@
 ;; update check: drift here means every install believes it is outdated
 ;; (0.2.0 shipped believing it was 0.1.0).
 (define app-version
-  (with-handlers ([exn:fail? (lambda (_) "0.14.1")])
+  (with-handlers ([exn:fail? (lambda (_) "0.14.2")])
     (string-append (rivet-info:app-version))))
 
 ;; The updater learns the running version from here (the packaged app reads
@@ -159,12 +161,17 @@
 ;; results-changed pushes. Hosts re-run the current query when it moves.
 (define-state search-revision : Int64 0)
 
-(define search-revision-box (box 0))
+;; File-catalog progress and FPP2 daemon notifications can arrive on
+;; independent worker threads. A shared increment without synchronization
+;; could lose updates or deliver revisions to hosts out of order.
+(define search-revision-publisher
+  (make-revision-publisher
+   (lambda (revision)
+     (with-handlers ([exn:fail? void])
+       (state-set! search-revision revision)))))
 
 (define (bump-search-revision!)
-  (set-box! search-revision-box (add1 (unbox search-revision-box)))
-  (with-handlers ([exn:fail? void])
-    (state-set! search-revision (unbox search-revision-box))))
+  (revision-publish! search-revision-publisher))
 
 (define (nullable value)
   (if value value (void)))
@@ -452,6 +459,14 @@
       (cons "copied" (list (cons 'copy-to-clipboard answer)))
       (cons "no AI answer yet" '())))
 
+;; Pure action decision: the calling RPC owns sending the event. Keeping
+;; this separate makes the contract testable without a live Rivet emitter.
+(define (ai-paste-last-answer)
+  (define answer (ai-last-answer))
+  (if (non-empty-string? answer)
+      (cons "copied" (list (cons 'paste-to-frontmost answer)))
+      (cons "no AI answer yet" '())))
+
 (define (ai-rows query)
   (define trimmed (string-trim query))
   (define lowered (string-downcase trimmed))
@@ -679,11 +694,7 @@
      (cons "ok" (list (cons 'notify "ai summarize · ai clean · ai translate <lang> · ai explain · ai model <name> · ai <question>")))]
     [(ai.run) (ai-run! engine arg)]
     [(ai.copy) (ai-copy-last-answer)]
-    [(ai.paste)
-     (define answer (ai-last-answer))
-     (if (non-empty-string? answer)
-         (cons "copied" (list (cons 'paste-to-frontmost answer)))
-         (cons "no AI answer yet" '()))]
+    [(ai.paste) (ai-paste-last-answer)]
     [(ai.reset)
      (ai-session-reset! ai-service)
      (cons "ok" (list (cons 'notify "AI conversation reset")))]
@@ -1714,7 +1725,8 @@
                  #:plugin-manager plug-mgr
                  #:max-results (settings-get manager 'max-results)
                  #:file-index-path (file-index-path)
-                 #:file-catalog-roots (default-file-catalog-roots)))
+                 #:file-catalog-roots (default-file-catalog-roots)
+                 #:file-catalog-nudge bump-search-revision!))
   (engine-rebuild-index! engine)
   ;; The startup rebuild IS the fresh state; stamping the cache here keeps
   ;; the first search from re-scanning the roots redundantly.

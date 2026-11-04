@@ -58,7 +58,7 @@
   #:transparent)
 
 (struct engine
-  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock)
+  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge)
   #:mutable)
 
 ;; Prepared application rows: the fuzzy fields are immutable per rebuild,
@@ -552,7 +552,8 @@
          (set-engine-file-catalog-worker!
           engine
           (start-file-catalog! (engine-file-index-path engine)
-                               (engine-file-catalog-roots engine))))))))
+                               (engine-file-catalog-roots engine)
+                               #:on-progress (engine-file-catalog-nudge engine))))))))
 
 (define (engine-file-catalog-status engine)
   (define worker (engine-file-catalog-worker engine))
@@ -593,6 +594,21 @@
    "file index search status catalog"
    120))
 
+;; A platform search with zero hits cannot prove nonexistence. The local
+;; catalog may still be building on first use, and the system index only
+;; covers selected locations. Surface honest progress/coverage information.
+(define (file-search-empty-row engine)
+  (define state (file-catalog-status-state (engine-file-catalog-status engine)))
+  (if (member state '(starting scanning))
+      (file-index-status-row engine)
+      (result
+       "noop"
+       "No matching files in searched locations"
+       "Coverage is limited by the OS index and local folders; type file index to check indexing status"
+       "File" "" "doc" "" "Partial scope"
+       "find file search empty index scope"
+       85)))
+
 ;; `find <query>` claims file search. All three platforms have a real
 ;; provider (files.rkt); the honest row below appears only when the
 ;; platform's search tool is missing entirely, naming what would restore it.
@@ -615,12 +631,23 @@
                               #:index-path (engine-file-index-path engine))])
                  (case (file-search-result-status search)
                    [(ok)
-                    (for/list ([hit (in-list (file-search-result-hits search))])
-                      (result "file.open" (car hit)
-                              (cdr hit) "File"
-                              (cdr hit) "doc" "" ""
-                              (car hit)
-                              85))]
+                    (let ([hits (file-search-result-hits search)])
+                      (if (null? hits)
+                          (list (file-search-empty-row engine))
+                          (for/list ([hit (in-list hits)])
+                            (result "file.open" (car hit)
+                                    (cdr hit) "File"
+                                    (cdr hit) "doc" "" ""
+                                    (car hit)
+                                    85))))]
+                   [(index-error)
+                    (list
+                     (result "noop"
+                             "Local file index cannot be read"
+                             "The filename cache is inaccessible or could not be recovered; check file index, storage permissions and disk health"
+                             "File" "" "doc" "" "Index error"
+                             "find file search index error"
+                             85))]
                    [(timeout)
                     (list
                      (result "noop"
@@ -823,7 +850,8 @@
                   #:plugin-manager [plugin-manager #f]
                   #:max-results [max-results 12]
                   #:file-index-path [file-index-path #f]
-                  #:file-catalog-roots [file-catalog-roots '()])
+                  #:file-catalog-roots [file-catalog-roots '()]
+                  #:file-catalog-nudge [file-catalog-nudge void])
   (->* (#:clipboard-store (or/c clipboard-store? #f)
         #:snippet-store (or/c snippet-store? #f)
         #:plugin-manager (or/c plugin-manager? #f))
@@ -831,7 +859,8 @@
         #:bindings-store (or/c bindings-store? #f)
         #:max-results (and/c exact-integer? (>=/c 1) (<=/c 50))
         #:file-index-path (or/c path-string? #f)
-        #:file-catalog-roots (listof path-string?))
+        #:file-catalog-roots (listof path-string?)
+        #:file-catalog-nudge (-> any))
        engine?)
   (engine (make-hash) #f
           clipboard-store
@@ -847,7 +876,8 @@
           file-index-path
           file-catalog-roots
           #f
-          (make-semaphore 1)))
+          (make-semaphore 1)
+          file-catalog-nudge))
 
 (define (engine-rebuild-index! engine)
   (define apps (discover-applications))

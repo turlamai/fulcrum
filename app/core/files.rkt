@@ -3,9 +3,9 @@
 ;; File search — per-platform, always available on desktop:
 ;;   macOS: Spotlight (`mdfind -name`) — millisecond responses, deep index
 ;;   Linux: `locate -i` (the mlocate/plocate index) or `find` as fallback
-;;   Windows: scan the user's actual known folders first (including redirected
-;;     OneDrive locations), then query Windows Search (SYSTEMINDEX) for broader
-;;     indexed results; a bounded profile walk is the last resort.
+;;   Windows: the Windows Search index (SYSTEMINDEX) when the service is
+;;     up, falling back in-process to a bounded `Get-ChildItem -Recurse`
+;;     scan when it is not
 ;; Claims `find <query>` queries so it never clutters unrelated searches.
 ;; Opening a result uses the platform opener, the same side-effect path
 ;; application launches use.
@@ -77,12 +77,19 @@
 
 ;; ---- search ---------------------------------------------------------------
 
-;; Windows Search returns file: URLs (file:///C:/Users/me/a%20b/x.md);
-;; every other backend emits plain filesystem paths. Decode URL form
-;; into a plain path; leave anything else untouched.
+;; A file: URL can name a Windows drive, a UNC share, or a POSIX path.
+;; Remove only the URL scheme and the drive's URI leading slashes:
+;; dropping all slashes also drops a UNC server (file://host/share) and
+;; converts an absolute POSIX file URL into a relative path.
 (define (file-url->path line)
   (if (string-prefix? line "file:")
-      (uri-decode (regexp-replace #px"^file:/+" line ""))
+      (let ([path (uri-decode (substring line (string-length "file:")))])
+        (cond
+          [(regexp-match? #px"^/+[A-Za-z]:/" path)
+           (regexp-replace #px"^/+" path "")]
+          [(string-prefix? path "///")
+           (substring path 2)]
+          [else path]))
       line))
 
 ;; Universal path-list parser: newline-separated absolute paths →
@@ -200,13 +207,17 @@
   ;; delayed in SQLite could claim after a newer request and cancel the wrong
   ;; process when RVT1 workers run concurrently.
   (define cancel (and backend (claim-file-search!)))
-  (define cached
-    (if index-path
-        (file-index-search index-path query file-search-candidate-limit)
-        '()))
+  (define cache-result
+    (and index-path
+         (file-index-search/status index-path query file-search-candidate-limit)))
+  (define cached (if cache-result (file-index-query-hits cache-result) '()))
+  (define cache-error?
+    (and cache-result (eq? (file-index-query-status cache-result) 'error)))
   (if (false? backend)
       (if (null? cached)
-          (file-search-result '() 'unavailable #f)
+          (file-search-result '()
+                              (if cache-error? 'index-error 'unavailable)
+                              #f)
           (file-search-result (rank-file-hits query cached limit)
                               'ok 'fulcrum-index))
       (let-values ([(program args)
@@ -257,7 +268,7 @@
              query
              candidates
              limit)
-            'ok
+            (if (and cache-error? (null? candidates)) 'index-error 'ok)
             (if (and (null? platform-hits) (pair? cached))
                 'fulcrum-index
                 backend))]))))
@@ -266,18 +277,13 @@
 (define (file-search query [limit 8])
   (file-search-result-hits (file-search/status query limit)))
 
-;; ---- windows: index-first search script -----------------------------------
+;; ---- Windows: known folders before index and bounded fallback -----------
 
-;; One PowerShell invocation, three tiers inside a bounded explicit-find
-;; request (9 seconds on Windows, not on ordinary launcher typing):
-;;   1. Windows known folders — Desktop, Documents and Downloads (including
-;;      shell-redirected and OneDrive directories), before probing OLE DB.
-;;      A broken Windows Search service must not prevent common-file results.
-;;   2. Windows Search (SYSTEMINDEX) for other indexed scopes.
-;;   3. A bounded user-profile walk only if the first two tiers found nothing.
-;; The former index-first chain frequently spent its entire three-second
-;; deadline in OLE DB or an enormous USERPROFILE recursion, yielding zero
-;; results for files that were plainly present under Documents.
+;; One PowerShell invocation for explicit find only, inside a 9-second budget:
+;;   1. User's shell-known Desktop, Documents and Downloads, including
+;;      redirected OneDrive folders — avoid being starved by broken OLE DB.
+;;   2. Windows Search (SYSTEMINDEX), but only if no known-folder matches.
+;;   3. Bounded user-profile fallback, when neither earlier tier found files.
 ;; The script is defensive on purpose: any index failure lands in the
 ;; catch and the scan still answers. Two query spellings travel in the
 ;; script: $q is the raw text (the scan's -Filter wants it literal) and
@@ -291,6 +297,8 @@
   (define sql-q (string-replace raw-q "'" "''"))
   (string-append
    "$ErrorActionPreference='SilentlyContinue';"
+   ;; Windows PowerShell 5.1 defaults stdout to the OEM code page. Racket
+   ;; expects UTF-8, so Chinese/other Unicode file names can be mangled.
    "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);"
    "$out=@();"
    "$q='" (ps-literal raw-q) "';"
@@ -319,9 +327,10 @@
    "$c.Close()"
    "}catch{}};"
    "if($out.Count -gt 0){"
-   "$out|Select-Object -Unique -First 128|ForEach-Object{"
-   "if($_ -like 'file:*'){[System.Uri]::UnescapeDataString($_ -replace '^file:/+','')}"
-   "else{$_}}"
+   ;; Preserve the original file: URLs. parse-paths does the one and only
+   ;; decode and knows how to retain UNC authorities and arbitrary drives.
+   ;; Stripping file:/+ here destroyed the leading //server/share.
+   "$out|Select-Object -Unique -First 128"
    "}else{"
    "Get-ChildItem -Path $env:USERPROFILE -Recurse -Depth 3 -Filter ('*'+$q+'*') -File -ErrorAction SilentlyContinue|Select-Object -First 128 -ExpandProperty FullName"
    "}"))

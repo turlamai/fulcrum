@@ -129,24 +129,20 @@ std::string recorded_hotkey(winrt::Windows::System::VirtualKey key) {
 
 SettingsWindow::SettingsWindow() {
   InitializeComponent();
+  loading_ = true;
+  LoginStartupSwitch().IsOn(fulcrum::windows::AutostartEnabled());
+  loading_ = false;
   Title(L"Fulcrum Settings");
   try {
-    // Mica like the Windows Settings app; a regular title bar stays — this
-    // window is a document-style surface, not the launcher overlay.
     SystemBackdrop(mx::Media::MicaBackdrop());
     if (auto appWindow = this->AppWindow()) {
       appWindow.Resize(winrt::Windows::Graphics::SizeInt32{820, 580});
-      // SetIcon(String) takes an .ico file, not the EXE path. Rivet embeds
-      // the branded RT_GROUP_ICON at numeric resource ID 1 (#333 upstream).
-      // Apply that icon to this secondary *titled* window explicitly.
-      if (HICON icon = ::LoadIconW(::GetModuleHandleW(nullptr),
-                                   MAKEINTRESOURCEW(1))) {
-        appWindow.SetIcon(winrt::Microsoft::UI::IconId{
-            static_cast<std::uint64_t>(reinterpret_cast<UINT_PTR>(icon))});
-      }
     }
+    // Keep current-main's Rivet-owned icon fix: passing an EXE path to
+    // SetIcon(String) was incorrect, and raw HICON ownership is unsafe.
+    (void)rivet::system::ApplyAppIcon(*this);
   } catch (...) {
-    // The settings controls still work if composition is unavailable.
+    // Native backdrop and titlebar adornments are optional.
   }
   SettingsNavigation().SelectedItem(SettingsNavigation().MenuItems().GetAt(0));
 }
@@ -183,8 +179,8 @@ void SettingsWindow::Hotkey_KeyDown(
   args.Handled(true);
 }
 
-void SettingsWindow::Attach(rivet_app::API* api) {
-  api_ = api;
+void SettingsWindow::Attach(std::shared_ptr<rivet_app::API> api) {
+  api_ = std::move(api);
   Load();
   if (CommandsSection().Visibility() == mx::Visibility::Visible) LoadBindings();
 }
@@ -195,7 +191,7 @@ void SettingsWindow::Load() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::map<std::string, std::string> values;
     std::string status;
@@ -259,7 +255,7 @@ void SettingsWindow::Write(std::string key, std::string value) {
   if (key == "language") ApplyLocalization(value);
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher, key, value]() mutable {
     std::string error;
     try {
@@ -309,7 +305,7 @@ void SettingsWindow::RefreshAiStatus() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::string status;
     try {
@@ -330,7 +326,7 @@ void SettingsWindow::LoadBindings() {
   if (api_ == nullptr) return;
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher]() mutable {
     std::vector<std::vector<std::string>> commands, bindings;
     try {
@@ -418,7 +414,7 @@ void SettingsWindow::SaveBinding(std::string id, std::string alias,
   if (!api_) return;
   auto const weak = get_weak();
   auto const dispatcher = DispatcherQueue();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher, id, alias, hotkey]() mutable {
     std::string error;
     try {
@@ -441,7 +437,7 @@ void SettingsWindow::ClearBinding(std::string id) {
   if (!api_) return;
   auto const weak = get_weak();
   auto const dispatcher = DispatcherQueue();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher, id]() mutable {
     std::string error;
     try {
@@ -469,7 +465,7 @@ void SettingsWindow::SaveKey() {
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
-  auto* api = api_;
+  auto api = api_;
   std::thread([weak, api, dispatcher, key]() mutable {
     std::string status;
     try {
@@ -536,7 +532,7 @@ void SettingsWindow::Toggle_Toggled(
     } else {
       ClearError();
     }
-    return;
+    return;  // never send machine-local startup state over settings-set
   }
   Write(tag_key(sender), toggle.IsOn() ? "on" : "off");
 }

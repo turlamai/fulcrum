@@ -34,15 +34,19 @@ final class UpdateController: ObservableObject {
     private weak var model: LauncherModel?
     private var pendingManifest: RivetUpdateManifest?
     private var downloadTask: Task<Void, Never>?
+    private var manualCheckTask: Task<Void, Never>?
+    // A dismissed check must not repaint or reopen a window after an
+    // in-flight URLSession request eventually completes.
+    private var checkGeneration = 0
 
     // Never store a signing private key in the app. The feed URL is allowed
     // to move to latest, but the signature key identity is pinned here.
     #if FULCRUM_UPDATE_E2E_TESTING
     private static let feedURL = URL(string:
-        "https://github.com/turinglambdaai/fulcrum/releases/download/v0.14.0/update-manifest.json")!
+        "https://github.com/turlamai/fulcrum/releases/download/v0.14.0/update-manifest.json")!
     #else
     private static let feedURL = URL(string:
-        "https://github.com/turinglambdaai/fulcrum/releases/latest/download/update-manifest.json")!
+        "https://github.com/turlamai/fulcrum/releases/latest/download/update-manifest.json")!
     #endif
     private static let publicKeyBase64 = "R5cgPk4fzhCeRdQbp1XofrfSYcCCtb9nKK4OqqWOVdc="
     private static let keyID = "fulcrum-2026-10"
@@ -74,11 +78,49 @@ final class UpdateController: ObservableObject {
 
     func checkForUpdates() {
         panelVisible = true
-        guard phase != .downloading else { return }
-        Task { await check(manual: true) }
+        // Reopening while a check is in flight should reveal its progress,
+        // not start another request. Downloads also survive dismissal.
+        guard phase != .downloading && phase != .checking else { return }
+        manualCheckTask?.cancel()
+        manualCheckTask = Task { [weak self] in
+            guard let self, self.panelVisible else { return }
+            await self.check(manual: true)
+        }
+    }
+
+    func dismissPanel() {
+        panelVisible = false
+        if phase == .checking {
+            checkGeneration &+= 1
+            // Cancellation stops a manual URLSession fetch; generation
+            // invalidation also covers silent checks and races with a
+            // response already delivered by the networking stack.
+            manualCheckTask?.cancel()
+            manualCheckTask = nil
+        }
+        // A download continues if the user chooses Close, not Cancel.
+        if phase != .downloading {
+            phase = .idle
+        }
+        AppDelegate.shared?.hideUpdatePanel()
+    }
+
+    // Native host acceptance uses an offline fixture so update-dialog
+    // interaction checks cannot race the automatic network polling timer.
+    func presentCompletedCheckForAcceptance() {
+        guard ProcessInfo.processInfo.environment["FULCRUM_ACCEPTANCE"] == "1" else { return }
+        manualCheckTask?.cancel()
+        manualCheckTask = nil
+        checkGeneration &+= 1
+        pendingManifest = nil
+        errorMessage = ""
+        phase = .upToDate
+        panelVisible = true
+        AppDelegate.shared?.showUpdatePanel()
     }
 
     func silentStartupCheck() {
+        guard ProcessInfo.processInfo.environment["FULCRUM_ACCEPTANCE"] != "1" else { return }
         Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard phase != .downloading else { return }
@@ -95,21 +137,24 @@ final class UpdateController: ObservableObject {
     }
 
     func check(manual: Bool) async {
-        guard phase != .downloading else { return }
-        // Preserve the 4-hour silent throttle; a manual check always
-        // bypasses it. Store the timestamp across relaunches.
-        if !manual {
-            let defaults = UserDefaults.standard
-            if let last = defaults.object(forKey: Self.lastCheckKey) as? Date,
-               Date().timeIntervalSince(last) < 4 * 60 * 60 {
-                return
-            }
-            defaults.set(Date(), forKey: Self.lastCheckKey)
+        guard phase != .downloading && phase != .checking else { return }
+        // The manual action bypasses the 4-hour throttle, but it still
+        // refreshes the timestamp. Otherwise the delayed startup check
+        // can run again just after a user dismisses the completed manual
+        // check, causing a redundant request or a reopened update panel.
+        let defaults = UserDefaults.standard
+        if !manual,
+           let last = defaults.object(forKey: Self.lastCheckKey) as? Date,
+           Date().timeIntervalSince(last) < 4 * 60 * 60 {
+            return
         }
+        defaults.set(Date(), forKey: Self.lastCheckKey)
+        checkGeneration &+= 1
+        let generation = checkGeneration
         phase = .checking
         errorMessage = ""
         pendingManifest = nil
-        guard let updater else {
+        guard updater != nil else {
             errorMessage = t("updateCheckFailed", "native update configuration unavailable")
             phase = .failed
             return
@@ -121,7 +166,9 @@ final class UpdateController: ObservableObject {
             // sticky rollout bucket, architecture and zip installer.
             // RivetUpdateService.check() only compares versions, and must
             // not decide installation eligibility by itself.
-            if let manifest = try await fetchEligibleManifest() {
+            let eligibleManifest = try await fetchEligibleManifest()
+            guard generation == checkGeneration else { return }
+            if let manifest = eligibleManifest {
                 guard let artifact = manifest.artifact(forPlatform: "macos") else {
                     throw RivetUpdateError.manifestMissing
                 }
@@ -137,6 +184,7 @@ final class UpdateController: ObservableObject {
                 phase = .upToDate
             }
         } catch {
+            guard generation == checkGeneration else { return }
             errorMessage = t("updateCheckFailed", Self.cleanError(error))
             phase = .failed
         }

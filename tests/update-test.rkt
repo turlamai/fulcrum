@@ -87,7 +87,7 @@
 (test-case "the downloaded file keeps the manifest's release name"
   (check-equal?
    (artifact-file-name
-    (candidate-for "https://github.com/turinglambdaai/fulcrum/releases/download/v9.9.9/fulcrum-9.9.9-macos-arm64.zip"
+    (candidate-for "https://github.com/turlamai/fulcrum/releases/download/v9.9.9/fulcrum-9.9.9-macos-arm64.zip"
                    (make-string 64 #\a) 10))
    "fulcrum-9.9.9-macos-arm64.zip")
   (check-equal?

@@ -352,6 +352,14 @@ struct LauncherView: View {
                     }
                     .accessibilityIdentifier("FulcrumAcceptanceQuery")
                     .buttonStyle(.plain)
+                    // Accept a simulated signed-feed completion only in
+                    // product acceptance; the actual NSWindow and its Close
+                    // controls remain the production implementation.
+                    Button("Acceptance completed update") {
+                        UpdateController.shared?.presentCompletedCheckForAcceptance()
+                    }
+                    .accessibilityIdentifier("FulcrumAcceptanceCompletedUpdate")
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 18)

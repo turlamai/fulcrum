@@ -11,7 +11,6 @@
 // Wayland compositors own those decisions, and the status bar says so.
 #include <gdk/x11/gdkx.h>
 #include <gtk/gtk.h>
-#include <gio/gio.h>
 
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
@@ -88,7 +87,6 @@ ResultRow parse_row(std::vector<std::string> const& cells) {
 // Re-applied when the backend pushes the theme state.
 
 static GtkCssProvider* g_panel_css = nullptr;
-bool g_login_background_start = false;
 
 static void apply_panel_css() {
   gboolean dark = FALSE;
@@ -114,9 +112,6 @@ window.fulcrum-window {
 }
 )CSS";
   static char const* const shared_css = R"CSS(
-/* A single centered row owns the glyph and the editable placeholder.
-   GTK SearchEntry's built-in icon uses a different internal box/padding;
-   ordinary GtkEntry plus an explicit GtkImage avoids the baseline drift. */
 window.fulcrum-window entry {
   background: none;
   border: none;
@@ -885,7 +880,7 @@ void show_about_dialog(GtkWindow* parent) {
   gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(dialog), rivet_app::kVersion);
   std::string const comments =
       tr("aboutContent") + "\n" + tr("aboutReportIssue") +
-      ": github.com/turinglambdaai/fulcrum/issues";
+      ": github.com/turlamai/fulcrum/issues";
   gtk_about_dialog_set_comments(GTK_ABOUT_DIALOG(dialog), comments.c_str());
   std::string const license = tr("aboutLicense");
   gtk_about_dialog_set_license(GTK_ABOUT_DIALOG(dialog), license.c_str());
@@ -929,9 +924,9 @@ struct Launcher {
   // GNOME's stock activate-window-menu binding owns Alt+Space: the tray
   // grows a one-click fix while the conflict stands.
   bool hotkey_shadowed{false};
-  // A failed Wayland portal bind must not be replaced by the later generic
-  // backend "ready" notification (Ubuntu 26.04's missing app-id case).
-  bool hotkey_failure_active{false};
+  // A failed portal bind must remain visible after the backend finishes
+  // starting or language/settings changes re-paint the routine Ready text.
+  std::optional<std::string> hotkey_diagnostic;
   GtkApplication* app{nullptr};
   std::vector<ResultRow> rows;
   guint search_source{0};
@@ -941,10 +936,8 @@ struct Launcher {
   // as visible-but-inactive while it resolves activation; hiding during that
   // handoff made the v0.13.1 summon hotkey look completely dead on Ubuntu.
   bool activated_since_show{false};
-  // Startup frame gate: keep the GTK shell unmapped until the backend has
-  // produced its first native result rows (or an actionable boot error).
-  // Only an actual summon may request display; never leak the placeholder
-  // scaffold before Rivet's first search completes.
+  // The first visible frame must contain real backend rows or a boot error.
+  // A login-item start deliberately has no pending summon.
   bool initial_results_ready{false};
   bool summon_when_ready{false};
   int host_settings_generation{0};
@@ -984,16 +977,47 @@ struct Launcher {
   }
 
   void set_status(std::string const& message) {
-    if (message == tr("ready") && hotkey_failure_active) {
-      return;
-    }
     gtk_label_set_text(status, message.c_str());
-    // The resident ready/hotkey hint duplicates the search chrome and is
-    // especially misleading while the panel is already open. Only show
-    // actionable status or errors; hidden widgets allocate no layout space.
-    // Keep status messages themselves selectable/copyable when visible.
+    // A routine resident-ready hint is redundant while the search is open.
+    // Hide only that informational label; diagnostic errors (including a
+    // sticky Wayland permission failure) remain selectable and visible.
     gtk_widget_set_visible(GTK_WIDGET(status),
                            !message.empty() && message != tr("ready"));
+  }
+
+  void set_ready_status() {
+    set_status(hotkey_diagnostic.value_or(tr("ready")));
+  }
+
+  void set_hotkey_diagnostic(std::string message) {
+    hotkey_diagnostic = std::move(message);
+    set_ready_status();
+  }
+
+  void clear_hotkey_diagnostic() {
+    hotkey_diagnostic.reset();
+  }
+
+  // Bind outcomes can arrive from a portal worker. Marshal updates to the
+  // GTK thread and record the diagnostic before applying the label.
+  static void post_hotkey_diagnostic(std::string message) {
+    g_idle_add([](gpointer user_data) -> int {
+      std::unique_ptr<std::string> diagnostic(
+          static_cast<std::string*>(user_data));
+      Launcher::instance().set_hotkey_diagnostic(std::move(*diagnostic));
+      return G_SOURCE_REMOVE;
+    }, new std::string(std::move(message)));
+  }
+
+  static void post_hotkey_bound(std::string message) {
+    g_idle_add([](gpointer user_data) -> int {
+      std::unique_ptr<std::string> text(
+          static_cast<std::string*>(user_data));
+      auto& launcher = Launcher::instance();
+      launcher.clear_hotkey_diagnostic();
+      launcher.set_status(*text);
+      return G_SOURCE_REMOVE;
+    }, new std::string(std::move(message)));
   }
 
   // Marshal a status string from any worker thread onto the main loop.
@@ -1001,19 +1025,6 @@ struct Launcher {
     g_idle_add([](gpointer user_data) -> int {
       std::unique_ptr<std::string> text(static_cast<std::string*>(user_data));
       Launcher::instance().set_status(*text);
-      return G_SOURCE_REMOVE;
-    }, new std::string(std::move(message)));
-  }
-
-  // Preserve permission/portal failures across the asynchronous backend
-  // startup. This callback runs on the GTK main loop, so it cannot race
-  // with set_status() or the startup handoff's ready notification.
-  static void post_hotkey_failure(std::string message) {
-    g_idle_add([](gpointer user_data) -> int {
-      std::unique_ptr<std::string> text(static_cast<std::string*>(user_data));
-      auto& launcher = Launcher::instance();
-      launcher.hotkey_failure_active = true;
-      launcher.set_status(*text);
       return G_SOURCE_REMOVE;
     }, new std::string(std::move(message)));
   }
@@ -1442,28 +1453,12 @@ struct Launcher {
   void apply_search(SearchOutcome result) {
     if (!result.ok) {
       set_status("Search failed: " + result.error);
-      // The first search is part of the presentation gate. A failed query
-      // must reveal its error instead of stranding an invisible resident app.
-      // On login-background starts summon_when_ready is false, so this still
-      // never forces the panel open at sign-in.
-      if (!initial_results_ready) {
-        initial_results_ready = true;
-        if (summon_when_ready) {
-          summon_when_ready = false;
-          show();
-        }
-      }
+      finish_initial_presentation();
       return;
     }
     rows = std::move(result.rows);
     refresh_results(result.selected_arg);
-    if (!initial_results_ready) {
-      initial_results_ready = true;
-      if (summon_when_ready) {
-        summon_when_ready = false;
-        show();
-      }
-    }
+    finish_initial_presentation();
   }
 
   void scroll_to_selection() {
@@ -1800,7 +1795,19 @@ struct Launcher {
     }).detach();
   }
 
-  void show(guint32 user_time = GDK_CURRENT_TIME) {
+  // Complete the startup frame gate at most once. The backend may finish
+  // after a user summon or during a quiet login item; only the former opens.
+  void finish_initial_presentation() {
+    if (initial_results_ready) return;
+    initial_results_ready = true;
+    if (summon_when_ready) {
+      summon_when_ready = false;
+      show(GDK_CURRENT_TIME, false);
+    }
+  }
+
+  void show(guint32 user_time = GDK_CURRENT_TIME,
+            bool start_search = true) {
     if (!initial_results_ready) {
       summon_when_ready = true;
       return;
@@ -1814,7 +1821,7 @@ struct Launcher {
     dismiss_ai_panel();
     dismiss_detail_panel();
     gtk_editable_set_text(GTK_EDITABLE(search), "");
-    run_search("");
+    if (start_search) run_search("");
     // Position before mapping to avoid showing the launcher on the wrong
     // monitor for a frame. Wayland compositor positioning remains unchanged.
     gtk_widget_realize(GTK_WIDGET(window));
@@ -1847,8 +1854,8 @@ struct Launcher {
   }
 
   void hide() {
-    summon_when_ready = false;
     cancel_focus_loss();
+    summon_when_ready = false;
     gtk_widget_set_visible(GTK_WIDGET(window), FALSE);
   }
 
@@ -1876,8 +1883,7 @@ struct Launcher {
         !std::filesystem::exists(core)) {
       set_status("Missing Rivet runtime layout (runtime/*.boot, res/core.zo) "
                  "next to the executable. Build with raco rivet build/dev.");
-      initial_results_ready = true;
-      if (summon_when_ready) { summon_when_ready = false; show(); }
+      finish_initial_presentation();
       return;
     }
 
@@ -1941,14 +1947,12 @@ struct Launcher {
     }
     if (!error.empty()) {
       set_status("Fulcrum backend failed to start: " + error);
-      initial_results_ready = true;
-      if (summon_when_ready) { summon_when_ready = false; show(); }
+      finish_initial_presentation();
       return;
     }
     if (backend == nullptr) {
       set_status("Fulcrum backend error: startup completed without a backend");
-      initial_results_ready = true;
-      if (summon_when_ready) { summon_when_ready = false; show(); }
+      finish_initial_presentation();
       return;
     }
 
@@ -1981,7 +1985,7 @@ struct Launcher {
           }, job);
         });
 
-    set_status(tr("ready"));
+    set_ready_status();
     run_search("");
     start_silent_update_check();
     pull_host_settings();
@@ -2027,7 +2031,7 @@ void set_i18n_language(std::string const& lang) {
         ? launcher.rows[static_cast<std::size_t>(index)].id : "";
     launcher.refresh_results(arg, id);
   }
-  if (changed && launcher.api != nullptr) launcher.set_status(tr("ready"));
+  if (changed && launcher.api != nullptr) launcher.set_ready_status();
   apply_tray_language();
   refresh_settings_language();
 }
@@ -2324,8 +2328,6 @@ void settings_add_number(GtkWidget* section, char const* label, char const* key,
   settings_row(section, label, spin, key);
 }
 
-// GTK-native shortcut capture. The backend still validates duplicates,
-// unsupported combinations and collisions with the global summon shortcut.
 std::string linux_key_spec(guint keyval, GdkModifierType modifiers) {
   std::string result;
   if ((modifiers & GDK_CONTROL_MASK) != 0) result += "ctrl+";
@@ -2471,6 +2473,9 @@ void settings_build() {
   settings_add_number(general, "Maximum results", "max-results", 5, 25);
   auto* startup_toggle = gtk_switch_new();
   gtk_switch_set_active(GTK_SWITCH(startup_toggle), fulcrum_autostart_enabled());
+  gtk_accessible_update_property(GTK_ACCESSIBLE(startup_toggle),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "Fulcrum start at login", -1);
   settings_row(general, "Start at login", startup_toggle);
   g_signal_connect(startup_toggle, "notify::active",
                    G_CALLBACK(on_linux_startup_toggle), nullptr);
@@ -2634,9 +2639,6 @@ void settings_load() {
   }).detach();
 }
 
-// Native Commands editor mirrors the existing bindings-commands,
-// bindings-list, binding-set and binding-clear RVT1 API of macOS/Windows.
-// It never invents a Linux-only config file or bypasses backend validation.
 struct LinuxCommandRow {
   std::string id;
   GtkWidget* alias{nullptr};
@@ -2911,9 +2913,9 @@ std::string install_x11_hotkey(GdkDisplay* display) {
 }
 
 // ---- single instance via the first-party rivet lease ----------------------
-// `fulcrum --toggle` forwards the argument to the running primary, whose
-// activation handler presents the panel on the GTK main loop (the handler
-// itself runs on the lease's watcher thread).
+// Desktop relaunch forwards --show and always presents the resident panel.
+// Only explicit `fulcrum --toggle` forwards --toggle to toggle visibility.
+// The handler runs on the lease's watcher thread and posts to the GTK loop.
 
 gboolean activate_on_main(gpointer) {
   // A forwarded --toggle is a real toggle: the compositor keybinding
@@ -2927,9 +2929,17 @@ gboolean show_on_main(gpointer) {
   return G_SOURCE_REMOVE;
 }
 
+// A normal desktop launch should show the resident window. Only an explicit
+// --toggle command (e.g. a Wayland compositor shortcut) should hide it.
+bool toggle_activation_requested(std::vector<std::string> const& arguments) {
+  return std::find(arguments.begin(), arguments.end(), "--toggle") !=
+         arguments.end();
+}
+
 void on_activation(std::vector<std::string> arguments) {
-  (void)arguments;  // fulcrum only ever forwards --toggle
-  g_idle_add(activate_on_main, nullptr);
+  g_idle_add(toggle_activation_requested(arguments)
+                 ? activate_on_main : show_on_main,
+             nullptr);
 }
 
 // ---- tray ------------------------------------------------------------------
@@ -2986,7 +2996,6 @@ void tray_fix_hotkey() {
   Launcher& launcher = Launcher::instance();
   if (rc == 0) {
     launcher.hotkey_shadowed = false;
-    launcher.hotkey_failure_active = false;
     if (launcher.hotkey_fix != nullptr) {
       gtk_widget_set_visible(GTK_WIDGET(launcher.hotkey_fix), FALSE);
     }
@@ -3084,7 +3093,7 @@ void check_hotkey_shadowing(std::string const& trigger) {
     gtk_widget_set_visible(GTK_WIDGET(launcher.hotkey_fix), TRUE);
   }
   rebuild_tray_menu();
-  Launcher::post_hotkey_failure(tr_format("hotkeyShadowed", {trigger}));
+  Launcher::post_status(tr_format("hotkeyShadowed", {trigger}));
 }
 
 // The menu is composed at tray construction with the startup language; the
@@ -3296,6 +3305,8 @@ void on_window_active_changed(GObject* obj, GParamSpec*, gpointer) {
   }, nullptr);
 }
 
+bool g_login_background_start = false;
+
 void on_activate(GtkApplication* app, gpointer) {
   Launcher& launcher = Launcher::instance();
   launcher.app = app;  // tray quit routes through GApplication's shutdown
@@ -3330,10 +3341,8 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_add_css_class(window, "fulcrum-window");
 
   auto* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  // GtkSearchEntry owns its icon in an internal GTK subnode, where the
-  // entry-level CSS padding shifts it relative to the placeholder baseline.
-  // Build one deliberate row: a 22px symbolic icon centered against a plain
-  // editable entry. GtkEntry retains IME, clipboard and keyboard semantics.
+  // GtkSearchEntry's built-in icon and placeholder use independently padded
+  // subnodes. A centered image and normal editable entry share one baseline.
   auto* search_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
   gtk_widget_set_margin_top(search_row, 10);
   gtk_widget_set_margin_start(search_row, 18);
@@ -3527,23 +3536,27 @@ void on_activate(GtkApplication* app, gpointer) {
         [](rivet::system::GlobalShortcutBindResult const& result) {
           switch (result.status) {
             case rivet::system::GlobalShortcutBindStatus::cancelled:
-              Launcher::post_hotkey_failure(
+              Launcher::post_hotkey_diagnostic(
                   "Hotkey permission was dismissed. Reopen Fulcrum and allow "
                   "the shortcut, or bind `fulcrum --toggle` in Settings.");
-              // Login items must remain silent even if the compositor
-              // rejects the shortcut permission prompt. Interactive starts
-              // still expose the recovery notice and launcher.
+              check_hotkey_shadowing("Alt+Space");
+              // A login item stays resident even when portal consent is
+              // unavailable; interactive starts still show the recovery UI.
               if (!g_login_background_start) {
                 g_idle_add(show_on_main, nullptr);
               }
               break;
             case rivet::system::GlobalShortcutBindStatus::failed:
-              Launcher::post_hotkey_failure(
-                  "Portal hotkey failed: " + result.message +
-                  ". Bind `fulcrum --toggle` in desktop Settings.");
-              // Login items must remain silent even if the compositor
-              // rejects the shortcut permission prompt. Interactive starts
-              // still expose the recovery notice and launcher.
+              Launcher::post_hotkey_diagnostic(
+                  result.message.find("An app id is required") != std::string::npos
+                  ? "GNOME denied the global shortcut because this process has "
+                    "no recognized desktop app identity. In Settings > Keyboard "
+                    "> Custom Shortcuts, bind `fulcrum --toggle` as a workaround."
+                  : "Portal hotkey failed: " + result.message +
+                    ". Bind `fulcrum --toggle` in desktop Settings.");
+              check_hotkey_shadowing("Alt+Space");
+              // A login item stays resident even when portal consent is
+              // unavailable; interactive starts still show the recovery UI.
               if (!g_login_background_start) {
                 g_idle_add(show_on_main, nullptr);
               }
@@ -3556,7 +3569,7 @@ void on_activate(GtkApplication* app, gpointer) {
                   !result.bindings[0].trigger_description.empty()) {
                 std::string const trigger =
                     result.bindings[0].trigger_description;
-                Launcher::post_status("Summon hotkey: " + trigger);
+                Launcher::post_hotkey_bound("Summon hotkey: " + trigger);
                 check_hotkey_shadowing(trigger);
               }
               break;
@@ -3572,10 +3585,10 @@ void on_activate(GtkApplication* app, gpointer) {
     }
     launcher.start_backend();
   }
-  // Open on a normal interactive launch, but *only after* the backend has
-  // populated native rows. The old unconditional show() mapped an empty GTK
-  // window with the English placeholder before Racket finished booting.
-  // Errors still reveal their diagnostic; acceptance uses the same gate.
+  // Open on launch. A launcher that starts hidden is an invisible app on
+  // every session where the summon path is not yet alive — Wayland before
+  // the portal consent is granted, after a reboot, a rejected grab. The
+  // panel is one Esc (or focus loss) away from hidden again.
   char const* acceptance_hotkey = std::getenv("FULCRUM_ACCEPTANCE_HOTKEY");
   if (acceptance_hotkey != nullptr && std::string(acceptance_hotkey) == "1") {
     // Product acceptance drives the same main-loop activation handoff used by
@@ -3620,70 +3633,11 @@ void on_shutdown(GApplication*, gpointer) {
 
 }  // namespace
 
-// XDG desktop portal >= 1.20 allows unsandboxed applications to register
-// their identity on the SAME session-bus peer used by GlobalShortcuts.
-// Rivet's session_bus() uses g_bus_get_sync(), which GIO caches per bus type.
-// This call must precede GTK initialization and every portal request:
-// registering after a portal call can be rejected as "too late".
-//
-// Must match Rivet's (linux-desktop-id) and the installed .desktop name.
-// GNOME 50 rejects non-reverse-DNS app identities even after registration.
-constexpr char const* kFulcrumInstalledDesktopId = "site.jrtx.fulcrum";
-
-bool should_register_wayland_host_identity(char const* wayland_display,
-                                           char const* flatpak_id,
-                                           char const* snap_name) {
-  return wayland_display && *wayland_display &&
-         !(flatpak_id && *flatpak_id) &&
-         !(snap_name && *snap_name);
-}
-
-bool register_wayland_host_identity(std::string* reason = nullptr) {
-  if (!should_register_wayland_host_identity(
-          std::getenv("WAYLAND_DISPLAY"), std::getenv("FLATPAK_ID"),
-          std::getenv("SNAP"))) return true;
-
-  GError* error = nullptr;
-  // g_bus_get_sync() is the Rivet system adapter's connection, rather than
-  // a short-lived gdbus subprocess (whose registration would be useless).
-  GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
-  if (!bus) {
-    if (reason) *reason = error ? error->message : "no session bus";
-    if (error) g_error_free(error);
-    return false;
-  }
-  GVariantBuilder options;
-  g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
-  GVariant* response = g_dbus_connection_call_sync(
-      bus, "org.freedesktop.portal.Desktop",
-      "/org/freedesktop/portal/desktop",
-      "org.freedesktop.host.portal.Registry", "Register",
-      g_variant_new("(sa{sv})", kFulcrumInstalledDesktopId, &options),
-      G_VARIANT_TYPE_UNIT, G_DBUS_CALL_FLAGS_NONE, 1500, nullptr, &error);
-  if (!response) {
-    g_object_unref(bus);
-    // Older portals and unintegrated AppImage/tar installs may not expose
-    // Registry or a matching .desktop. Do not break startup: the normal
-    // portal bind path still reports a visible actionable failure.
-    if (reason) *reason = error ? error->message : "no registry reply";
-    if (error) g_error_free(error);
-    return false;
-  }
-  g_variant_unref(response);
-  // g_bus_get_sync() is weakly cached. Retain our successful registration
-  // connection for the process lifetime so Rivet GlobalShortcuts' subsequent
-  // CreateSession uses the same D-Bus sender identity.
-  static GDBusConnection* registered_session_bus = nullptr;
-  registered_session_bus = bus;
-  return true;
-}
-
-int run_application(int argc = 0, char** argv = nullptr) {
-  bool const background = argc > 1 && argv != nullptr &&
-      std::string(argv[1]) == "--background";
-  g_login_background_start = background;
+int run_application(bool toggle_requested = false, bool login_background = false) {
+  g_login_background_start = login_background;
   // The first-party rivet lease replaces the old pid-file + SIGUSR1 scheme:
-  // second launches forward --toggle to the primary and exit.
+  // second desktop launches show the primary. Explicit --toggle from a
+  // compositor binding retains true toggle semantics.
   char const* isolated_id = std::getenv("FULCRUM_INSTANCE_ID");
   std::string const application_id =
       isolated_id != nullptr && *isolated_id != '\0'
@@ -3691,8 +3645,9 @@ int run_application(int argc = 0, char** argv = nullptr) {
           : "site.jrtx.fulcrum";
   rivet::system::SingleInstanceLease lease(application_id);
   if (!lease.is_primary()) {
-    if (background) return 0;  // login item must never toggle resident UI
-    if (!lease.forward_arguments({"--toggle"})) {
+    // OS login startup must not summon an already running launcher.
+    if (login_background) return 0;
+    if (!lease.forward_arguments({toggle_requested ? "--toggle" : "--show"})) {
       std::cerr << "fulcrum: running instance not reachable\n";
       return 1;
     }
@@ -3703,15 +3658,6 @@ int run_application(int argc = 0, char** argv = nullptr) {
   // panel. GApplication never sees the flag — the app runs without argv so
   // the option parser cannot reject it.
   lease.set_activation_handler(on_activation);
-
-  // Register the unsandboxed Wayland app id before GTK or Rivet first
-  // contacts xdg-desktop-portal (Issue #111 / Ubuntu 26.04 GNOME 50).
-  // Non-fatal on older desktops or missing portable-app integration.
-  std::string portal_identity_warning;
-  if (!register_wayland_host_identity(&portal_identity_warning)) {
-    std::cerr << "fulcrum: Wayland portal app identity not registered: "
-              << portal_identity_warning << '\n';
-  }
 
   // Load the i18n tables before any UI string is composed: the staged
   // shared/i18n JSON when packaged, the embedded fallback otherwise.
@@ -3729,5 +3675,9 @@ int run_application(int argc = 0, char** argv = nullptr) {
 }
 
 int main(int argc, char** argv) {
-  return run_application(argc, argv);
+  bool const toggle_requested = argc > 1 &&
+      std::string_view(argv[1]) == "--toggle";
+  bool const login_background = argc > 1 &&
+      std::string_view(argv[1]) == "--background";
+  return run_application(toggle_requested, login_background);
 }

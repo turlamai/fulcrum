@@ -48,8 +48,8 @@ final class SettingsModel: ObservableObject {
         refreshLoginItem()
     }
 
-    // The operating system owns login items per machine. They are not part
-    // of backend settings or sync, and registration may require OS approval.
+    // Per-machine OS login item: never sent to the backend or synced.
+    // macOS may require user approval in System Settings.
     func refreshLoginItem() {
         startAtLogin = SMAppService.mainApp.status == .enabled
     }
@@ -63,10 +63,10 @@ final class SettingsModel: ObservableObject {
             }
             refreshLoginItem()
             loginItemError = enabled && !startAtLogin
-                ? "macOS needs approval in System Settings → Login Items." : nil
+                ? "Approve Fulcrum in System Settings → Login Items." : nil
         } catch {
             refreshLoginItem()
-            loginItemError = "Could not change Login Items: \(error.localizedDescription)"
+            loginItemError = "Unable to change Login Items: \(error.localizedDescription)"
         }
     }
 
@@ -446,7 +446,7 @@ struct SettingsView: View {
                     get: { model.startAtLogin },
                     set: { model.setStartAtLogin($0) }))
                     .accessibilityIdentifier("settings-start-at-login")
-                Text("Starts quietly after you sign in. Only this Mac is affected.")
+                Text("Starts quietly after login. This Mac only; not synced.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if let error = model.loginItemError {

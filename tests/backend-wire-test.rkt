@@ -393,6 +393,22 @@
 (check! "ai-status ready once a key exists" as3 "ready")
 (call-rpc 62 (list "settings-set" "ai-provider" ""))
 
+;; Unlike the unit-only unhosted event test, this exercises the actual RVT1
+;; event frame: the requested AI paste must reach the native host verbatim.
+(define ai-set-last-answer!* (dynamic-require backend-path 'ai-set-last-answer!))
+(ai-set-last-answer!* "wire paste target")
+(define-values (paste-result paste-error paste-events)
+  (call-rpc 67 (list "run-action" "ai.paste" "")))
+(check! "AI paste action succeeds across RVT1"
+        (list paste-result paste-error) '("copied" #f))
+(check! "AI paste emits a native paste-to-frontmost event"
+        (and (for/or ([e (in-list paste-events)])
+               (and (pair? e) (string=? (car e) "paste-to-frontmost")
+                    (string=? (cadr e) "wire paste target")))
+             #t)
+        #t)
+(ai-set-last-answer!* "")
+
 ;; error paths: unknown RPC, unknown action, bad arity
 (define-values (_xv xe _xeve) (call-rpc 20 (list "no-such-rpc" "x")))
 (printf "DBG20 xe=~s\n" xe)

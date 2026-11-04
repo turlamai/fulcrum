@@ -5,6 +5,7 @@
 #include "GeneratedBackend.hpp"
 #include "winui_window.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -123,24 +124,28 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::wstring last_status_;
   // Snippet auto-expansion (WH_KEYBOARD_LL): types the snippet text when
   // its keyword lands against a word boundary in any app.
-  // Windows in-app updates use the backend's signed manifest, verified MSI
-  // download, and Rivet's external MSI handoff. Keep the update panel visible
-  // and refresh actionable rows when the candidate or download state changes.
+  // Updater 0.2 (in-app install stays macOS-only on this line): the silent
+  // launch check is throttled backend-side, and progress polling follows the
+  // backend's download thread, surfacing percent in the status bar. Once the
+  // artifact is downloaded the user gets the open-folder status; the
+  // "update" launcher rows drive check/download/reveal on this state.
   void StartSilentUpdateCheck();
   void StartUpdateProgressPoll();
-  void OpenUpdatesPanel();
-  // Tray "Check for Updates…" opens the panel and bypasses the silent throttle.
+  // Tray "Check for Updates…": manual check, result in the footer.
   void CheckForUpdates();
-  // About panel (tray menu + the `about` launcher row): one ContentDialog
-  // with version, tagline, license and the site/issue links.
-  winrt::fire_and_forget ShowAbout();
+  // A separate titled window: tray About must be visible while the
+  // transient launcher is hidden, without summoning Alt+Space first.
+  void ShowAbout();
+  winrt::Microsoft::UI::Xaml::Window about_window_{nullptr};
   // Settings window (tray menu + the `settings` launcher row): one
   // instance, reloaded on every show so launcher-row edits are reflected.
   void ShowSettings();
   winrt::RivetHost::SettingsWindow settings_window_{nullptr};
 
   std::shared_ptr<rivet::windows::Backend> backend_;
-  std::unique_ptr<rivet_app::API> api_;
+  // Each in-flight RPC captures a shared API handle. Its deleter retains
+  // the Rivet backend until the last RPC has finished, even during Quit.
+  std::shared_ptr<rivet_app::API> api_;
   std::vector<rivet_app::ResultRow> rows_;
   // Per-row ↵ affordance chips, parallel to rows_ (strong refs; the list
   // owns the visual tree so these stay alive with it).

@@ -12,7 +12,7 @@ let json = """
   "rollout":50,
   "artifacts":[
     {"platform":"macos","architecture":"arm64","installer":"zip",
-     "url":"https://github.com/turinglambdaai/fulcrum/releases/download/v0.14.0/mac.zip",
+     "url":"https://github.com/turlamai/fulcrum/releases/download/v0.14.0/mac.zip",
      "size":20000000}
   ]
 }

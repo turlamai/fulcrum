@@ -263,60 +263,16 @@ Write your own plugin: one manifest + one script. See
 
 ## Settings
 
-**Start at login** is available in **General** on macOS, Windows and
-Ubuntu/Linux. It defaults to off, affects only the current computer, and
-starts Fulcrum quietly after you sign in. macOS may ask you to approve the
-Login Item in System Settings; Windows uses your current user's startup
-setting; Linux uses `~/.config/autostart` (or `XDG_CONFIG_HOME`).
-For Linux AppImage copies, keep the AppImage at a stable path.
+**Start at login (optional, off by default):** Open the native Settings
+window and enable **Start at login** in General. On macOS, approve the login
+item in System Settings if prompted; on Windows the app uses the current
+user's Run entry; on Linux it creates an XDG autostart desktop entry in the
+current user's configuration directory. Login launches stay in the
+menu bar/tray and do not raise a second search window. This switch is
+**per-device and not synced**. Turn it off in the same native Settings
+window. These changes ship only after their PR is merged and a new
+version is released.
 
-On Linux, Settings has the same five sidebar areas as macOS/Windows:
-General, Features, AI, Commands and Sync & Updates. Commands can edit aliases through the shared backend. Linux can record the
-global summon shortcut by pressing keys in General, but individual command
-hotkeys are visibly disabled until native desktop registration is supported.
-The initial launcher panel appears only when its first search results or an
-actionable startup failure is available.
-
-On **Ubuntu/Linux**, the search symbol is aligned with the search placeholder.
-The idle `Ready — hotkey or fulcrum --toggle` message does not stay above the
-results while the launcher is open. Use your configured summon shortcut or
-`fulcrum --toggle` to bring the hidden launcher back; actual startup,
-shortcut, and update errors are still shown in its status area.
-
-**Ubuntu 26.04 GNOME 50 Wayland global shortcut:** Native installs
-register `site.jrtx.fulcrum` over a retained shared D-Bus connection before
-`CreateSession`. A real Ubuntu 26.04.1 GNOME 50.1 Wayland **arm64 VM**
-verified that the portal receives the app ID, prompts for approval, fires
-`Activated` repeatedly on Alt+Space, and persists approval after relaunch
-and login restart ([evidence in issue #111](https://github.com/turlamai/fulcrum/issues/111)).
-This does **not** prove every architecture or all permission flows.
-
-**Known GNOME 50 first-consent limitation:** Some GNOME desktops stall in the
-upstream GlobalShortcutsProvider before the first approval dialog responds.
-Shortcut changes through Settings and the denied-consent UX could not be
-fully verified on that VM. If approval does not complete or the portal
-rejects the shortcut, configure a **GNOME custom keyboard shortcut** that
-executes `fulcrum --toggle`; this fallback was verified in the real VM.
-Do not disable system-wide portal security to work around the problem.
-
-On **Windows**, the tray menu's **Check for Updates** opens a visible
-`update` view rather than reporting into a hidden footer. The list refreshes
-after checking: choose **Download** to fetch and verify the signed MSI, wait
-for the progress to finish, then choose **Quit and install** to upgrade and
-relaunch. Keep the installer window open if Windows requests elevation. If the
-check or installation fails, the original app remains available with an
-explicit error; you can also open the downloaded MSI folder from the same
-update results. The installation handoff requires an MSI-installed copy; a
-portable ZIP isn't upgraded in place by an MSI.
-
-On **macOS, Windows and Linux**, open **Settings** from the menu bar, tray,
-or launcher and choose **General**, **Features**, **AI**, **Commands**, or
-**Sync & Updates** in the native sidebar. General records the summon shortcut
-by pressing the desired key combination (Esc cancels). Commands edits aliases
-on all three platforms; per-command global hotkeys are **not supported on
-Linux** and its control is disabled rather than saving a nonfunctional binding.
-Windows uses native WinUI controls and shows the app icon in the Settings title
-bar; macOS uses native AppKit/SwiftUI chrome; Linux uses GTK4.
 
 Query `settings` and run a row to change it:
 
@@ -381,38 +337,36 @@ Local files include clipboard/snippet data, AI history, ai-keys.json, and a rebu
 
 ---
 
-## Coming from Raycast?
+## Product principles and current limits
 
-Here is what transfers, what is different, and why:
+Fulcrum follows a keyboard-first workflow: summon the panel, type a query,
+select a result, and press Enter. Application launching, file search,
+clipboard history, snippets, quicklinks, calculator, system commands,
+window management, settings, AI actions and plugins use that same surface.
 
-**The same:** the hotkey → type → Enter loop. App launching. Clipboard
-history. Snippets. Quicklinks. Calculator. Window management. File
-search (macOS). Web search. System commands. Extensions (plugins).
-Themes. Dark mode.
+- **Local ownership.** Settings, snippets, clipboard history and the
+  rebuildable filename index reside in the user's data directory. The
+  filename index is not synchronized.
+- **Cross-platform native hosts.** Windows uses WinUI 3, macOS uses
+  SwiftUI and Linux uses GTK4, all backed by Racket through Rivet.
+  System permissions, shortcut handling and some capabilities differ by
+  operating system and desktop session.
+- **User-configured AI providers.** Fulcrum does not require a hosted
+  account. When an AI action runs, its selected prompt/context is sent
+  directly to the configured provider, which may charge separately.
+- **Extensible plugins.** Plugins may be written in any language that
+  implements the documented process protocol. Plugins run with the
+  user's OS permissions; manifest permissions are advisory, not sandbox
+  enforcement.
+- **Explicit network boundaries.** AI requests, web searches, plugin
+  actions, currency refreshes, update checks and user-configured
+  folder sync may contact external services. See the privacy and
+  security sections before enabling those features.
 
-**Different by design:**
-
-- **Free, no account.** No login, no account system, no telemetry.
-  The entire local product — everything on this page — is free. New multi-step workflow Pro is planned but not on sale; existing BYOK, plugins and BYO-folder sync stay free.
-- **Cross-platform, equally.** macOS, Windows, and Linux get the same
-  features, same keyboard, same native UI. Not one first-class platform
-  and two afterthoughts.
-- **BYOK AI, no subscription.** Use your own API key. No monthly fee,
-  no per-query cost, no data through Fulcrum's servers.
-- **Local-first.** Your data never leaves your device unless you
-  explicitly ask it to (AI prompt, web search). No cloud account
-  required for sync — use any folder-syncing service you already have.
-- **Plugins in any language.** Raycast requires TypeScript. Fulcrum
-  accepts any program that reads stdin and writes JSON — Python, Go,
-  Rust, a shell script.
-- **Focused, not bloated.** Fulcrum does launcher things well and
-  doesn't try to be a window manager, a note-taking app, or an AI
-  chatbot. When we add AI features, they solve launcher problems.
-
-**Not yet (honest list):** the extension ecosystem is young (26
-first-party plugins vs. Raycast's 2,500+ store extensions); clipboard
-history is text only (no images); snippet
-auto-expansion does not work on Linux.
+**Current limitations:** clipboard history captures text rather than
+images; Linux snippet auto-expansion is not available; file catalog
+coverage and live filesystem updates are still under development.
+Use `file search status` to inspect the local catalog state.
 
 ---
 
@@ -427,6 +381,15 @@ auto-expansion does not work on Linux.
   this at launch and grows a **Fix Alt+Space conflict** item in its tray
   menu (it clears the stock binding). To fix it by hand:
   `gsettings set org.gnome.desktop.wm.keybindings activate-window-menu "[]"`.
+
+- **Ubuntu GNOME Wayland: portal says "An app id is required".** Some host
+  launch paths lack the systemd app identity required by the desktop portal,
+  so the shortcut permission prompt cannot open. Fulcrum now preserves this
+  failure in the status footer instead of showing a misleading "Ready".
+  Until the app identity is provided by the installed desktop/session launch,
+  use GNOME Settings → Keyboard → View and Customize Shortcuts → Custom
+  Shortcuts, and bind the command `fulcrum --toggle` to an available combo.
+  This is a workaround, **not** a claim that the portal binding succeeded.
 
 - **Paste-to-frontmost does nothing on macOS.** Grant Accessibility:
   System Settings → Privacy & Security → Accessibility → enable
@@ -458,11 +421,9 @@ embedded in each platform's native UI — SwiftUI on macOS, WinUI 3 on
 Windows, GTK4 on Linux. Not Electron. Not a web wrapper. The Windows
 app is a Windows app; the macOS app is a macOS app.
 
-We are a latecomer. That means we studied what Raycast users complain
-about — AI features prioritised over core stability, complexity
-creep, Pro-tier gating — and made different choices. Fulcrum
-prioritises fundamentals: fast search, reliable actions, honest
-errors, and your data staying on your machine.
+Fulcrum prioritises responsive search, predictable native interactions,
+clear errors, recoverable updates and user-controlled local data. Feature
+limits and platform differences are documented rather than hidden.
 
 Source-available (BUSL-1.1, MIT after the change date). Plugin
 protocol MIT. No telemetry. No account. No cloud.

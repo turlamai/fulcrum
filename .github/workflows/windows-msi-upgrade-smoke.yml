@@ -11,9 +11,17 @@ on:
 permissions:
   contents: read
 
+env:
+  # Same immutable upstream revision as CI, Release and Product Acceptance.
+  RIVET_PIN: 9355362e6b1fdf72787559277ecdf66ec22b3df1
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   installed-upgrade:
-    name: Installed MSI 0.13.3 to 0.14.0
+    name: Installed MSI 0.13.1 to 0.13.2
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -24,11 +32,21 @@ jobs:
           version: stable
           distribution: full
           architecture: x64
-      - name: Install pinned Rivet updater dependencies
-        shell: bash
+      - name: Export trusted Mozilla CA roots for Windows Racket
+        shell: pwsh
         run: |
-          racket -e '(dynamic-require (quote db) #f)' || raco pkg install --auto --no-docs db-lib
-          raco pkg install --auto --no-docs 'https://github.com/turlamai/rivet.git#e18c28e6b6b18ab0f59559e82e30c51c4229d91f'
+          # Racket 9.3 can fail enumerating the Windows ROOT store (X509*->C).
+          # Use the same trusted, hostname-verified TLS workaround as CI.
+          $bundle = Join-Path $env:RUNNER_TEMP 'fulcrum-mozilla-roots.pem'
+          $js = 'const tls=require("node:tls"),fs=require("node:fs"); if(tls.rootCertificates.length<50) process.exit(2); fs.writeFileSync(process.argv[1],tls.rootCertificates.join("\n")+"\n",{flag:"wx"});'
+          node -e $js $bundle
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $bundle -PathType Leaf)) {
+            throw "Unable to export trusted CA roots; refusing insecure TLS fallback"
+          }
+          "FULCRUM_CI_CA_BUNDLE=$bundle" >> $env:GITHUB_ENV
+      - name: Install pinned Rivet updater dependencies with verified TLS
+        shell: pwsh
+        run: racket scripts/ci-install-windows-deps.rkt
       - name: Verify official signed update discovery and MSI payload
         shell: bash
         run: racket scripts/acceptance/windows-signed-feed-smoke.rkt

@@ -2,7 +2,7 @@
 
 One keystroke. Everything within reach. A keyboard-first launcher for macOS, Windows, and Linux — one Racket brain, three first-party native UIs, no WebView anywhere.
 
-[![CI](https://github.com/turlamai/fulcrum/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/fulcrum/actions/workflows/ci.yml) ![Windows](https://img.shields.io/badge/Windows-WinUI_3-0078D4?logo=windows11&logoColor=white) ![macOS](https://img.shields.io/badge/macOS-SwiftUI-000000?logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-GTK4-F9A03C?logo=linux&logoColor=white) [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE) ![Version](https://img.shields.io/badge/version-0.14.1-C15F3C)
+[![CI](https://github.com/turlamai/fulcrum/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/fulcrum/actions/workflows/ci.yml) ![Windows](https://img.shields.io/badge/Windows-WinUI_3-0078D4?logo=windows11&logoColor=white) ![macOS](https://img.shields.io/badge/macOS-SwiftUI-000000?logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-GTK4-F9A03C?logo=linux&logoColor=white) [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE) ![Version](https://img.shields.io/badge/version-0.14.2-C15F3C)
 
 **English** · [中文](README.zh-CN.md)
 
@@ -14,11 +14,14 @@ Existing launcher, clipboard, plugins and BYOK features remain free. No Pro chec
 
 [Installation, first use, privacy, backup and recovery](docs/user-guide.md) · [简体中文](docs/user-guide.zh-CN.md)
 
+[Release trust and platform signing policy](docs/release-signing-policy.md) — macOS is currently ad-hoc (not notarized), Windows packages are unsigned by default, and the update feed is independently Ed25519-signed.
+
 ## Install on macOS (developer preview)
 
-Choose your Mac build from [GitHub Releases](https://github.com/turlamai/fulcrum/releases/latest):
-[Apple Silicon / M-series DMG](https://github.com/turlamai/fulcrum/releases/latest/download/fulcrum-macos-arm64.dmg) or
-[Intel DMG](https://github.com/turlamai/fulcrum/releases/latest/download/fulcrum-macos-x64.dmg).
+Choose your Mac installer from [the latest GitHub Release](https://github.com/turlamai/fulcrum/releases/latest):
+`fulcrum-<version>-macos-arm64.dmg` for Apple Silicon (M-series), or
+`fulcrum-<version>-macos-x64.dmg` for Intel Macs. The versioned asset names are
+canonical; duplicate versionless installers are not published.
 Open the **DMG**, drag **Fulcrum** onto **Applications**, eject the disk image, then launch **Fulcrum from Applications**, not from the mounted installer. The icon on the right in the DMG is an Applications shortcut.
 
 **Signing note:** Current release jobs use development/ad-hoc signing, not an Apple-notarized Developer ID build. Gatekeeper may block the first launch. Verify the download comes from the official release before making any exception; see [Apple's guidance](https://support.apple.com/102445). Do **not** globally disable Gatekeeper or strip quarantine attributes. We are tracking signed/notarized distribution separately. On first use, grant Accessibility permission only when Fulcrum requests it for clipboard paste or snippets. See the [macOS first-run guide](docs/user-guide.md#install-and-first-launch-on-macos).
@@ -43,17 +46,9 @@ Press one global hotkey and a floating command palette appears:
 
 Local search (including indexed file names and paths), history and snippets are stored on your device. Plugins, BYOK requests and configured sync have separate network/data destinations.
 
-## Why another launcher?
+## Design and implementation
 
-Because nothing offers Raycast-grade polish on all three desktops with a *native* UI. Fulcrum is built on [Rivet](https://rivet.jrtx.site): one shared Racket backend embedded into each app, with SwiftUI on macOS, WinUI 3 on Windows, and GTK4 on Linux. Not Electron. Not a web wrapper. The Windows app is a Windows app; the macOS app is a macOS app.
-
-| | Fulcrum | Raycast | PowerToys Run | Ulauncher |
-|---|---|---|---|---|
-| Platforms | macOS + Windows + Linux | macOS (+ Windows beta) | Windows | Linux |
-| Native UI | **per-platform first-party** | macOS-native | WinUI (WPF shell) | GTK |
-| Backend | one embedded Racket CS | per-platform | C# | Python |
-| Plugins | JSON over stdio, any language | TypeScript, in-process | C# | Python |
-| Price | free core; Pro planned for 1.0 | free + Pro | free | free |
+Fulcrum provides a consistent keyboard-first workflow across macOS, Windows, and Linux. It uses a shared Racket backend with native SwiftUI, WinUI 3, and GTK4 interfaces. Search, clipboard history, snippets, system commands, and plugins are documented by their own behavior rather than competitor comparisons.
 
 ## Repository layout
 
