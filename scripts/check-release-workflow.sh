@@ -18,7 +18,11 @@ grep -Fq 'run: bash scripts/version-release-preflight.sh' "$ROOT/.github/workflo
 }
 bash "$ROOT/scripts/test-release-draft-identity.sh"
 python3 "$ROOT/scripts/test_release_public_assets.py"
+python3 "$ROOT/scripts/test_release_uploaded_assets.py"
 require 'python3 scripts/check_release_public_assets.py "$version" public'
+require 'Retain canonical checksums for draft promotion'
+require 'fulcrum-public-checksums'
+require 'python3 scripts/check_release_uploaded_assets.py "$version" release-verify/SHA256SUMS'
 require 'cp release/update-manifest.json release/manifest.json public/'
 require '(cd public && sha256sum -c SHA256SUMS)'
 require 'Validate independent platform signing modes'
