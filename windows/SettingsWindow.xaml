@@ -68,6 +68,19 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
+                            <TextBlock Text="Start at login" Style="{StaticResource RowLabel}" />
+                            <ToggleSwitch x:Name="LoginStartupSwitch" Grid.Column="1"
+                                          Tag="local-login-startup"
+                                          AutomationProperties.AutomationId="FulcrumStartAtLogin"
+                                          Toggled="Toggle_Toggled" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="Starts quietly after you sign in. This PC only; not synced." />
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <TextBlock x:Name="HotkeyLabel" Text="Hotkey" Style="{StaticResource RowLabel}" />
                             <TextBox x:Name="HotkeyBox" Grid.Column="1" Tag="hotkey" MinWidth="200"
                                      VerticalAlignment="Center" PlaceholderText="alt+space"
