@@ -254,13 +254,25 @@ JSON
      (call-with-fixture
       (lambda (dir state-dir)
         (define nudges (box 0))
+        ;; The callback is delivered on the daemon stdout reader thread.
+        ;; Synchronize on delivery rather than assuming the query response
+        ;; and notification are observed in the same scheduler timeslice.
+        (define nudge-delivered (make-semaphore 0))
         (define mgr
           (make-plugin-manager dir
                                #:timeout-ms 5000
-                               #:nudge-thunk (lambda () (set-box! nudges (add1 (unbox nudges))))))
-        (plugin-manager-query mgr "fx churn")
-        ;; The fixture pushed five events for one query; the nudge thunk
-        ;; must have fired at least once but far fewer than five times.
+                               #:nudge-thunk
+                               (lambda ()
+                                 (set-box! nudges (add1 (unbox nudges)))
+                                 (semaphore-post nudge-delivered))))
+        (check-true (pair? (plugin-manager-query mgr "fx churn"))
+                    "the daemon must answer the churn query")
+        ;; The fixture pushes five events before its response. A bounded
+        ;; synchronization wait still fails if all notifications are lost;
+        ;; it only removes macOS CI scheduling dependence from the assertion.
+        (check-not-false
+         (sync/timeout 2 (semaphore-peek-evt nudge-delivered))
+         "at least one nudge delivered")
         (define count (unbox nudges))
         (check-true (>= count 1) "at least one nudge")
         (check-true (<= count 2) "rate-limited well below the event count"))))
