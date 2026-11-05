@@ -16,7 +16,7 @@
   "navigationHintMac": "↑↓ 选择 · 回车执行 · ⌘K 操作 · Esc 清空/隐藏",
   "noSecondaryActions": "此结果没有次要操作",
   "notSet": "未设置",
-  "ready": "就绪 — 使用热键或 fulcrum --toggle 唤出",
+  "ready": "就绪 — 使用热键唤出，或再次启动 Fulcrum",
   "readyStatus": "已就绪 — 可随时按 Alt+Space 唤出",
   "readyStatusMac": "已就绪 — 可随时按 Option+Space 唤出",
   "searchPlaceholder": "搜索应用、剪贴板、片段、网页…",

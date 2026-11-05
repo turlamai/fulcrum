@@ -40,6 +40,7 @@
 #include <utility>
 #include <vector>
 #include <unistd.h>
+#include <array>
 
 #include "GeneratedBackend.hpp"
 #include "system_services.hpp"
@@ -606,8 +607,8 @@ I18nEntry const kI18nFallback[] = {
      "↑↓ navigate · ↵ run · esc back"},
     {"noSecondaryActions", "此结果没有次要操作",
      "No secondary actions for this result"},
-    {"ready", "就绪 — 使用热键或 fulcrum --toggle 唤出",
-     "Ready — hotkey or `fulcrum --toggle`"},
+    {"ready", "就绪 — 使用热键唤出，或再次启动 Fulcrum",
+     "Ready — summon with the hotkey, or launch Fulcrum again"},
     {"settingUpdated", "设置已更新", "Setting updated"},
     {"notSet", "未设置", "Not set"},
     {"setting.language", "语言", "Language"},
@@ -3529,14 +3530,28 @@ void on_activate(GtkApplication* app, gpointer) {
                 g_idle_add(show_on_main, nullptr);
               }
               break;
-            case rivet::system::GlobalShortcutBindStatus::failed:
+            case rivet::system::GlobalShortcutBindStatus::failed: {
+              // Name this exact executable in the workaround so the
+              // suggested command works on every install shape (deb ships
+              // /opt/fulcrum/RivetHost, not a `fulcrum` on PATH).
+              std::string toggle_cmd{"fulcrum --toggle"};
+              std::array<char, 4096> exe_buf{};
+              ssize_t exe_len =
+                  readlink("/proc/self/exe", exe_buf.data(), exe_buf.size() - 1);
+              if (exe_len > 0) {
+                exe_buf[exe_len] = '\0';
+                toggle_cmd =
+                    std::string(exe_buf.data(), static_cast<size_t>(exe_len)) +
+                    " --toggle";
+              }
               Launcher::post_hotkey_diagnostic(
                   result.message.find("An app id is required") != std::string::npos
                   ? "GNOME denied the global shortcut because this process has "
                     "no recognized desktop app identity. In Settings > Keyboard "
-                    "> Custom Shortcuts, bind `fulcrum --toggle` as a workaround."
+                    "> Custom Shortcuts, bind `" + toggle_cmd +
+                    "` as a workaround."
                   : "Portal hotkey failed: " + result.message +
-                    ". Bind `fulcrum --toggle` in desktop Settings.");
+                    ". Bind `" + toggle_cmd + "` in desktop Settings.");
               check_hotkey_shadowing("Alt+Space");
               // A login item stays resident even when portal consent is
               // unavailable; interactive starts still show the recovery UI.
@@ -3544,6 +3559,7 @@ void on_activate(GtkApplication* app, gpointer) {
                 g_idle_add(show_on_main, nullptr);
               }
               break;
+            }
             case rivet::system::GlobalShortcutBindStatus::bound:
               // The compositor owns the final combo; say what it chose —
               // and on GNOME check that the stock window menu is not

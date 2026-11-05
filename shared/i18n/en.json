@@ -16,7 +16,7 @@
   "navigationHintMac": "↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide",
   "noSecondaryActions": "No secondary actions for this result",
   "notSet": "Not set",
-  "ready": "Ready — hotkey or `fulcrum --toggle`",
+  "ready": "Ready — summon with the hotkey, or launch Fulcrum again",
   "readyStatus": "Ready — press Alt+Space anywhere",
   "readyStatusMac": "Ready — press Option+Space anywhere",
   "searchPlaceholder": "Search apps, clipboard, snippets, the web…",
