@@ -32,7 +32,13 @@
     ;; Volume system metadata: pure noise on every platform that has it.
     "$recycle.bin" "system volume information"
     ;; macOS noise on volumes a user might add as a root.
-    ".spotlight-v100" ".trashes" ".fseventsd" ".documentrevisions-v100"))
+    ".spotlight-v100" ".trashes" ".fseventsd" ".documentrevisions-v100"
+    ;; OS-managed Windows trees: never descended anywhere, so a system
+    ;; drive root contributes its top-level files and user-created trees
+    ;; without grinding through hundreds of thousands of OS records.
+    ;; Their content stays reachable through the SYSTEMINDEX stage.
+    "windows" "program files" "program files (x86)" "programdata"
+    "perflogs" "users"))
 
 (define (ignored-directory? path)
   (define name (file-name-from-path path))
@@ -60,24 +66,29 @@
 ;; covered by the home roots plus the SYSTEMINDEX stage. Volumes whose
 ;; listing fails (empty CD, disconnected share) surface as honest partial
 ;; roots through the normal scan path.
+;; Every lettered fixed drive becomes a full-depth catalog root — including
+;; the system drive. Excluding C: left its user-created directories
+;; (C:\tools, C:\projects, anything outside known folders) unfindable, the
+;; exact gap issue #116 exists for. The walker's ignore list carries the
+;; cost instead: OS-managed trees (Windows, Program Files, ProgramData,
+;; Users, PerfLogs) are never descended, so the system drive contributes
+;; its top-level files and user-created trees at the same full-depth
+;; semantics as data volumes.
 (define (data-volume-roots
          #:os [os (system-type 'os)]
          #:all-roots [all-roots
                       (with-handlers ([exn:fail? (lambda (_) '())])
-                        (filesystem-root-list))]
-         #:sys-dir [sys-dir (find-system-path 'sys-dir)])
+                        (filesystem-root-list))])
   (if (not (eq? os 'windows))
       '()
-      (let ([system-drive (drive-letter-of sys-dir)])
-        (for/list ([root (in-list all-roots)]
-                   #:when (let ([drive (drive-letter-of root)])
-                            (and drive
-                                 (or (not system-drive)
-                                     (not (string=? drive system-drive))))))
-          ;; Keep roots as paths for the catalog pipeline; on non-Windows
-          ;; dev/test hosts the injected letter strings survive as paths
-          ;; whose string form still carries the drive prefix.
-          (if (string? root) (string->path root) root)))))
+      (remove-duplicates
+       (for/list ([root (in-list all-roots)]
+                  #:when (drive-letter-of root))
+         ;; Keep roots as paths for the catalog pipeline; on non-Windows
+         ;; dev/test hosts the injected letter strings survive as paths
+         ;; whose string form still carries the drive prefix.
+         (if (string? root) (string->path root) root))
+       string=? #:key path->string)))
 
 (define (xdg-user-roots home env)
   (define config-home
@@ -110,8 +121,7 @@
          #:env [env getenv]
          #:all-roots [all-roots
                       (with-handlers ([exn:fail? (lambda (_) '())])
-                        (filesystem-root-list))]
-         #:sys-dir [sys-dir (find-system-path 'sys-dir)])
+                        (filesystem-root-list))])
   (define home-path (simple-form-path home))
   (define base
     (for/list ([name (in-list '("Desktop" "Documents" "Downloads"))]
@@ -143,7 +153,7 @@
       [(unix) (xdg-user-roots home-path env)]
       [else '()]))
   (define volumes
-    (data-volume-roots #:os os #:all-roots all-roots #:sys-dir sys-dir))
+    (data-volume-roots #:os os #:all-roots all-roots))
   (remove-duplicates
    (append base cloud volumes)
    (if (eq? os 'windows) string-ci=? string=?)

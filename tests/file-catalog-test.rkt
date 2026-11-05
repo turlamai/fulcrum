@@ -185,10 +185,13 @@
          [else (sleep 0.02) (wait (sub1 remaining))]))
      (engine-stop! engine))))
 
-(test-case "Windows data volumes become catalog roots; the system drive does not"
+(test-case "every lettered Windows drive becomes a catalog root"
   ;; Multi-drive machines were invisible to `find`: macOS Spotlight and
   ;; Linux plocate cover whole disks, but on Windows only the user folders
   ;; (and whatever the OS index reaches) were searchable (issue #116).
+  ;; The system drive is included too — excluding it left user-created
+  ;; directories like C:\FulcrumTest unfindable; the walker's ignore list
+  ;; keeps the OS trees (Windows, Program Files, Users) out of the walk.
   (with-temp-tree
    (lambda (home)
      (for ([name (in-list '("Desktop" "Documents" "Downloads"))])
@@ -198,8 +201,7 @@
         #:home home
         #:os 'windows
         #:env (lambda (_) #f)
-        #:all-roots '("C:\\" "D:\\" "E:\\")
-        #:sys-dir "C:\\Windows\\"))
+        #:all-roots '("C:\\" "D:\\" "E:\\")))
      ;; Drive-root check must be exact: on a runner whose temp home sits
      ;; under C:, the home roots share the C: prefix — only the bare
      ;; volume root itself counts as "the C: drive is a catalog root".
@@ -209,13 +211,11 @@
                               (string-append letter ":\\")))
                   roots)
             #t))
+     (check-true (has-drive-root? "C"))
      (check-true (has-drive-root? "D"))
      (check-true (has-drive-root? "E"))
-     ;; The system drive holds Windows/Program Files trees the walker must
-     ;; not grind through; its user content rides the home roots instead.
-     (check-false (has-drive-root? "C"))
-     ;; The three home user roots plus two data volumes.
-     (check-equal? (length roots) 5))))
+     ;; The three home user roots plus three drive roots.
+     (check-equal? (length roots) 6))))
 
 (test-case "a single-drive Windows machine gains no volume roots"
   (with-temp-tree
@@ -227,11 +227,10 @@
         #:home home
         #:os 'windows
         #:env (lambda (_) #f)
-        #:all-roots '("C:\\")
-        #:sys-dir "C:\\Windows\\"))
-     ;; Only Desktop/Documents/Downloads remain (the temp home provides all
-     ;; three; OneDrive env is off; C: is the system drive).
-     (check-equal? (length roots) 3))))
+        #:all-roots '("C:\\")))
+     ;; Desktop/Documents/Downloads (the temp home provides all three;
+     ;; OneDrive env is off) plus the C: drive root itself.
+     (check-equal? (length roots) 4))))
 
 (test-case "volume classification claims only drive-letter roots"
   (with-temp-tree
@@ -241,15 +240,14 @@
         #:home home
         #:os 'windows
         #:env (lambda (_) #f)
-        #:all-roots '("C:\\" "D:\\" "\\\\server\\share" "not-a-drive")
-        #:sys-dir "C:\\Windows\\"))
+        #:all-roots '("C:\\" "D:\\" "\\\\server\\share" "not-a-drive")))
      ;; UNC shares and junk strings are not drive roots; every classified
-     ;; root names a data drive.
+     ;; root names a lettered drive.
      (check-true
       (andmap (lambda (r)
-                (regexp-match? #rx"^D:" (path->string r)))
+                (regexp-match? #rx"^[CD]:" (path->string r)))
               roots))
-     (check-equal? (length roots) 1))))
+     (check-equal? (length roots) 2))))
 
 (test-case "volume system metadata directories are ignored by the walker"
   (with-temp-tree
@@ -257,8 +255,12 @@
      (define root (build-path dir "data"))
      (make-directory* (build-path root "$RECYCLE.BIN" "SID"))
      (make-directory* (build-path root "System Volume Information"))
-     (touch (build-path root "$RECYCLE.BIN" "junk.bin"))
+     (make-directory* (build-path root "Windows" "System32"))
+     (touch (build-path root "Windows" "os-file.txt"))
+     (make-directory* (build-path root "Program Files" "App"))
      (touch (build-path root "keep-me.txt"))
+     (make-directory* (build-path root "FulcrumTest"))
+     (touch (build-path root "FulcrumTest" "partition-probe.txt"))
      (define db (build-path dir "index.sqlite3"))
      (define worker (start-file-catalog! db (list root) #:on-progress void))
      (define status (file-catalog-wait worker 10))
@@ -266,4 +268,10 @@
      (check-equal? (map car (file-index-search db "keep" 8))
                    '("keep-me.txt"))
      (check-equal? (file-index-search db "junk" 8) '())
+     ;; OS trees are never descended, but user-created trees on the same
+     ;; drive root are indexed full-depth (the C:\FulcrumTest probe from
+     ;; issue #116's acceptance).
+     (check-equal? (file-index-search db "os-file" 8) '())
+     (check-equal? (map car (file-index-search db "partition-probe" 8))
+                   '("partition-probe.txt"))
      (stop-file-catalog! worker))))
