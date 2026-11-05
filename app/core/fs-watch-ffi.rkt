@@ -23,7 +23,10 @@
 (define CreateFileW
   (get-ffi-obj
    "CreateFileW" kernel32
-   (_fun _string/utf-16          ; lpFileName
+   (_fun _string/utf-16le        ; lpFileName (BOM-less: _string/utf-16
+                                 ; prepends a BOM that Windows would read
+                                 ; as part of the path)
+
          _uint32                 ; dwDesiredAccess (FILE_LIST_DIRECTORY)
          _uint32                 ; dwShareMode
          _pointer                ; lpSecurityAttributes
