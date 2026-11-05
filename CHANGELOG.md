@@ -18,6 +18,16 @@ independently per platform packaging run.
   release binary — it cannot be lost in packaging — with the generator
   updated to emit that module and the table integrity pinned by a
   regression test.
+- **Update check results are visible again on all three platforms.**
+  The backend delivers run-action feedback (update check results,
+  settings toggles, plugin installs) as a `notify` event, but every
+  host's event dispatcher dropped it: the check ran, verified the signed
+  manifest and persisted `update-last-check`, while the status line kept
+  its "Running…" placeholder forever. Found during the v0.15.1 VM
+  validation pass on the Linux deb; macOS drops it on the launcher-row
+  path and Windows on the same dispatcher. Each host now writes the
+  notify payload into its status line, pinned by a three-source static
+  contract test.
 
 ## [0.15.0] - 2026-11-04
 
