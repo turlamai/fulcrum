@@ -15,16 +15,19 @@
          "file-index.rkt")
 
 (provide (struct-out file-catalog-status)
+         (struct-out file-catalog-worker)
          default-file-catalog-roots
          start-file-catalog!
          stop-file-catalog!
          file-catalog-current-status
-         file-catalog-wait)
+         file-catalog-wait
+         reconcile-directory-in-catalog!)
 
 (struct file-catalog-status
   (state indexed roots-completed roots-total error)
   #:transparent)
-(struct file-catalog-worker (thread cancel status) #:transparent)
+(struct file-catalog-worker (thread cancel status root-generations index-path)
+  #:transparent)
 
 (define ignored-directory-names
   '(".git" ".hg" ".svn" ".cache" ".gradle" ".idea"
@@ -235,7 +238,8 @@
 (define (start-file-catalog! index-path roots
                              #:batch-size [batch-size 1000]
                              #:list-directory [list-directory safe-directory-list]
-                             #:on-progress [on-progress void])
+                             #:on-progress [on-progress void]
+                             #:on-complete [on-complete void])
   (unless (and (exact-positive-integer? batch-size) (<= batch-size 10000))
     (raise-argument-error 'start-file-catalog! "integer from 1 to 10000" batch-size))
   (define normalized-roots
@@ -255,6 +259,11 @@
       (set! last-notified now)
       (with-handlers ([exn:fail? (lambda (_) (void))])
         (on-progress))))
+  ;; Last generation each root was scanned with. Live reconciles must
+  ;; upsert rows with the root's current generation, or the next
+  ;; finish-scan would prune freshly reconciled rows that a concurrent
+  ;; walk happened to miss.
+  (define root-generations (make-hash))
   (define status
     (box (file-catalog-status 'starting 0 0 (length normalized-roots) #f)))
   (define worker-thread
@@ -277,6 +286,7 @@
              (+ (* 1000 (inexact->exact
                          (floor (current-inexact-milliseconds))))
                 (random 1000)))
+           (hash-set! root-generations (path->string root) generation)
            (set-box! status
                      (file-catalog-status 'scanning indexed completed
                                           (length normalized-roots) #f))
@@ -299,8 +309,10 @@
                           [partial? 'partial]
                           [else 'ready])
                     indexed completed (length normalized-roots) #f))
-         (notify-progress! #t)))))
-  (file-catalog-worker worker-thread cancel status))
+         (notify-progress! #t)
+         (on-complete)))))
+  (file-catalog-worker worker-thread cancel status root-generations
+                       index-path))
 
 (define (stop-file-catalog! worker)
   (unless (cancelled? (file-catalog-worker-cancel worker))
@@ -314,3 +326,52 @@
   (and (sync/timeout timeout-seconds
                      (thread-dead-evt (file-catalog-worker-thread worker)))
        (file-catalog-current-status worker)))
+
+;; Live-update reconcile (issue #99): after filesystem events touch
+;; `directory`, re-list it and reconcile the catalog. The directory must
+;; sit under one of the worker's scanned roots — the longest matching
+;; root wins, and the root's current scan generation is reused so a
+;; concurrent finish-scan cannot prune freshly reconciled rows. Events
+;; may be duplicated or lost; this operation is idempotent and lost
+;; events are healed by the next full scan. Returns #f when the
+;; directory is outside every root or the catalog never scanned it.
+(define (reconcile-directory-in-catalog! worker directory)
+  (define dir-path
+    (simple-form-path
+     (if (string? directory) (string->path directory) directory)))
+  (define containing
+    ;; Root keys are strings (path->string of each scanned root); best
+    ;; accumulates the longest root-string prefixing this directory.
+    (for/fold ([best #f])
+              ([root-str (in-hash-keys (file-catalog-worker-root-generations worker))])
+      (if (and (string-prefix? (path->string dir-path) root-str)
+               (or (not best)
+                   (> (string-length root-str) (string-length best))))
+          root-str
+          best)))
+  (define root-str containing)
+  (define dir-str (path->string dir-path))
+  (cond
+    [(not root-str) #f]
+    [else
+     (define listing (safe-directory-list dir-path))
+     (and listing
+          (let* ([files
+                  (for/list ([child (in-list listing)]
+                             #:when (and (file-exists? child)
+                                         (not (link-exists? child)))
+                             #:unless (ignored-directory? child))
+                    (path->hit child))]
+                 [child-dirs
+                  (for/list ([child (in-list listing)]
+                             #:when (and (directory-exists? child)
+                                         (not (link-exists? child))
+                                         (not (ignored-directory? child))))
+                    child)]
+                 [generation
+                  (hash-ref (file-catalog-worker-root-generations worker)
+                            root-str 0)])
+            (file-index-reconcile-directory!
+             (file-catalog-worker-index-path worker)
+             root-str generation
+             dir-str files child-dirs)))]))

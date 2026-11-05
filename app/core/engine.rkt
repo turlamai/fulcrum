@@ -17,6 +17,8 @@
          racket/contract
          racket/list
          racket/math
+         racket/match
+         racket/set
          racket/string
          "apps.rkt"
          "bindings.rkt"
@@ -26,6 +28,7 @@
          "emoji.rkt"
          "file-catalog.rkt"
          "files.rkt"
+         "fs-watch.rkt"
          "fuzzy.rkt"
          "gallery.rkt"
          "paths.rkt"
@@ -58,7 +61,7 @@
   #:transparent)
 
 (struct engine
-  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge)
+  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live)
   #:mutable)
 
 ;; Prepared application rows: the fuzzy fields are immutable per rebuild,
@@ -542,6 +545,79 @@
 (define find-file-prefix "find ")
 (define file-index-status-queries '("file index" "file search status"))
 
+;; ---- live filesystem watching (issue #99 slice 1) --------------------
+;;
+;; After the catalog's first scan completes, one OS watcher per root feeds
+;; changed paths into a coalescer: directories accumulate for up to 400 ms,
+;; then each is re-listed and reconciled into the persistent index, and the
+;; search-revision nudge makes open queries repaint. Events may be
+;; duplicated or lost (overflow); the reconcile is idempotent and the next
+;; full scan heals whatever slipped through. On platforms without a
+;; watcher implementation the coalescer never starts and behavior is
+;; exactly the pre-#99 once-per-process scan.
+
+(define (parent-directory-of path-string)
+  (define-values (base _name _dir?)
+    (split-path (if (string? path-string)
+                    (string->path path-string)
+                    path-string)))
+  (and (path? base) (path->string base)))
+
+(define (engine-start-live-watcher! engine worker)
+  (define pending (make-hash)) ; dir-string -> #t
+  (define flush-sem (make-semaphore 0))
+  (define stop-box (box #f))
+  (define watchers
+    (for/list ([root (in-list (engine-file-catalog-roots engine))])
+      (start-fs-watch! root
+                       (lambda (changed-paths)
+                         (for ([p (in-list changed-paths)])
+                           (define dir (parent-directory-of p))
+                           (when dir (hash-set! pending dir #t)))
+                         (semaphore-post flush-sem))
+                       (lambda (_root)
+                         ;; Kernel buffer overflow: slice 1 notes the miss
+                         ;; honestly; the next full scan (next app start)
+                         ;; heals it. #99 tracks the rescan fast-path.
+                         (void)))))
+  (cond
+    [(null? watchers) (void)]
+    [else
+     (define flusher
+       (thread
+        (lambda ()
+          (let loop ()
+            (sync/timeout 0.4 flush-sem)
+            (cond
+              [(unbox stop-box) (void)]
+              [else
+               (define dirs
+                 (for/list ([(d _) (in-hash pending)]) d))
+               (hash-clear! pending)
+               (for ([d (in-list dirs)])
+                 (with-handlers ([exn:fail? (lambda (_) (void))])
+                   (reconcile-directory-in-catalog! worker d)))
+               (when (and (pair? dirs)
+                          (engine-file-catalog-nudge engine))
+                 ((engine-file-catalog-nudge engine)))
+               (loop)])))))
+     (set-engine-file-catalog-live!
+      engine
+      (list watchers pending flush-sem stop-box flusher))]))
+
+(define (engine-stop-live-watcher! engine)
+  (define live (engine-file-catalog-live engine))
+  (when live
+    (match-let ([(list watchers pending flush-sem stop-box flusher) live])
+      (set-box! stop-box #t)
+      (for ([w (in-list watchers)])
+        (stop-fs-watch! w))
+      (semaphore-post flush-sem)
+      ;; The flusher exits within one 400 ms tick; joining here keeps
+      ;; engine-stop! deterministic without watching for races.
+      (sync/timeout 1 flusher)
+      (set-engine-file-catalog-live! engine #f))))
+
 (define (engine-start-file-catalog! engine)
   (when (and (engine-file-index-path engine)
              (pair? (engine-file-catalog-roots engine)))
@@ -563,6 +639,7 @@
                            (length (engine-file-catalog-roots engine)) #f)))
 
 (define (engine-stop! engine)
+  (engine-stop-live-watcher! engine)
   (define worker (engine-file-catalog-worker engine))
   (when worker (stop-file-catalog! worker))
   (void))
@@ -877,7 +954,8 @@
           file-catalog-roots
           #f
           (make-semaphore 1)
-          file-catalog-nudge))
+          file-catalog-nudge
+          #f))
 
 (define (engine-rebuild-index! engine)
   (define apps (discover-applications))
