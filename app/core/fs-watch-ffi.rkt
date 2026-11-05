@@ -18,9 +18,11 @@
 
 (define kernel32 (ffi-lib "kernel32.dll"))
 
-(define _HANDLE* (make-ctype _int64
-                             (lambda (v) v)
-                             (lambda (v) v)))
+;; HANDLE is an opaque 64-bit integer on Windows. Declaring it as
+;; _HANDLE* (pointer-to-HANDLE) made the FFI dereference CreateFileW's
+;; return value as a memory address - INVALID_HANDLE_VALUE (-1) then
+;; crashed the call and every watcher start degraded to #f.
+(define _HANDLE _int64)
 
 ;; _string/utf-16 encodes foreign input with a byte-order mark; Windows
 ;; would read the BOM as part of the path and fail the open. This ctype
@@ -65,16 +67,16 @@
          _pointer                ; lpSecurityAttributes
          _uint32                 ; dwCreationDisposition
          _uint32                 ; dwFlagsAndAttributes
-         _HANDLE*                ; hTemplateFile
-         -> _HANDLE*)))
+         _HANDLE                 ; hTemplateFile (NULL = 0)
+         -> _HANDLE)))
 
 (define CloseHandle
-  (get-ffi-obj "CloseHandle" kernel32 (_fun _HANDLE* -> _int32)))
+  (get-ffi-obj "CloseHandle" kernel32 (_fun _HANDLE -> _int32)))
 
 (define ReadDirectoryChangesW
   (get-ffi-obj
    "ReadDirectoryChangesW" kernel32
-   (_fun _HANDLE*                ; hDirectory
+   (_fun _HANDLE                 ; hDirectory
          _pointer                ; lpBuffer
          _uint32                 ; nBufferLength
          _int32                  ; bWatchSubtree
