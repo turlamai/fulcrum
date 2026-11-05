@@ -158,7 +158,8 @@
             [(zero? remaining) (fail-check "no watcher event in 3s")]
             [else (sleep 0.05) (wait (sub1 remaining))]))
         (stop-fs-watch! watch)
-        (check-true (thread-dead? (fs-watch-thread watch)))))]))
+        (check-true (thread-dead? (fs-watch-thread watch))
+                    "watch thread must exit on stop")))]))
 
 (test-case "engine wiring: created files become searchable live (Windows)"
   (unless (fs-watch-supported?)

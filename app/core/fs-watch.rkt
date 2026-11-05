@@ -7,11 +7,17 @@
 ;; the catalog's once-per-process scan plus the OS providers remain the
 ;; only sources there, exactly as before this module existed.
 ;;
-;; Stop semantics: ReadDirectoryChangesW blocks its OS thread, so stop!
-;; closes the handle from the caller's thread; the blocked read returns
-;; failure and the watch thread exits without touching the callback.
+;; Stop semantics: ReadDirectoryChangesW runs blocking-synchronous, and
+;; Windows does not reliably cancel it — CloseHandle from another thread
+;; while a read is pending deadlocks. The watch thread therefore owns
+;; its handle exclusively: stop! sets a flag, then creates and deletes a
+;; tiny marker file inside the watched root to wake the blocked read;
+;; the thread sees the flag first, closes its own handle (safe — it is
+;; the only user), and exits. Overlapped I/O would remove the
+;; wake-marker dance and is the documented follow-up refinement.
 
 (require racket/contract
+         racket/runtime-path
          racket/string)
 
 (provide fs-watch-supported?
@@ -19,7 +25,7 @@
          start-fs-watch!
          stop-fs-watch!)
 
-(struct fs-watch (thread handle stop-semaphore root))
+(struct fs-watch (thread stop-box stopped root))
 
 (define (fs-watch-supported?)
   (eq? (system-type 'os) 'windows))
@@ -28,17 +34,27 @@
 ;; host, stripped runtime) leaves this #f and every entry point no-ops.
 (define ffi (box #f))
 
+(define-runtime-path ffi-module "fs-watch-ffi.rkt")
+
 (define (load-ffi!)
   (when (not (unbox ffi))
     (define loaded
       (with-handlers ([exn:fail? (lambda (_) #f)])
-        (dynamic-require "fs-watch-ffi.rkt" #f)
-        (define (get name type) (dynamic-require "fs-watch-ffi.rkt" name))
-        (hash 'open (get 'open-directory-watch! '_fun)
-              'read (get 'read-directory-changes! '_fun)
-              'close (get 'close-directory-watch! '_fun)
-              'open? (get 'watch-handle-open? '_fun))))
+        (dynamic-require ffi-module #f)
+        (define (get name)
+          (dynamic-require ffi-module name))
+        (hash 'open (get 'open-directory-watch!)
+              'read (get 'read-directory-changes!)
+              'close (get 'close-directory-watch!)
+              'open? (get 'watch-handle-open?))))
     (set-box! ffi loaded)))
+
+;; The marker file lives inside the watched root: subtree watching makes
+;; any change under root wake the blocked read. Milliseconds + a random
+;; suffix keep concurrent watchers from clobbering each other's markers.
+(define (stop-marker-path root-str)
+  (string-append root-str ".fulcrum-stop-"
+                 (number->string (current-milliseconds) 36)))
 
 (define (start-fs-watch! root on-events on-overflow)
   (cond
@@ -59,32 +75,53 @@
         (cond
           [(not (and handle ((hash-ref f 'open?) handle))) #f]
           [else
-           (define stop (make-semaphore 0))
-           (define buffer (make-bytes 65536))
+           (define stop-box (box #f))
+           (define stopped (make-semaphore 0))
            (define watch-thread
              (thread
               (lambda ()
+                ;; The thread owns the handle: it closes it on every exit
+                ;; path, so the stopper never touches a handle that is in
+                ;; a pending synchronous read.
                 (let loop ()
-                  (define result
-                    ((hash-ref f 'read) handle buffer
-                     (bytes-length buffer) root-str))
                   (cond
-                    [(not result) (void)]
-                    [(eq? result 'overflow)
-                     (with-handlers ([exn:fail? (lambda (_) (void))])
-                       (on-overflow root-str))
-                     (loop)]
+                    [(unbox stop-box) (void)]
                     [else
-                     (with-handlers ([exn:fail? (lambda (_) (void))])
-                       (on-events result))
-                     (loop)])))))
-           (fs-watch watch-thread handle stop root-str)])])]))
+                     (define result
+                       ((hash-ref f 'read) handle
+                        (make-bytes 65536) 65536 root-str))
+                     (cond
+                       [(not result) (void)]
+                       [(eq? result 'overflow)
+                        (with-handlers ([exn:fail? (lambda (_) (void))])
+                          (on-overflow root-str))
+                        (loop)]
+                       [else
+                        (with-handlers ([exn:fail? (lambda (_) (void))])
+                          (on-events result))
+                        (loop)])]))
+                ;; The thread owns the handle: close it here (its only
+                ;; user), never from the stopper - a cross-thread
+                ;; CloseHandle over a pending synchronous read deadlocks.
+                (with-handlers ([exn:fail? (lambda (_) (void))])
+                  ((hash-ref f 'close) handle))
+                (semaphore-post stopped))))
+           (fs-watch watch-thread stop-box stopped root-str)])])]))
 
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-thread watch)))
-    (semaphore-post (fs-watch-stop-semaphore watch))
-    (define f (unbox ffi))
-    (when f
+    (set-box! (fs-watch-stop-box watch) #t)
+    ;; Wake the blocked read: any change under the watched root returns
+    ;; it, and the thread then exits through its own handle cleanup. A
+    ;; cross-thread CloseHandle over a pending synchronous read would
+    ;; deadlock, so the stopper never touches the handle.
+    (with-handlers ([exn:fail? (lambda (_) (void))])
+      (define marker (stop-marker-path (fs-watch-root watch)))
+      (with-output-to-file marker #:exists 'truncate void)
       (with-handlers ([exn:fail? (lambda (_) (void))])
-        ((hash-ref f 'close) (fs-watch-handle watch))))
+        (delete-file marker)))
+    ;; Bounded join: the common case exits within milliseconds; if the
+    ;; wake failed (root vanished) the thread exits at the next real
+    ;; change without blocking this caller forever.
+    (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch)))
     (void)))
