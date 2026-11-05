@@ -21,10 +21,17 @@ final class I18nService: @unchecked Sendable {
         return current
     }
 
-    /// "zh" | "en"; anything else falls back to zh.
+    /// "system" follows the OS locale (preferred languages: a zh prefix
+    /// selects Chinese, anything else falls back to English); "zh" and
+    /// "en" force a language, and anything else falls back to zh.
     func setLanguage(_ lang: String) {
         lock.lock()
-        current = (lang.lowercased() == "en") ? "en" : "zh"
+        if lang == "system" {
+            let preferred = Locale.preferredLanguages.first ?? "en"
+            current = preferred.hasPrefix("zh") ? "zh" : "en"
+        } else {
+            current = (lang.lowercased() == "en") ? "en" : "zh"
+        }
         lock.unlock()
     }
 

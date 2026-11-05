@@ -2006,7 +2006,19 @@ struct Launcher {
 };
 
 void set_i18n_language(std::string const& lang) {
-  int const active = (lang == "en") ? 1 : 0;
+  // "system" follows the OS locale: LC_ALL/LANG (XDG sessions always set
+  // one); a zh prefix selects Chinese, anything else falls back to English.
+  std::string effective = lang;
+  if (effective == "system") {
+    char const* locale = getenv("LC_ALL");
+    if (locale == nullptr || *locale == '\0') {
+      locale = getenv("LANG");
+    }
+    effective = (locale != nullptr && std::string(locale).rfind("zh", 0) == 0)
+                    ? "zh"
+                    : "en";
+  }
+  int const active = (effective == "en") ? 1 : 0;
   bool const changed = g_i18n_active.exchange(active) != active;
   auto& launcher = Launcher::instance();
   if (launcher.search != nullptr) {
@@ -2460,7 +2472,9 @@ void settings_build() {
   auto* general_page = make_page("general", "General");
   auto* general = settings_section(general_page, "General");
   settings_add_choice(general, "Language", "language",
-                      {{"中文", "zh"}, {"English", "en"}});
+                      {{"跟随系统", "system"},
+                       {"中文", "zh"},
+                       {"English", "en"}});
   settings_add_choice(general, "Theme", "theme",
                       {{"System", "system"}, {"Light", "light"}, {"Dark", "dark"}});
   settings_add_text(general, "Hotkey", "hotkey", "alt+space");

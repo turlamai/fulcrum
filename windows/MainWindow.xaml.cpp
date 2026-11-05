@@ -734,7 +734,15 @@ void load_i18n(std::filesystem::path const& exe_dir) {
 }
 
 void set_i18n_language(std::string const& lang) {
-  g_i18n_active = (lang == "en") ? 1 : 0;
+  // "system" follows the OS UI language (GetUserDefaultUILanguage's
+  // primary language id: 0x04 is Chinese, everything else falls back to
+  // English) instead of guessing a default for every new user.
+  std::string effective = lang;
+  if (effective == "system") {
+    effective =
+        ((::GetUserDefaultUILanguage() & 0x3FF) == 0x0004) ? "zh" : "en";
+  }
+  g_i18n_active = (effective == "en") ? 1 : 0;
 }
 
 std::wstring t(char const* key) {
@@ -1178,6 +1186,11 @@ void MainWindow::HandleTrayMessage(std::uint32_t message, std::int64_t lParam,
         } else if (choice == kTrayMenuSettings) {
           ShowSettings();
         } else if (choice == kTrayMenuUpdates) {
+          // The result lands on the launcher's status line, so summon the
+          // launcher first: checking from the tray while the panel is
+          // hidden wrote the result into an invisible window and the user
+          // saw nothing at all.
+          ShowLauncher();
           CheckForUpdates();
         } else if (choice == kTrayMenuAbout) {
           ShowAbout();

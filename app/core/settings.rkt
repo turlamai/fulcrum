@@ -42,8 +42,8 @@
 (define schema
   (hasheq
    'language
-   (list (lambda (v) (member v '("zh" "en"))) "zh"
-         "UI language: zh or en (hosts render update dialogs in this language)")
+   (list (lambda (v) (member v '("system" "zh" "en"))) "system"
+         "UI language: system follows the OS locale (hosts resolve it); zh or en force a language")
    'theme
    (list (lambda (v) (member v '("system" "light" "dark"))) "system"
          "UI theme: system, light, or dark")

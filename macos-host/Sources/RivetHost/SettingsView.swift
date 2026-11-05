@@ -375,9 +375,15 @@ struct SettingsView: View {
     @State private var selection: SettingsSection = .general
 
     // Translation reads the observable backend setting, so switching language
-    // immediately re-renders the visible settings surface.
+    // immediately re-renders the visible settings surface. "system" resolves
+    // the OS locale the same way I18nService does.
     private func t(_ key: String) -> String {
-        GeneratedI18n.tr(model.values["language"] ?? "zh", key)
+        let lang = model.values["language"] ?? "system"
+        if lang == "system" {
+            let preferred = Locale.preferredLanguages.first ?? "en"
+            return GeneratedI18n.tr(preferred.hasPrefix("zh") ? "zh" : "en", key)
+        }
+        return GeneratedI18n.tr(lang, key)
     }
 
     var body: some View {
@@ -431,7 +437,8 @@ struct SettingsView: View {
     private var generalTab: some View {
         Form {
             Section {
-                Picker(t("setting.language"), selection: model.choice("language", default: "zh")) {
+                Picker(t("setting.language"), selection: model.choice("language", default: "system")) {
+                    Text("跟随系统").tag("system")
                     Text("中文").tag("zh")
                     Text("English").tag("en")
                 }
