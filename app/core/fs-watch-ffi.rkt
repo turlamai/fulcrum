@@ -7,7 +7,9 @@
 ;; thread until a change lands or the handle closes, so stopping is a
 ;; CloseHandle from another thread.
 
-(require ffi/unsafe)
+(require ffi/unsafe
+         racket/string)
+
 
 (provide open-directory-watch!
          read-directory-changes!
@@ -20,12 +22,43 @@
                              (lambda (v) v)
                              (lambda (v) v)))
 
+;; _string/utf-16 encodes foreign input with a byte-order mark; Windows
+;; would read the BOM as part of the path and fail the open. This ctype
+;; encodes BOM-less UTF-16LE with a two-byte null terminator instead.
+(define (string->utf16le-bytes s)
+  ;; UTF-16LE code units with surrogate pairs, no BOM.
+  (define units
+    (for/list ([ch (in-string s)])
+      (define cp (char->integer ch))
+      (cond
+        [(<= cp #xFFFF)
+         (list cp)]
+        [else
+         (define v (- cp #x10000))
+         (list (+ #xD800 (arithmetic-shift v 10))
+               (+ #xDC00 (bitwise-and v #x3FF)))])))
+  (define byte-count (* 2 (length (apply append units))))
+  (define buf (make-bytes (+ byte-count 2)))
+  (let loop ([chars (apply append units)] [i 0])
+    (cond
+      [(null? chars) (void)]
+      [else
+       (define u (car chars))
+       (bytes-set! buf i (bitwise-and u #xFF))
+       (bytes-set! buf (+ i 1) (arithmetic-shift u -8))
+       (loop (cdr chars) (+ i 2))]))
+  buf)
+
+(define _bomless-utf16le
+  (make-ctype _bytes
+              (lambda (s)
+                (bytes-append (string->utf16le-bytes s) (bytes 0 0)))
+              (lambda (b) b)))
+
 (define CreateFileW
   (get-ffi-obj
    "CreateFileW" kernel32
-   (_fun _string/utf-16le        ; lpFileName (BOM-less: _string/utf-16
-                                 ; prepends a BOM that Windows would read
-                                 ; as part of the path)
+   (_fun _bomless-utf16le        ; lpFileName (see below)
 
          _uint32                 ; dwDesiredAccess (FILE_LIST_DIRECTORY)
          _uint32                 ; dwShareMode
