@@ -322,3 +322,42 @@
         (check-true (string-contains?
                      (car (engine-run engine "noop" ""))
                      "not available")))))
+
+(test-case "fixed-volume discovery parses drive letters and fails soft"
+  ;; The catalog indexes Windows data volumes full-depth (issue #116), so
+  ;; the drive-type filter decides both coverage and safety: Fixed only —
+  ;; mapped shares and removable media stay out of every walk.
+  (define (fake-runner output)
+    (lambda (program args #:timeout-ms t #:cancel-evt c) output))
+  (define fixed-output
+    "C\nD\nE\n")
+  (define mixed-output
+    "C\nX\n")  ;; X would be a network/removable letter a second filter dropped
+  (define (letters roots)
+    (map (lambda (r) (substring (path->string r) 0 1)) roots))
+  ;; Non-Windows platforms never enumerate volumes.
+  (check-equal? (windows-fixed-volume-roots #:os 'macosx
+                                            #:run (fake-runner fixed-output))
+                '())
+  (check-equal? (windows-fixed-volume-roots #:os 'unix
+                                            #:run (fake-runner fixed-output))
+                '())
+  ;; Windows + PowerShell output → one root per fixed drive, sorted order.
+  (check-equal? (letters (windows-fixed-volume-roots
+                          #:os 'windows #:run (fake-runner fixed-output)))
+                '("C" "D" "E"))
+  (check-equal? (letters (windows-fixed-volume-roots
+                          #:os 'windows #:run (fake-runner mixed-output)))
+                '("C" "X"))
+  ;; A PowerShell timeout/failure (runner returns #f) yields no volume
+  ;; roots: the catalog falls back to home coverage, honestly.
+  (check-equal? (windows-fixed-volume-roots
+                 #:os 'windows
+                 #:run (lambda (program args #:timeout-ms t #:cancel-evt c) #f))
+                '())
+  ;; 'cancelled is equally a soft failure.
+  (check-equal? (windows-fixed-volume-roots
+                 #:os 'windows
+                 #:run (lambda (program args #:timeout-ms t #:cancel-evt c)
+                         'cancelled))
+                '()))

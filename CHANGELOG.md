@@ -6,6 +6,19 @@ independently per platform packaging run.
 
 ## [Unreleased]
 
+### Changed
+
+- **Windows data volumes are now searchable.** `find` previously reached
+  only the user folders (plus whatever the OS search index happened to
+  cover), so files on data partitions or outside known folders —
+  `C:\FulcrumTest\report.txt`, anything on D:/E: — were unfindable while
+  macOS Spotlight and Linux plocate cover whole disks. Every fixed local
+  volume except the system drive is now indexed full-depth into the same
+  local catalog (batched, incremental, refreshed live as first-use scans
+  progress). Mapped network shares and removable media are excluded from
+  walks by drive type; a PowerShell failure degrades to home-folder
+  coverage honestly, and volume metadata directories are never indexed.
+
 ### Fixed
 
 - **The UI language follows the operating system by default.** Every
