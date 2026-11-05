@@ -32,7 +32,10 @@
         #:os 'windows
         #:env (lambda (name)
                 (and (string=? name "OneDriveConsumer")
-                     (path->string cloud)))))
+                     (path->string cloud)))
+        ;; Hermetic on Windows runners: no volume enumeration, this test
+        ;; is about the home/OneDrive roots only.
+        #:all-roots '()))
      (check-equal? (length roots) 4)
      (check-false (member (simple-form-path home) roots))
      (check-not-false (member (simple-form-path (build-path home "Documents"))
@@ -197,15 +200,20 @@
         #:env (lambda (_) #f)
         #:all-roots '("C:\\" "D:\\" "E:\\")
         #:sys-dir "C:\\Windows\\"))
-     (define (has-root? prefix)
-       (and (memf (lambda (r) (string-prefix? (path->string r) prefix))
+     ;; Drive-root check must be exact: on a runner whose temp home sits
+     ;; under C:, the home roots share the C: prefix — only the bare
+     ;; volume root itself counts as "the C: drive is a catalog root".
+     (define (has-drive-root? letter)
+       (and (memf (lambda (r)
+                    (string=? (path->string r)
+                              (string-append letter ":\\")))
                   roots)
             #t))
-     (check-true (has-root? "D:"))
-     (check-true (has-root? "E:"))
+     (check-true (has-drive-root? "D"))
+     (check-true (has-drive-root? "E"))
      ;; The system drive holds Windows/Program Files trees the walker must
      ;; not grind through; its user content rides the home roots instead.
-     (check-false (has-root? "C:"))
+     (check-false (has-drive-root? "C"))
      ;; The three home user roots plus two data volumes.
      (check-equal? (length roots) 5))))
 
