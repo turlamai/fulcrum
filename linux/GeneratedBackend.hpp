@@ -19,8 +19,8 @@ namespace rivet_app {
 inline constexpr char kModuleName[] = "backend";
 inline constexpr char kEntryName[] = "start";
 inline constexpr char kDisplayName[] = "Fulcrum";
-inline constexpr char kVersion[] = "0.15.1";
-inline constexpr std::int64_t kBuild = 26;
+inline constexpr char kVersion[] = "0.15.2";
+inline constexpr std::int64_t kBuild = 27;
 inline constexpr char kIdentifier[] = "site.jrtx.fulcrum";
 inline constexpr char kReleaseChannel[] = "stable";
 
