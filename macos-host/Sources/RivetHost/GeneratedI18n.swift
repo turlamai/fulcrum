@@ -23,7 +23,7 @@ enum GeneratedI18n {
         "navigationHintMac": ["zh": "↑↓ 选择 · 回车执行 · ⌘K 操作 · Esc 清空/隐藏", "en": "↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide"],
         "noSecondaryActions": ["zh": "此结果没有次要操作", "en": "No secondary actions for this result"],
         "notSet": ["zh": "未设置", "en": "Not set"],
-        "ready": ["zh": "就绪 — 使用热键或 fulcrum --toggle 唤出", "en": "Ready — hotkey or `fulcrum --toggle`"],
+        "ready": ["zh": "就绪 — 使用热键唤出，或再次启动 Fulcrum", "en": "Ready — summon with the hotkey, or launch Fulcrum again"],
         "readyStatus": ["zh": "已就绪 — 可随时按 Alt+Space 唤出", "en": "Ready — press Alt+Space anywhere"],
         "readyStatusMac": ["zh": "已就绪 — 可随时按 Option+Space 唤出", "en": "Ready — press Option+Space anywhere"],
         "searchPlaceholder": ["zh": "搜索应用、剪贴板、片段、网页…", "en": "Search apps, clipboard, snippets, the web…"],

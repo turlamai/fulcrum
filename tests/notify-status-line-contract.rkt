@@ -18,9 +18,18 @@
 (define-runtime-path windows-path "../windows/MainWindow.xaml.cpp")
 (define-runtime-path macos-path
   "../macos-host/Sources/RivetHost/ContentView.swift")
+(define-runtime-path backend-path "../app/backend.rkt")
 (define linux-source (file->string linux-path))
 (define windows-source (file->string windows-path))
 (define macos-source (file->string macos-path))
+(define backend-source (file->string backend-path))
+
+;; emit-events! must deliver the bare notify message; stringifying the
+;; whole (notify "text") pair leaked the constructor into every host's
+;; status line ("(notify · Fulcrum v0.15.1 is up to date)").
+(check-true
+ (string-contains? backend-source "[(notify) (notify (format \"~a\" (cdr entry)))]")
+ "emit-events! must emit the notify payload, not the stringified pair")
 
 (define/contract (notify-branch? source)
   (-> string? boolean?)

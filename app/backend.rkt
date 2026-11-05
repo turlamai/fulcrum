@@ -191,13 +191,17 @@
   (unless s (error 'backend "settings are not initialized; start was not called"))
   s)
 
-;; Emits backend events produced by engine-run as RVT1 Events.
+;; Emits backend events produced by engine-run as RVT1 Events. The notify
+;; payload must be the bare message — stringifying the whole (notify
+;; "text") pair leaked the constructor into every host's status line
+;; ("(notify · Fulcrum v0.15.1 is up to date)").
 (define (emit-events! events)
   (for ([entry (in-list events)])
     (case (car entry)
       [(copy-to-clipboard) (copy-to-clipboard (cdr entry))]
       [(paste-to-frontmost) (paste-to-frontmost (cdr entry))]
       [(open-url) (open-url (cdr entry))]
+      [(notify) (notify (format "~a" (cdr entry)))]
       [else (notify (format "~a" entry))])))
 
 ;; Queries that name a backend surface outright ("ai", "settings", "update")
