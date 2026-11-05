@@ -59,6 +59,7 @@
                             <TextBlock x:Name="LanguageLabel" Text="Language" Style="{StaticResource RowLabel}" />
                             <ComboBox x:Name="LanguageBox" Grid.Column="1" Tag="language" MinWidth="160"
                                       VerticalAlignment="Center" SelectionChanged="Choice_Changed">
+                                <ComboBoxItem Content="跟随系统" Tag="system" />
                                 <ComboBoxItem Content="中文" Tag="zh" />
                                 <ComboBoxItem Content="English" Tag="en" />
                             </ComboBox>

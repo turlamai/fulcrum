@@ -310,8 +310,9 @@
 (define (next-setting-value key current)
   (case key
     [(language)
-     (cond [(string=? current "zh") "en"]
-           [else "zh"])]
+     (cond [(string=? current "system") "zh"]
+           [(string=? current "zh") "en"]
+           [else "system"])]
     [(theme)
      (cond [(string=? current "system") "light"]
            [(string=? current "light") "dark"]

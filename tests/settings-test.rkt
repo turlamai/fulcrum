@@ -20,7 +20,9 @@
    (lambda (dir)
      (define s (make-settings-manager (build-path dir "settings.json")))
      (check-equal? (settings-get s 'theme) "system")
-     (check-equal? (settings-get s 'language) "zh")
+     ;; Language follows the OS locale by default; hosts resolve "system"
+     ;; against the platform locale (zh prefix selects Chinese, else English).
+     (check-equal? (settings-get s 'language) "system")
      (check-equal? (settings-get s 'hotkey) "alt+space")
      (check-equal? (settings-get s 'max-results) 12)
      (check-true (settings-get s 'clipboard-enabled))

@@ -4,6 +4,24 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [Unreleased]
+
+### Fixed
+
+- **The UI language follows the operating system by default.** Every
+  fresh install previously rendered Chinese regardless of the user's
+  locale, leaving English users to discover a language switch on their
+  own. A new `system` value is now the default and each host resolves it
+  against the OS locale (preferred languages on macOS, the UI language
+  on Windows, `LC_ALL`/`LANG` on Linux); `zh` and `en` still force a
+  language, and Settings offers 跟随系统 as the first choice.
+- **The Windows tray "Check for Updates…" gives visible feedback.** The
+  result was written into the hidden launcher window's status line, so
+  triggering the check from the tray showed nothing at all — no
+  reaction, no result, unless the panel happened to be opened later.
+  The tray entry now summons the launcher first, so the check and its
+  result land on a visible status line.
+
 ## [0.15.1] - 2026-11-05
 
 ### Fixed

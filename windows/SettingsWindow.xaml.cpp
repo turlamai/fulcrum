@@ -30,10 +30,20 @@ std::wstring to_wide(std::string const& utf8_text) {
   return result;
 }
 
+// "system" follows the OS UI language, same resolution as the launcher's
+// set_i18n_language: primary language id 0x04 is Chinese, else English.
+static std::string effective_language(std::string const& language) {
+  if (language != "system") {
+    return language;
+  }
+  return ((::GetUserDefaultUILanguage() & 0x3FF) == 0x0004) ? "zh" : "en";
+}
+
 std::wstring translated_setting(std::string const& language, std::string_view key) {
+  std::string const effective = effective_language(language);
   for (auto const& row : rivet_app::kI18nTable) {
     if (row.key == key) {
-      return to_wide(std::string(language == "en" ? row.en : row.zh));
+      return to_wide(std::string(effective == "en" ? row.en : row.zh));
     }
   }
   return to_wide(std::string(key));
