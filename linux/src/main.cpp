@@ -3559,6 +3559,7 @@ void on_activate(GtkApplication* app, gpointer) {
                 g_idle_add(show_on_main, nullptr);
               }
               break;
+            }
             case rivet::system::GlobalShortcutBindStatus::bound:
               // The compositor owns the final combo; say what it chose —
               // and on GNOME check that the stock window menu is not
