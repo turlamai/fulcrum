@@ -1398,6 +1398,11 @@ struct Launcher {
       hide();
     } else if (name == "update-available") {
       set_status(payload);
+    } else if (name == "notify") {
+      // Action feedback rides the notify event (update check results,
+      // settings toggles, plugin installs). Without this branch the
+      // status line kept the host's "Running…" placeholder forever.
+      set_status(payload);
     }
   }
 

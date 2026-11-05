@@ -897,6 +897,11 @@ final class LauncherModel: ObservableObject {
             // A check found a newer version — make the offer visible.
             status = payload
             UpdateController.shared?.offered()
+        case "notify":
+            // Action feedback rides the notify event (update check results,
+            // settings toggles, plugin installs). Without this branch the
+            // status line kept the run's placeholder forever.
+            status = payload
         default:
             break
         }

@@ -887,6 +887,11 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
             window->HideLauncher();
           } else if (name == "update-available") {
             window->SetStatusOk(to_wide(payload));
+          } else if (name == "notify") {
+            // Action feedback rides the notify event (update check results,
+            // settings toggles, plugin installs). Without this branch the
+            // status line kept the host's "Running…" placeholder forever.
+            window->SetStatusOk(to_wide(payload));
           }
         }
       });
