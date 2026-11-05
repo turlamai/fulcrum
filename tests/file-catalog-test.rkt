@@ -32,7 +32,10 @@
         #:os 'windows
         #:env (lambda (name)
                 (and (string=? name "OneDriveConsumer")
-                     (path->string cloud)))))
+                     (path->string cloud)))
+        ;; Hermetic on Windows runners: no volume enumeration, this test
+        ;; is about the home/OneDrive roots only.
+        #:all-roots '()))
      (check-equal? (length roots) 4)
      (check-false (member (simple-form-path home) roots))
      (check-not-false (member (simple-form-path (build-path home "Documents"))
@@ -181,3 +184,86 @@
           (fail-check "engine catalog did not finish")]
          [else (sleep 0.02) (wait (sub1 remaining))]))
      (engine-stop! engine))))
+
+(test-case "Windows data volumes become catalog roots; the system drive does not"
+  ;; Multi-drive machines were invisible to `find`: macOS Spotlight and
+  ;; Linux plocate cover whole disks, but on Windows only the user folders
+  ;; (and whatever the OS index reaches) were searchable (issue #116).
+  (with-temp-tree
+   (lambda (home)
+     (for ([name (in-list '("Desktop" "Documents" "Downloads"))])
+       (make-directory (build-path home name)))
+     (define roots
+       (default-file-catalog-roots
+        #:home home
+        #:os 'windows
+        #:env (lambda (_) #f)
+        #:all-roots '("C:\\" "D:\\" "E:\\")
+        #:sys-dir "C:\\Windows\\"))
+     ;; Drive-root check must be exact: on a runner whose temp home sits
+     ;; under C:, the home roots share the C: prefix — only the bare
+     ;; volume root itself counts as "the C: drive is a catalog root".
+     (define (has-drive-root? letter)
+       (and (memf (lambda (r)
+                    (string=? (path->string r)
+                              (string-append letter ":\\")))
+                  roots)
+            #t))
+     (check-true (has-drive-root? "D"))
+     (check-true (has-drive-root? "E"))
+     ;; The system drive holds Windows/Program Files trees the walker must
+     ;; not grind through; its user content rides the home roots instead.
+     (check-false (has-drive-root? "C"))
+     ;; The three home user roots plus two data volumes.
+     (check-equal? (length roots) 5))))
+
+(test-case "a single-drive Windows machine gains no volume roots"
+  (with-temp-tree
+   (lambda (home)
+     (for ([name (in-list '("Desktop" "Documents" "Downloads"))])
+       (make-directory (build-path home name)))
+     (define roots
+       (default-file-catalog-roots
+        #:home home
+        #:os 'windows
+        #:env (lambda (_) #f)
+        #:all-roots '("C:\\")
+        #:sys-dir "C:\\Windows\\"))
+     ;; Only Desktop/Documents/Downloads remain (the temp home provides all
+     ;; three; OneDrive env is off; C: is the system drive).
+     (check-equal? (length roots) 3))))
+
+(test-case "volume classification claims only drive-letter roots"
+  (with-temp-tree
+   (lambda (home)
+     (define roots
+       (default-file-catalog-roots
+        #:home home
+        #:os 'windows
+        #:env (lambda (_) #f)
+        #:all-roots '("C:\\" "D:\\" "\\\\server\\share" "not-a-drive")
+        #:sys-dir "C:\\Windows\\"))
+     ;; UNC shares and junk strings are not drive roots; every classified
+     ;; root names a data drive.
+     (check-true
+      (andmap (lambda (r)
+                (regexp-match? #rx"^D:" (path->string r)))
+              roots))
+     (check-equal? (length roots) 1))))
+
+(test-case "volume system metadata directories are ignored by the walker"
+  (with-temp-tree
+   (lambda (dir)
+     (define root (build-path dir "data"))
+     (make-directory* (build-path root "$RECYCLE.BIN" "SID"))
+     (make-directory* (build-path root "System Volume Information"))
+     (touch (build-path root "$RECYCLE.BIN" "junk.bin"))
+     (touch (build-path root "keep-me.txt"))
+     (define db (build-path dir "index.sqlite3"))
+     (define worker (start-file-catalog! db (list root) #:on-progress void))
+     (define status (file-catalog-wait worker 10))
+     (check-equal? (file-catalog-status-state status) 'ready)
+     (check-equal? (map car (file-index-search db "keep" 8))
+                   '("keep-me.txt"))
+     (check-equal? (file-index-search db "junk" 8) '())
+     (stop-file-catalog! worker))))

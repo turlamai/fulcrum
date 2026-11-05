@@ -27,7 +27,8 @@
          rank-file-hits
          file-search/status
          file-search
-         file-open!)
+         file-open!
+         windows-fixed-volume-roots)
 
 (struct file-search-result (hits status backend) #:transparent)
 
@@ -276,6 +277,41 @@
 ;; Compatibility API for callers that only need hits.
 (define (file-search query [limit 8])
   (file-search-result-hits (file-search/status query limit)))
+
+;; ---- Windows: fixed-volume discovery for the file catalog ----------------
+
+;; One PowerShell call listing the fixed local volumes' drive letters.
+;; The catalog indexes fixed volumes full-depth (issue #116), so the
+;; filter matters: DriveType "Fixed" excludes mapped network shares and
+;; removable/CD media — walking those uninvited could grind through a
+;; terabyte NAS share for minutes on every refresh. On any failure
+;; (PowerShell missing, Storage module unavailable, timeout) this returns
+;; '(): the catalog then covers only the home roots, honestly, and the
+;; SYSTEMINDEX stage still answers for whatever the OS index reaches.
+(define (windows-fixed-volume-roots
+         #:os [os (system-type 'os)]
+         #:run [runner run-command/cancellable])
+  (case os
+    [(windows)
+     (with-handlers ([exn:fail? (lambda (_) '())])
+       (define script
+         (string-append
+          "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+          "Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and"
+          " $_.DriveLetter } | Sort-Object DriveLetter |"
+          " ForEach-Object { $_.DriveLetter }"))
+       (define output
+         (runner "powershell.exe"
+                 (list "-NoProfile" "-NonInteractive" "-Command" script)
+                 #:timeout-ms 5000
+                 #:cancel-evt never-evt))
+       (if (string? output)
+           (for/list ([line (in-list (string-split output "\n"))]
+                      #:when (regexp-match? #rx"^[A-Za-z]$" (string-trim line)))
+             (string->path
+              (string-append (string-upcase (string-trim line)) ":\\")))
+           '()))]
+    [else '()]))
 
 ;; ---- Windows: known folders before index and bounded fallback -----------
 

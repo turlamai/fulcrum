@@ -28,7 +28,11 @@
 
 (define ignored-directory-names
   '(".git" ".hg" ".svn" ".cache" ".gradle" ".idea"
-    "node_modules" "__pycache__" ".venv" "venv"))
+    "node_modules" "__pycache__" ".venv" "venv"
+    ;; Volume system metadata: pure noise on every platform that has it.
+    "$recycle.bin" "system volume information"
+    ;; macOS noise on volumes a user might add as a root.
+    ".spotlight-v100" ".trashes" ".fseventsd" ".documentrevisions-v100"))
 
 (define (ignored-directory? path)
   (define name (file-name-from-path path))
@@ -38,6 +42,42 @@
 
 (define (existing-directory path)
   (and (directory-exists? path) (simple-form-path path)))
+
+;; Classify on the raw string form: Windows drive roots are "C:\"-style
+;; strings, and routing them through simple-form-path on other platforms
+;; would resolve them as relative paths and break the letter match.
+(define (drive-letter-of path)
+  (define raw (if (string? path) path (path->string path)))
+  (define match (regexp-match #rx"^([A-Za-z]):" raw))
+  (and match (string-upcase (cadr match))))
+
+;; Windows data volumes become full-depth catalog roots, so `find` covers
+;; every lettered partition instead of only the user folders the OS index
+;; reaches (issue #116: a probe file in C:\FulcrumTest or on D:\ was
+;; unfindable while macOS Spotlight and Linux plocate cover whole disks).
+;; The system drive stays out — its Windows/Program Files trees are pure
+;; noise the walker would grind through, and its user content is already
+;; covered by the home roots plus the SYSTEMINDEX stage. Volumes whose
+;; listing fails (empty CD, disconnected share) surface as honest partial
+;; roots through the normal scan path.
+(define (data-volume-roots
+         #:os [os (system-type 'os)]
+         #:all-roots [all-roots
+                      (with-handlers ([exn:fail? (lambda (_) '())])
+                        (filesystem-root-list))]
+         #:sys-dir [sys-dir (find-system-path 'sys-dir)])
+  (if (not (eq? os 'windows))
+      '()
+      (let ([system-drive (drive-letter-of sys-dir)])
+        (for/list ([root (in-list all-roots)]
+                   #:when (let ([drive (drive-letter-of root)])
+                            (and drive
+                                 (or (not system-drive)
+                                     (not (string=? drive system-drive))))))
+          ;; Keep roots as paths for the catalog pipeline; on non-Windows
+          ;; dev/test hosts the injected letter strings survive as paths
+          ;; whose string form still carries the drive prefix.
+          (if (string? root) (string->path root) root)))))
 
 (define (xdg-user-roots home env)
   (define config-home
@@ -67,7 +107,11 @@
 (define (default-file-catalog-roots
          #:home [home (find-system-path 'home-dir)]
          #:os [os (system-type 'os)]
-         #:env [env getenv])
+         #:env [env getenv]
+         #:all-roots [all-roots
+                      (with-handlers ([exn:fail? (lambda (_) '())])
+                        (filesystem-root-list))]
+         #:sys-dir [sys-dir (find-system-path 'sys-dir)])
   (define home-path (simple-form-path home))
   (define base
     (for/list ([name (in-list '("Desktop" "Documents" "Downloads"))]
@@ -98,8 +142,10 @@
          (simple-form-path path))]
       [(unix) (xdg-user-roots home-path env)]
       [else '()]))
+  (define volumes
+    (data-volume-roots #:os os #:all-roots all-roots #:sys-dir sys-dir))
   (remove-duplicates
-   (append base cloud)
+   (append base cloud volumes)
    (if (eq? os 'windows) string-ci=? string=?)
    #:key path->string))
 

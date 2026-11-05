@@ -26,6 +26,7 @@
          "core/bindings.rkt"
          "core/clipboard.rkt"
          "core/engine.rkt"
+         "core/files.rkt"
          "core/file-catalog.rkt"
          "core/fuzzy.rkt"
          "core/gallery.rkt"
@@ -1730,7 +1731,12 @@
                  #:plugin-manager plug-mgr
                  #:max-results (settings-get manager 'max-results)
                  #:file-index-path (file-index-path)
-                 #:file-catalog-roots (default-file-catalog-roots)
+                 ;; Windows data volumes ride the PowerShell drive-type
+                 ;; filter (fixed local volumes only); other platforms
+                 ;; contribute none through this call.
+                 #:file-catalog-roots
+                 (default-file-catalog-roots
+                   #:all-roots (windows-fixed-volume-roots))
                  #:file-catalog-nudge bump-search-revision!))
   (engine-rebuild-index! engine)
   ;; The startup rebuild IS the fresh state; stamping the cache here keeps
