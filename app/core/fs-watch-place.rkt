@@ -150,8 +150,6 @@
   ;; channel is handed back over ch for stop orders - otherwise the
   ;; dispatcher's reader thread and this place race for messages on the
   ;; single channel (the dispatcher could swallow the stop order).
-  (define ctrl (make-place-channel))
-  (place-channel-put ch ctrl)
   (define root (place-channel-get ch))
   (define handle (open-directory-watch! root))
   (when (not handle)
@@ -161,7 +159,7 @@
   (let watch-loop ([buffer (make-bytes 65536)])
     (cond
       ;; Non-blocking check for the stop order between reads.
-      [(equal? 'stop (sync/timeout 0 ctrl))
+      [(equal? 'stop (sync/timeout 0 ch))
        (CloseHandle handle)]
       [else
        (define result

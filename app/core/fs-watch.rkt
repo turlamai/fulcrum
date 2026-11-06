@@ -9,12 +9,12 @@
 ;; providers remain the only sources there, exactly as before this
 ;; module existed.
 ;;
-;; Channel protocol: the place creates a dedicated control channel and
-;; sends it back as the first message on `pch`. Thereafter `pch` carries
-;; only event batches (consumed exclusively by the reader thread here)
-;; and `ctrl` carries only stop orders (consumed only by the place) -
-;; with a single channel the dispatcher's reader and the place would
-;; race for the stop order.
+;; Single-channel protocol: `pch` carries both directions - the
+;; dispatcher sends 'stop orders on it and the place sends event batches
+;; back. The dispatcher's reader thread ignores 'stop orders (they are
+;; consumed by the place's non-blocking check between reads); the
+;; marker wake in stop! guarantees the place gets a chance to consume
+;; them between reads.
 ;;
 ;; Stop semantics: the place owns its directory handle exclusively, so
 ;; the stopper never touches a handle inside a pending synchronous read.
@@ -85,26 +85,20 @@
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-reader watch)))
     (set-box! (fs-watch-stop-box watch) #t)
-    ;; The ctrl channel arrives as the first message; wait briefly for
-    ;; it (the place sends it at startup) before ordering the stop.
-    (let wait-ctrl ([n 50])
-      (when (and (not (unbox (fs-watch-ctrl watch))) (> n 0))
-        (sleep 0.1)
-        (wait-ctrl (sub1 n))))
-    (when (unbox (fs-watch-ctrl watch))
-      (place-channel-put (unbox (fs-watch-ctrl watch)) 'stop))
-    ;; Wake the blocked read: any change under the watched root returns
-    ;; it, and the place then exits through its own handle cleanup.
-    (with-handlers ([exn:fail? (lambda (_) (void))])
-      (define marker (stop-marker-path (fs-watch-root watch)))
-      (with-output-to-file marker #:exists 'truncate void)
+    ;; The place is blocked in its read; each marker write wakes one
+    ;; read, and the loop's non-blocking check consumes a 'stop order.
+    ;; Two orders + two wakes cover the place sleeping through the
+    ;; first wake (order or read scheduling on a loaded runner).
+    (define (order-stop!)
+      (place-channel-put (fs-watch-pch watch) 'stop)
       (with-handlers ([exn:fail? (lambda (_) (void))])
-        (delete-file marker)))
-    ;; Bounded joins: the common case exits within milliseconds; if the
-    ;; wake failed (root vanished) the place exits at the next real
-    ;; change without blocking this caller forever - and the place is a
-    ;; separate OS process, so a straggler cannot hold the main app.
-    (sync/timeout 5 (thread-dead-evt (fs-watch-reader watch)))
-    (sync/timeout 2 (fs-watch-pch watch))
-    (semaphore-post (fs-watch-stopped watch))
+        (define marker (stop-marker-path (fs-watch-root watch)))
+        (with-output-to-file marker #:exists 'truncate void)
+        (with-handlers ([exn:fail? (lambda (_) (void))])
+          (delete-file marker))))
+    (order-stop!)
+    (sync/timeout 3 (thread-dead-evt (fs-watch-reader watch)))
+    (unless (thread-dead? (fs-watch-reader watch))
+      (order-stop!)
+      (sync/timeout 3 (thread-dead-evt (fs-watch-reader watch))))
     (void)))
