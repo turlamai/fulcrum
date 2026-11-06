@@ -4,7 +4,22 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
-## [Unreleased]
+## [0.16.0] - 2026-11-06
+
+### Added
+
+- **Live file watching on Windows.** The local catalog now observes the
+  filesystem continuously instead of scanning once per process: after the
+  first scan completes, one ReadDirectoryChangesW watcher per scanned
+  root (running in a dedicated place) feeds changed paths into a 400 ms
+  coalescer, and each changed directory is re-listed and reconciled into
+  the persistent index — creates, renames and deletes become visible in
+  open queries without retyping. The watcher runs in a dedicated place
+  because a blocking ReadDirectoryChangesW call would otherwise tie up
+  the main scheduler's OS thread. Stop uses CancelIoEx + a marker-file
+  wake (the stopper never touches a handle inside a pending synchronous
+  read — that deadlocks). On platforms without a watcher implementation
+  behavior is unchanged.
 
 ### Added
 
