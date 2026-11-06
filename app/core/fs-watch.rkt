@@ -46,16 +46,18 @@
   (cond
     [(not (fs-watch-supported?)) #f]
     [else
-     (with-handlers ([exn:fail? (lambda (_) #f)])
+     (with-handlers ([exn:fail? (lambda (e)
+                                  (eprintf "fs-watch start failed: ~a\\n"
+                                           (exn-message e))
+                                  #f)])
        (define root-str
-         (let ([s (path->string (if (string? root) (string->path root) root))])
-           ;; ReadDirectoryChangesW wants the trailing separator.
-           (if (or (string-suffix? s "\\") (string-suffix? s "/"))
-               s
-               (string-append s "\\"))))
-       ;; dynamic-place returns ONE value: the place descriptor (usable
-       ;; with sync and thread-dead-evt like a thread handle).
-       (define pch
+         (path->string
+          (let ([p (if (string? root) (string->path root) root)])
+            (if (or (string-suffix? (path->string p) "\\")
+                    (string-suffix? (path->string p) "/"))
+                p
+                (string-append (path->string p) "\\")))))
+       (define-values (pch _place-th)
          (dynamic-place fs-watch-place-module 'main))
        (define stopped (make-semaphore 0))
        (define stop-box (box #f))
@@ -64,25 +66,25 @@
        (define reader
          (thread
           (lambda ()
-            (let loop ()
+            (let reader-loop ()
               (define msg (place-channel-get pch))
               (cond
                 [(place-channel? msg)
                  (set-box! ctrl msg)
-                 (loop)]
-                [(eq? msg 'ready) (loop)]
+                 (reader-loop)]
+                [(eq? msg 'ready) (reader-loop)]
                 [(eq? msg 'open-failed) (semaphore-post stopped)]
                 [(eq? msg 'overflow)
                  (with-handlers ([exn:fail? (lambda (_) (void))])
                    (on-overflow root-str))
-                 (loop)]
+                 (reader-loop)]
                 [else
                  (with-handlers ([exn:fail? (lambda (_) (void))])
                    (on-events msg))
                  (when (thread-dead? pch)
                    (semaphore-post stopped))
-                 (loop)])))))
-       (fs-watch pch ctrl pch reader stop-box stopped root-str))]))
+                 (reader-loop)])))))
+       (fs-watch pch pch reader stop-box stopped root-str))]))
 
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-reader watch)))
