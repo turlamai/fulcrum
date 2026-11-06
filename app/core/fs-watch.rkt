@@ -31,7 +31,7 @@
          start-fs-watch!
          stop-fs-watch!)
 
-(struct fs-watch (pch ctrl reader stop-box stopped root))
+(struct fs-watch (pch place-thread reader stop-box stopped root))
 
 (define (fs-watch-supported?)
   (eq? (system-type 'os) 'windows))
