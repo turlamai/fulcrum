@@ -158,8 +158,8 @@
             [(zero? remaining) (fail-check "no watcher event in 3s")]
             [else (sleep 0.05) (wait (sub1 remaining))]))
         (stop-fs-watch! watch)
-        (check-true (thread-dead? (fs-watch-thread watch))
-                    "watch thread must exit on stop")))]))
+        (check-true (thread-dead? (fs-watch-reader watch))
+                    "reader must exit on stop")))]))
 
 (test-case "engine wiring: created files become searchable live (Windows)"
   (unless (fs-watch-supported?)
@@ -231,8 +231,8 @@
            [else (sleep 0.05) (wait-ready (sub1 n))]))
        (define live (engine-file-catalog-live engine))
        (check-true (and live (pair? (first live))))
-       (define threads (map fs-watch-thread (first live)))
+       (define readers (map fs-watch-reader (first live)))
        (engine-stop! engine)
-       (for ([t (in-list threads)])
-         (check-true (thread-dead? t) "watch thread must exit on engine-stop!"))
+       (for ([t (in-list readers)])
+         (check-true (thread-dead? t) "reader must exit on engine-stop!"))
        (check-false (engine-file-catalog-live engine))))))

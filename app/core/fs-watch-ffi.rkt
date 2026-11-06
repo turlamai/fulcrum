@@ -14,7 +14,8 @@
 (provide open-directory-watch!
          read-directory-changes!
          close-directory-watch!
-         watch-handle-open?)
+         watch-handle-open?
+         cancel-directory-watch!)
 
 (define kernel32 (ffi-lib "kernel32.dll"))
 
@@ -73,6 +74,13 @@
 (define CloseHandle
   (get-ffi-obj "CloseHandle" kernel32 (_fun _HANDLE -> _int32)))
 
+;; Cancels the pending synchronous ReadDirectoryChangesW on this handle
+;; from another thread (lpOverlapped = NULL targets every pending I/O on
+;; the handle). The blocked read returns failure with the operation
+;; aborted - this is the documented, deadlock-free way to stop it.
+(define CancelIoEx
+  (get-ffi-obj "CancelIoEx" kernel32 (_fun _HANDLE _pointer -> _int32)))
+
 (define ReadDirectoryChangesW
   (get-ffi-obj
    "ReadDirectoryChangesW" kernel32
@@ -114,6 +122,9 @@
 
 (define (close-directory-watch! handle)
   (not (zero? (CloseHandle handle))))
+
+(define (cancel-directory-watch! handle)
+  (not (zero? (CancelIoEx handle #f))))
 
 ;; UTF-16LE code units from a FILE_NOTIFY_INFORMATION buffer, surrogate
 ;; pairs combined so astral-plane filenames survive.
