@@ -53,7 +53,9 @@
            (if (or (string-suffix? s "\\") (string-suffix? s "/"))
                s
                (string-append s "\\"))))
-       (define-values (pch place-th)
+       ;; dynamic-place returns ONE value: the place descriptor (usable
+       ;; with sync and thread-dead-evt like a thread handle).
+       (define pch
          (dynamic-place fs-watch-place-module 'main))
        (define stopped (make-semaphore 0))
        (define stop-box (box #f))
