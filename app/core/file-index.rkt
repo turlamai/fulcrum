@@ -12,6 +12,7 @@
          racket/file
          racket/list
          racket/path
+         racket/set
          racket/string
          "search-normalize.rkt")
 
@@ -21,6 +22,7 @@
          file-index-search
          file-index-upsert-hits!
          file-index-upsert-scan-hits!
+         file-index-reconcile-directory!
          file-index-finish-scan!
          file-index-remove-paths!
          file-index-rename!)
@@ -228,6 +230,74 @@
           (insert-pinyin-terms! connection insert-pinyin full-path name))))
      #t)))
 
+(define sep-string
+  (if (eq? (system-type 'os) 'windows) "\\" "/"))
+
+(define (file-index-reconcile-directory! path root generation
+                                         dir file-hits child-dirs)
+  (call-with-index
+   path #f
+   (lambda (connection)
+     (define rid (root-id connection root))
+     (define prefix
+       (string-append (path->string (simple-form-path dir))
+                      sep-string))
+     (define prefix-len (string-length prefix))
+     (define fresh-children
+       (for/set ([child (in-list child-dirs)])
+         (path->string (simple-form-path child))))
+     (call-with-transaction
+      connection
+      (lambda ()
+        (define upsert
+          (prepare
+           connection
+           (string-append
+            "INSERT INTO files(path,name,folded_name,root_id,generation) VALUES(?,?,?,?,?) "
+            "ON CONFLICT(path) DO UPDATE SET "
+            "name=excluded.name, folded_name=excluded.folded_name, "
+            "root_id=excluded.root_id, generation=excluded.generation")))
+        (define insert-pinyin
+          (prepare connection
+                   "INSERT OR IGNORE INTO file_pinyin(path,term) VALUES(?,?)"))
+        (for ([hit (in-list file-hits)] #:when (valid-hit? hit))
+          (define full-path (cdr hit))
+          (query-exec connection upsert
+                      full-path (car hit) (fold (car hit)) rid generation)
+          (insert-pinyin-terms! connection insert-pinyin full-path (car hit)))
+        ;; Direct children with indexed rows under this directory.
+        (define indexed-children
+          (for/set ([row (in-query
+                          connection
+                          "SELECT path FROM files WHERE root_id = ? AND substr(path,1,?) = ?"
+                          rid prefix-len prefix)])
+            (define rest (substring row prefix-len))
+            (path->string
+             (simple-form-path
+              (string-append prefix
+                             (car (regexp-split #px"[/\\\\]+" rest)))))))
+        ;; A child that is neither a fresh file entry nor an existing
+        ;; directory has vanished: remove its exact row (vanished file)
+        ;; and its whole indexed subtree (vanished directory).
+        (define stale
+          (for/set ([child (in-set indexed-children)]
+                    #:unless (or (set-member? fresh-children child)
+                                 (file-exists? child)
+                                 (directory-exists? child)))
+            child))
+        (for ([child (in-set stale)])
+          (define child-prefix
+            (string-append (path->string (simple-form-path child))
+                           sep-string))
+          (define child-prefix-len (string-length child-prefix))
+          (for ([row (in-query
+                      connection
+                      "SELECT path FROM files WHERE root_id = ? AND substr(path,1,?) = ?"
+                      rid child-prefix-len child-prefix)])
+             (query-exec connection "DELETE FROM files WHERE path = ?" row))
+           (query-exec connection "DELETE FROM files WHERE root_id = ? AND path = ?"
+                       rid (path->string (simple-form-path child))))
+     #t)))))
 (define (file-index-finish-scan! path root generation)
   (call-with-index
    path #f
