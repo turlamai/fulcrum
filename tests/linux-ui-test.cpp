@@ -131,6 +131,20 @@ int main() {
   auto& launcher = Launcher::instance();
   // The test executable has no adjacent runtime: startup stops before boot.
   check(launcher.api == nullptr, "UI fixture does not start the backend");
+  check(GTK_IS_ENTRY(launcher.search) && launcher.search_icon != nullptr &&
+            GTK_IS_IMAGE(launcher.search_icon),
+        "search exposes a native editable entry and centered symbolic image");
+  launcher.set_status(tr("ready"));
+  check(!gtk_widget_get_visible(GTK_WIDGET(launcher.status)),
+        "routine ready hint occupies no search row");
+  launcher.set_status("Failed to register hotkey: change desktop bindings");
+  check(gtk_widget_get_visible(GTK_WIDGET(launcher.status)) &&
+            has_label(GTK_WIDGET(launcher.status),
+                      "Failed to register hotkey: change desktop bindings"),
+        "actionable hotkey diagnostics remain visible and selectable");
+  launcher.set_ready_status();
+  check(!gtk_widget_get_visible(GTK_WIDGET(launcher.status)),
+        "routine ready status hides again once error is cleared");
   // Do not map the empty GTK shell during interactive startup. The first
   // backend search completion (including a failure) releases this gate.
   launcher.hide();
@@ -317,7 +331,7 @@ int main() {
   gtk_list_box_select_row(launcher.results,
                          gtk_list_box_get_row_at_index(launcher.results, 11));
   set_i18n_language("zh");
-  check(std::string(gtk_search_entry_get_placeholder_text(launcher.search)).find(
+  check(std::string(gtk_entry_get_placeholder_text(launcher.search)).find(
             "搜索") != std::string::npos,
         "language changes update the existing search field immediately");
   check(gtk_list_box_row_get_index(gtk_list_box_get_selected_row(launcher.results)) == 11,
