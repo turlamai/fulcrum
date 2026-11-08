@@ -61,7 +61,7 @@
   #:transparent)
 
 (struct engine
-  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread)
+  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop)
   #:mutable)
 
 ;; Prepared application rows: the fuzzy fields are immutable per rebuild,
@@ -681,15 +681,14 @@
            (thread
             (lambda ()
               (file-catalog-wait worker 300)
-              ;; A cancel posted while we waited means the engine is
-              ;; stopping: skip arming (and the armed reconcile) so no
-              ;; index connection outlives engine-stop!.
-              (define cancelled?
-                (not (eq? (sync/timeout 0 (file-catalog-worker-cancel worker))
-                          #f)))
+              ;; The worker posts the cancel semaphore on normal
+              ;; completion too, so the arm stop is a dedicated box:
+              ;; engine-stop! sets it, and arming (which opens the
+              ;; index DB) is skipped after a stop.
+              (define stopped? (unbox (engine-catalog-arm-stop engine)))
               (define state
                 (file-catalog-status-state (engine-file-catalog-status engine)))
-              (when (and (not cancelled?)
+              (when (and (not stopped?)
                          (memq state '(ready partial)))
                 (engine-start-live-watcher! engine worker)))))
          (set-engine-catalog-arm-thread! engine arm-thread))))))
@@ -713,6 +712,10 @@
   (when worker (stop-file-catalog! worker))
   (define arm (engine-catalog-arm-thread engine))
   (when (and arm (not (thread-dead? arm)))
+    ;; Signal first: the arm thread skips arming after a stop, so it
+    ;; cannot open the index DB past this point.
+    (when (engine-catalog-arm-stop engine)
+      (set-box! (engine-catalog-arm-stop engine) #t))
     (sync/timeout 2 (thread-dead-evt arm))
     (when (not (thread-dead? arm)) (kill-thread arm)))
   (engine-stop-live-watcher! engine)
@@ -1030,7 +1033,8 @@
           (make-semaphore 1)
           file-catalog-nudge
           #f
-          #f))
+          #f
+          (box #f)))
 
 (define (engine-rebuild-index! engine)
   (define apps (discover-applications))
