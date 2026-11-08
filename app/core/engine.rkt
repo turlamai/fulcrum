@@ -29,6 +29,7 @@
          "file-catalog.rkt"
          "files.rkt"
          "fs-watch.rkt"
+         "long-path.rkt"
          "fuzzy.rkt"
          "gallery.rkt"
          "paths.rkt"
@@ -567,8 +568,13 @@
   (define pending (make-hash)) ; dir-string -> #t
   (define flush-sem (make-semaphore 0))
   (define stop-box (box #f))
+  ;; Long-name roots: the watcher's event paths, the reconcile prefixes
+  ;; and the scan's rows must all share one path form, or searches and
+  ;; prunes miss (8.3 short names like RUNNER~1 on CI).
+  (define long-roots
+    (map long-path (engine-file-catalog-roots engine)))
   (define watchers
-    (for/list ([root (in-list (engine-file-catalog-roots engine))])
+    (for/list ([root (in-list long-roots)])
       (start-fs-watch! root
                        (lambda (changed-paths)
                          (for ([p (in-list changed-paths)])
@@ -586,7 +592,8 @@
      ;; Arm-reconcile: changes made between the scan's completion and
      ;; the watcher's first pending read are invisible to the watcher —
      ;; reconcile every root once so the armed watcher starts from the
-     ;; current disk state (closes the ready→armed race).
+     ;; current disk state (closes the ready→armed race). Roots here
+     ;; are the long-name-normalized forms (see the worker startup).
      (for ([root (in-list (engine-file-catalog-roots engine))])
        (with-handlers ([exn:fail? (lambda (_) (void))])
          (reconcile-directory-in-catalog! worker root)))

@@ -12,7 +12,8 @@
          racket/list
          racket/path
          racket/string
-         "file-index.rkt")
+         "file-index.rkt"
+         "long-path.rkt")
 
 (provide (struct-out file-catalog-status)
          (struct-out file-catalog-worker)
@@ -246,7 +247,7 @@
     (remove-duplicates
      (for/list ([root (in-list roots)]
                 #:when (existing-directory root))
-       (simple-form-path root))
+       (long-path (simple-form-path root)))
      string=? #:key path->string))
   (define cancel (make-semaphore 0))
   ;; Throttle search-revision notifications on large directory trees; always
