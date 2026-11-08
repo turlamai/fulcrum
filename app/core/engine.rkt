@@ -625,11 +625,18 @@
      (engine-file-catalog-lock engine)
      (lambda ()
        (unless (engine-file-catalog-worker engine)
-         (set-engine-file-catalog-worker!
-          engine
-          (start-file-catalog! (engine-file-index-path engine)
-                               (engine-file-catalog-roots engine)
-                               #:on-progress (engine-file-catalog-nudge engine))))))))
+         (define worker
+           (start-file-catalog! (engine-file-index-path engine)
+                                (engine-file-catalog-roots engine)
+                                #:on-progress (engine-file-catalog-nudge engine)))
+         (set-engine-file-catalog-worker! engine worker)
+         (thread
+          (lambda ()
+            (file-catalog-wait worker 300)
+            (define state
+              (file-catalog-status-state (engine-file-catalog-status engine)))
+            (when (memq state '(ready partial))
+              (engine-start-live-watcher! engine worker)))))))))
 
 (define (engine-file-catalog-status engine)
   (define worker (engine-file-catalog-worker engine))
