@@ -21,7 +21,11 @@
 ;; side sends (list root marker-path) once at startup. The place
 ;; descriptor is synchronized directly (its sync result is the received
 ;; message); wrapping the channel in handle-evt loses messages, so it
-;; is never done here.
+;; is never done here. On stop! the relay does NOT wait for the place:
+;; the place's runtime teardown can outlast any reasonable join, so the
+;; relay watches a stop-box and exits on its own, while stop! joins the
+;; place bounded (all the caller needs from it is the released
+;; directory handle).
 ;;
 ;; Stop semantics: stop is a FILE, not a message — post-startup
 ;; inbound place-channel delivery proved unobservable for seconds on
@@ -44,7 +48,7 @@
          start-fs-watch!
          stop-fs-watch!)
 
-(struct fs-watch (thread stopped root place))
+(struct fs-watch (thread stop-box stopped root place))
 
 (define (fs-watch-supported?)
   (eq? (system-type 'os) 'windows))
@@ -86,20 +90,25 @@
         (with-handlers ([exn:fail? (lambda (_) (void))])
           (place-channel-put place (list root-str marker-path)))
         (define stopped (make-semaphore 0))
+        (define stop-box (box #f))
         (define ready (box #f)) ; 'ready | 'open-failed, set by the relay
         (define relay
           (thread
            (lambda ()
              (let loop ()
                ;; The place descriptor doubles as a receive event whose
-               ;; sync result is the message; the dead event fires when
-               ;; the place exits (buffered messages still drain first).
+               ;; sync result is the message; #f = the half-second tick,
+               ;; which re-checks the stop-box below (the place's own
+               ;; teardown can lag its handle release by a lot).
                (define msg
-                 (sync place
-                       (handle-evt (place-dead-evt place)
-                                   (lambda (_) 'dead))))
+                 (sync/timeout 0.5
+                   place
+                   (handle-evt (place-dead-evt place)
+                               (lambda (_) 'dead))))
                (cond
+                 [(unbox stop-box) (void)]
                  [(eq? msg 'dead) (void)]
+                 [(eq? msg #f) (loop)]
                  ;; 'ready keeps the relay alive: every later event batch
                  ;; flows through this same loop.
                  [(eq? msg 'ready) (set-box! ready 'ready) (loop)]
@@ -115,7 +124,7 @@
                     (on-events msg))
                   (loop)]))
              (semaphore-post stopped))))
-        (define watch (fs-watch relay stopped root-str place))
+        (define watch (fs-watch relay stop-box stopped root-str place))
         ;; Bounded readiness: place boot is sub-second, but never hang
         ;; the caller — a timeout degrades to the no-watcher path.
         (let wait ([remaining 100]) ; 100 × 100 ms = 10 s
@@ -129,17 +138,23 @@
 
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-thread watch)))
-    ;; Create the marker: its change wakes the blocked read, and the
-    ;; place's own existence check turns the wake into a stop. If the
-    ;; wake fails (root vanished) the place exits at the next real
-    ;; change or process exit; the join below never blocks forever.
+    ;; The relay exits within its next half-second tick; every watcher
+    ;; thread contract (thread-dead? after stop) holds regardless of how
+    ;; long the place's teardown takes.
+    (set-box! (fs-watch-stop-box watch) #t)
+    ;; The marker's change wakes the blocked read; the place stats it,
+    ;; closes its own handle and exits. If the wake fails (root
+    ;; vanished) the place exits at the next real change or process
+    ;; exit; the join below never blocks forever.
     (define marker (stop-marker-path (fs-watch-root watch)))
     (with-handlers ([exn:fail? (lambda (_) (void))])
       (with-output-to-file marker #:exists 'truncate void))
-    ;; Bounded join, then clean the artifact up (only meaningful once
-    ;; the place released the directory, but harmless otherwise — the
-    ;; next start clears stale markers anyway).
-    (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch)))
+    ;; Join the place bounded: the caller needs the directory handle
+    ;; released (temp trees must be deletable after stop), nothing more.
+    (sync/timeout 10 (place-dead-evt (fs-watch-place watch)))
+    ;; Clean the artifact up (only meaningful once the place released
+    ;; the directory; harmless otherwise — the next start clears stale
+    ;; markers anyway).
     (with-handlers ([exn:fail? (lambda (_) (void))])
       (when (file-exists? marker) (delete-file marker))))
   (void))
