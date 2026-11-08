@@ -566,6 +566,14 @@
 
 (define (engine-start-live-watcher! engine worker)
   (define pending (make-hash)) ; dir-string -> #t
+  ;; Dirs to re-reconcile once more after a delay (see the flusher): a
+  ;; Windows delete notification fires while the file may still sit in
+  ;; delete-pending state (another process — antivirus, an indexer —
+  ;; holds a handle), so the immediate reconcile sees it still listed
+  ;; and cannot prune; when the handle finally releases the file
+  ;; vanishes WITHOUT a second notification, and only this deferred
+  ;; re-check catches the vanish.
+  (define recheck (make-hash)) ; dir-string -> due-ms
   (define flush-sem (make-semaphore 0))
   (define stop-box (box #f))
   ;; Long-name roots: the watcher's event paths, the reconcile prefixes
@@ -600,29 +608,50 @@
      (define flusher
        (thread
         (lambda ()
+          (define (reconcile! d)
+            (with-handlers ([exn:fail? (lambda (_) (void))])
+              (reconcile-directory-in-catalog! worker d)))
           (let loop ()
             (sync/timeout 0.4 flush-sem)
             (cond
               [(unbox stop-box) (void)]
               [else
+               ;; Due deferred re-checks first (delete-pending window,
+               ;; see `recheck` above).
+               (define now (current-inexact-milliseconds))
+               (define due
+                 (for/list ([(d due-ms) (in-hash recheck)]
+                            #:when (<= due-ms now))
+                   d))
+               (for ([d (in-list due)])
+                 (hash-remove! recheck d)
+                 (reconcile! d))
+               (when (and (pair? due)
+                          (engine-file-catalog-nudge engine))
+                 ((engine-file-catalog-nudge engine)))
+               ;; Then the fresh batch.
                (define dirs
                  (for/list ([(d _) (in-hash pending)]) d))
                (hash-clear! pending)
                (for ([d (in-list dirs)])
-                 (with-handlers ([exn:fail? (lambda (_) (void))])
-                   (reconcile-directory-in-catalog! worker d)))
+                 (reconcile! d)
+                 ;; Schedule the delete-pending re-check.
+                 (hash-set! recheck
+                            d
+                            (+ (current-inexact-milliseconds) 2000)))
                (when (and (pair? dirs)
                           (engine-file-catalog-nudge engine))
                  ((engine-file-catalog-nudge engine)))
                (loop)])))))
      (set-engine-file-catalog-live!
       engine
-      (list watchers pending flush-sem stop-box flusher))]))
+      (list watchers pending recheck flush-sem stop-box flusher))]))
 
 (define (engine-stop-live-watcher! engine)
   (define live (engine-file-catalog-live engine))
   (when live
-    (match-let ([(list watchers pending flush-sem stop-box flusher) live])
+    (match-let ([(list watchers pending recheck flush-sem stop-box flusher)
+                 live])
       (set-box! stop-box #t)
       (for ([w (in-list watchers)])
         (stop-fs-watch! w))
