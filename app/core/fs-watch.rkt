@@ -114,10 +114,15 @@
 ;; close the handle (its only user — a cross-thread CloseHandle over a
 ;; pending read deadlocks; CancelIoEx is the safe stop lever) and post.
 (define (watch-thread-body! f handle event ov root-str stop-box
-                            stopped on-events on-overflow)
+                            stopped armed on-events on-overflow)
   (define buffer (make-bytes 65536))
-  (let loop ((pending? ((hash-ref f 'issue) handle buffer
-                        (bytes-length buffer) event ov)))
+  ;; Arm only once the first read is pending: the caller's first change
+  ;; must land on a listening read, never in the gap between handle
+  ;; open and first issue.
+  (define first-issue
+    ((hash-ref f 'issue) handle buffer (bytes-length buffer) event ov))
+  (semaphore-post armed)
+  (let loop ((pending? first-issue))
     (define-values (verdict now-pending?)
       (watch-poll! f handle event ov buffer root-str stop-box pending?
                    on-events on-overflow))
@@ -153,12 +158,21 @@
              (else
               (define stop-box (box #f))
               (define stopped (make-semaphore 0))
+              (define armed (make-semaphore 0))
               (define watch-thread
                 (thread
                  (lambda ()
                    (watch-thread-body! f handle event ov root-str stop-box
-                                       stopped on-events on-overflow))))
-              (fs-watch watch-thread stop-box stopped handle root-str))))))))))
+                                       stopped armed on-events on-overflow))))
+              ;; Arm-before-return: a change made after start! returns
+              ;; must land on a listening read. Bounded; a timeout
+              ;; degrades to the no-watcher path.
+              (if (sync/timeout 5 armed)
+                  (fs-watch watch-thread stop-box stopped handle root-str)
+                  (begin
+                    (stop-fs-watch! (fs-watch watch-thread stop-box stopped
+                                              handle root-str))
+                    #f)))))))))))
 
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-thread watch)))
