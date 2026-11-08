@@ -18,17 +18,21 @@
 ;;
 ;; Message protocol (see fs-watch-place.rkt): the place reports 'ready,
 ;; then lists of changed paths / 'overflow / 'open-failed; the main
-;; side sends the root and 'stop. The place descriptor is synchronized
-;; directly (its sync result is the received message); wrapping the
-;; channel in handle-evt loses messages, so it is never done here.
+;; side sends (list root marker-path) once at startup. The place
+;; descriptor is synchronized directly (its sync result is the received
+;; message); wrapping the channel in handle-evt loses messages, so it
+;; is never done here.
 ;;
-;; Stop semantics: Windows does not reliably cancel a pending
-;; synchronous read — CloseHandle from another thread while a read is
-;; pending deadlocks. The place owns its handle exclusively: stop!
-;; sends 'stop, then creates and deletes a tiny marker file inside the
-;; watched root to wake the blocked read; the place sees the stop order
-;; first, closes its own handle, and exits. Overlapped I/O would remove
-;; the wake-marker dance and is the documented follow-up refinement.
+;; Stop semantics: stop is a FILE, not a message — post-startup
+;; inbound place-channel delivery proved unobservable for seconds on
+;; the Windows CI/VM class of machines, so the agreed marker file
+;; carries the order instead. stop! creates the marker; its change
+;; wakes the blocked read; the place stats the marker (existence = the
+;; stop order) and closes its own handle — Windows does not reliably
+;; cancel a pending synchronous read, and a CloseHandle from another
+;; thread while a read is pending deadlocks, so the stopper never
+;; touches the handle. Overlapped I/O would remove the marker dance
+;; and is the documented follow-up refinement.
 
 (require racket/contract
          racket/place
@@ -65,16 +69,22 @@
          (if (or (string-suffix? s "\\") (string-suffix? s "/"))
              s
              (string-append s "\\"))))
+     ;; A marker left over by a watcher that died before its cleanup
+     ;; would order the fresh place to stop immediately — clear it.
+     (define marker-path (stop-marker-path root-str))
+     (with-handlers ([exn:fail? (lambda (_) (void))])
+       (when (file-exists? marker-path) (delete-file marker-path)))
      (define place
        (with-handlers ([exn:fail? (lambda (_) #f)])
          (dynamic-place place-module 'start-fs-watcher)))
      (cond
        [(not place) #f]
        [else
-        ;; Hand the place its watch target first: its entry point blocks
-        ;; on the root before anything else.
+        ;; Startup spec is the only inbound message the place ever
+        ;; expects: its watch target and the marker path that will
+        ;; carry the stop order.
         (with-handlers ([exn:fail? (lambda (_) (void))])
-          (place-channel-put place root-str))
+          (place-channel-put place (list root-str marker-path)))
         (define stopped (make-semaphore 0))
         (define ready (box #f)) ; 'ready | 'open-failed, set by the relay
         (define relay
@@ -119,31 +129,17 @@
 
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-thread watch)))
-    (define place (fs-watch-place watch))
-    ;; Nudge = order the stop, then wake the blocked read with a marker
-    ;; change under the watched root. Cross-place message delivery can
-    ;; lag the poll that checks for it (measured in seconds on the CI/VM
-    ;; class of machines), so a single nudge can miss: each retry re-arms
-    ;; the channel and re-wakes the read until the place's between-reads
-    ;; poll actually sees the order. A cross-thread CloseHandle over a
-    ;; pending synchronous read would deadlock, so the stopper never
-    ;; touches the handle — the place always closes its own.
-    (define (nudge!)
-      (with-handlers ([exn:fail? (lambda (_) (void))])
-        (place-channel-put place 'stop))
-      (with-handlers ([exn:fail? (lambda (_) (void))])
-        (define marker (stop-marker-path (fs-watch-root watch)))
-        (with-output-to-file marker #:exists 'truncate void)
-        (with-handlers ([exn:fail? (lambda (_) (void))])
-          (delete-file marker))))
-    ;; Bounded join: the common case exits within the first second or
-    ;; two; if the wake keeps failing (root vanished), the place exits
-    ;; at the next real change or process exit without ever blocking
-    ;; this caller forever.
-    (let retry ([nudges 5])
-      (nudge!)
-      (cond
-        [(sync/timeout 1 (thread-dead-evt (fs-watch-thread watch))) (void)]
-        [(<= nudges 1) (void)]
-        [else (retry (sub1 nudges))])))
+    ;; Create the marker: its change wakes the blocked read, and the
+    ;; place's own existence check turns the wake into a stop. If the
+    ;; wake fails (root vanished) the place exits at the next real
+    ;; change or process exit; the join below never blocks forever.
+    (define marker (stop-marker-path (fs-watch-root watch)))
+    (with-handlers ([exn:fail? (lambda (_) (void))])
+      (with-output-to-file marker #:exists 'truncate void))
+    ;; Bounded join, then clean the artifact up (only meaningful once
+    ;; the place released the directory, but harmless otherwise — the
+    ;; next start clears stale markers anyway).
+    (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch)))
+    (with-handlers ([exn:fail? (lambda (_) (void))])
+      (when (file-exists? marker) (delete-file marker))))
   (void))

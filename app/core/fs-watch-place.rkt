@@ -13,36 +13,38 @@
 ;; `start-fs-watcher` receives the peer channel of the place descriptor.
 ;;
 ;; Protocol (over `ch`):
-;;   main -> place: the root string to watch, then 'stop at any time
+;;   main -> place: (list root-string marker-path) once, at startup —
+;;                  the only inbound message; post-startup inbound
+;;                  delivery proved unreliable on Windows, so nothing
+;;                  else is ever sent
 ;;   place -> main: 'ready once the handle is open, then lists of
 ;;                  changed path strings, or 'overflow, or 'open-failed
 ;;
-;; Stop: the main side sends 'stop and drops a marker file inside the
-;; watched root (fs-watch.rkt's stop-marker-path). The marker's change
-;; wakes the blocked read; the loop then sees the stop order, closes its
-;; own handle — it is the handle's only user, so the stopper never
-;; touches a handle that is inside a pending synchronous read — and
-;; exits. If the root vanished, the wake fails and the place exits at
-;; the next real change (or process exit); the main side joins bounded.
+;; Stop is a FILE, not a message: the main side creates the marker
+;; file at the agreed path. Its change wakes the blocked read, and the
+;; loop then stats the marker — its existence is the stop order. The
+;; place closes its own handle — it is the handle's only user, so the
+;; stopper never touches a handle that is inside a pending synchronous
+;; read — and exits. If the wake failed (root vanished), the place
+;; exits at the next real change (or process exit); the main side
+;; joins bounded and cleans the marker up.
 
 (require racket/place
          racket/string
          "fs-watch-ffi.rkt")
 
-;; The dispatcher's stop-marker-path writes root + ".fulcrum-stop-" +
-;; base-36 milliseconds; these wakeup artifacts are ours, not user
-;; activity, and are filtered out of the event stream so they never
-;; reach the coalescer. Keep this in sync with fs-watch.rkt.
+;; Marker paths carry ".fulcrum-stop-"; these wakeup artifacts are
+;; ours, not user activity, and are filtered out of the event stream so
+;; they never reach the coalescer. Keep this in sync with fs-watch.rkt.
 (define (stop-marker? path)
   (string-contains? path ".fulcrum-stop-"))
 
 (provide start-fs-watcher)
 
 (define (start-fs-watcher ch)
-  (define root (place-channel-get ch))
-  ;; A 'stop racing in before the root means the watcher was never
-  ;; really armed: nothing to watch, nothing to clean up.
-  (when (eq? root 'stop) (exit 0))
+  (define spec (place-channel-get ch))
+  (define root (list-ref spec 0))
+  (define marker-path (list-ref spec 1))
   (define handle (open-directory-watch! root))
   (cond
     [(not handle)
@@ -51,25 +53,23 @@
     [else
      (place-channel-put ch 'ready)
      (let loop ([buffer (make-bytes 65536)])
+       (define result
+         (read-directory-changes! handle buffer
+                                  (bytes-length buffer) root))
        (cond
-         ;; Stop is polled between reads; the marker wake guarantees the
-         ;; blocked read returns, so the poll is always reached.
-         [(equal? 'stop (sync/timeout 0 ch))
+         ;; The read failed (handle invalid): nothing left to watch.
+         [(not result) (void)]
+         ;; The marker's change woke this read; its existence is the
+         ;; stop order. Close the handle we exclusively own and exit.
+         [(file-exists? marker-path)
           (with-handlers ([exn:fail? (lambda (_) (void))])
             (close-directory-watch! handle))]
+         [(eq? result 'overflow)
+          (place-channel-put ch 'overflow)
+          (loop buffer)]
          [else
-          (define result
-            (read-directory-changes! handle buffer
-                                     (bytes-length buffer) root))
-          (cond
-            ;; The read failed (handle invalid): nothing left to watch.
-            [(not result) (void)]
-            [(eq? result 'overflow)
-             (place-channel-put ch 'overflow)
-             (loop buffer)]
-            [else
-             (define paths
-               (filter (lambda (p) (not (stop-marker? p))) result))
-             (place-channel-put ch paths)
-             (loop buffer)])]))])
+          (define paths
+            (filter (lambda (p) (not (stop-marker? p))) result))
+          (place-channel-put ch paths)
+          (loop buffer)]))])
   (exit 0))
