@@ -32,6 +32,17 @@ jobs:
           architecture: x64
           distribution: full
           variant: CS
+      - name: Exclude the temp dir from Defender (acceptance churn)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # The packaged acceptance drives rapid file create/delete/
+          # reconcile cycles through the app; Defender's real-time scan
+          # makes those nondeterministic on hosted runners.
+          Add-MpPreference -ExclusionPath $env:RUNNER_TEMP -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionProcess "racket.exe" -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionProcess "RivetHost.exe" -ErrorAction SilentlyContinue
+
       - name: Export trusted Mozilla CA roots for Windows Racket
         if: runner.os == 'Windows'
         shell: pwsh
