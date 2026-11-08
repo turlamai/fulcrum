@@ -206,7 +206,11 @@
          (cond
            [(not (memf (lambda (row) (string-contains? (cadr row) "live-search.txt"))
                        rows)) (check-true #t)]
-           [(zero? n) (fail-check "deletion visibility exceeded the test budget")]
+           [(zero? n)
+            (fail-check
+             (format "deletion visibility exceeded the test budget; nudges=~a rows=~s"
+                     (unbox nudges)
+                     (engine-search engine "find live-search")))
            [else (sleep 0.05) (wait-gone (sub1 n))]))
        (engine-stop! engine)))))
 
