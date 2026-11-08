@@ -52,12 +52,12 @@
 (define-runtime-path place-module "fs-watch-place.rkt")
 
 ;; The marker file lives inside the watched root: subtree watching makes
-;; any change under root wake the blocked read. Milliseconds in base 36
+;; any change under root wake the blocked read. Milliseconds in base 16
 ;; keep concurrent watchers from clobbering each other's markers. The
 ;; place filters these paths out of the event stream (fs-watch-place.rkt).
 (define (stop-marker-path root-str)
   (string-append root-str ".fulcrum-stop-"
-                 (number->string (current-milliseconds) 36)))
+                 (number->string (current-milliseconds) 16)))
 
 (define (start-fs-watch! root on-events on-overflow)
   (cond
