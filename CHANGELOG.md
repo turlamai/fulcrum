@@ -10,21 +10,6 @@ independently per platform packaging run.
 
 - **Live file watching on Windows.** The local catalog now observes the
   filesystem continuously instead of scanning once per process: after the
-  first scan completes, one ReadDirectoryChangesW watcher per scanned
-  root (running in a dedicated place) feeds changed paths into a 400 ms
-  coalescer, and each changed directory is re-listed and reconciled into
-  the persistent index — creates, renames and deletes become visible in
-  open queries without retyping. The watcher runs in a dedicated place
-  because a blocking ReadDirectoryChangesW call would otherwise tie up
-  the main scheduler's OS thread. Stop uses CancelIoEx + a marker-file
-  wake (the stopper never touches a handle inside a pending synchronous
-  read — that deadlocks). On platforms without a watcher implementation
-  behavior is unchanged.
-
-### Added
-
-- **Live file watching on Windows.** The local catalog now observes the
-  filesystem continuously instead of scanning once per process: after the
   first scan completes, one `ReadDirectoryChangesW` watcher per scanned
   root feeds changed paths into a 400 ms coalescer, and each changed
   directory is re-listed and reconciled into the persistent index —
@@ -37,6 +22,20 @@ independently per platform packaging run.
   finish-scan cannot prune freshly reconciled rows. On platforms without
   a watcher implementation behavior is unchanged; kernel-buffer overflow
   is handled as an honest gap healed by the next full scan.
+
+### Fixed
+
+- **Windows: the watcher could freeze the whole process.** The blocking
+  synchronous `ReadDirectoryChangesW` call was issued from a plain
+  thread inside the main place — a place multiplexes all of its Racket
+  threads on one OS thread, so the first pending read stalled the
+  entire scheduler (backend tests hung for the full six-hour CI timeout
+  and the packaged backend froze at startup; issue #190). The watcher
+  now runs in the dedicated place it was always specified to use: the
+  kernel32 surface is loaded only inside that place, a relay thread in
+  the main place forwards events to the caller's callbacks, and stop
+  keeps the marker-file wake (the stopper never touches a handle inside
+  a pending synchronous read — that deadlocks).
 
 ## [0.15.2] - 2026-11-05
 

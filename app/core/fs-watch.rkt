@@ -1,22 +1,37 @@
 #lang racket/base
 
 ;; Live filesystem watching (issue #99 slice 1: Windows). The dispatcher
-;; keeps every Racket-level consumer platform-safe: the kernel32 FFI
-;; module is dynamic-required only on Windows (and a failed load degrades
-;; to the no-op path), and on other platforms the watch API returns #f —
-;; the catalog's once-per-process scan plus the OS providers remain the
-;; only sources there, exactly as before this module existed.
+;; keeps every Racket-level consumer platform-safe: on other platforms
+;; the watch API returns #f — the catalog's once-per-process scan plus
+;; the OS providers remain the only sources there, exactly as before
+;; this module existed.
 ;;
-;; Stop semantics: ReadDirectoryChangesW runs blocking-synchronous, and
-;; Windows does not reliably cancel it — CloseHandle from another thread
-;; while a read is pending deadlocks. The watch thread therefore owns
-;; its handle exclusively: stop! sets a flag, then creates and deletes a
-;; tiny marker file inside the watched root to wake the blocked read;
-;; the thread sees the flag first, closes its own handle (safe — it is
-;; the only user), and exits. Overlapped I/O would remove the
-;; wake-marker dance and is the documented follow-up refinement.
+;; Architecture: ReadDirectoryChangesW is bound blocking-synchronous
+;; (no overlapped I/O), and a Racket place multiplexes all of its
+;; threads on a single OS thread — a blocking foreign call inside the
+;; main place would stall the whole scheduler (the process-wide hang
+;; behind issue #190). The watch therefore runs in a dedicated place
+;; (fs-watch-place.rkt's exported entry point) and a relay thread in
+;; the main place forwards its messages to the caller's callbacks. The
+;; kernel32 FFI surface is only ever loaded inside that place; this
+;; module never touches it.
+;;
+;; Message protocol (see fs-watch-place.rkt): the place reports 'ready,
+;; then lists of changed paths / 'overflow / 'open-failed; the main
+;; side sends the root and 'stop. The place descriptor is synchronized
+;; directly (its sync result is the received message); wrapping the
+;; channel in handle-evt loses messages, so it is never done here.
+;;
+;; Stop semantics: Windows does not reliably cancel a pending
+;; synchronous read — CloseHandle from another thread while a read is
+;; pending deadlocks. The place owns its handle exclusively: stop!
+;; sends 'stop, then creates and deletes a tiny marker file inside the
+;; watched root to wake the blocked read; the place sees the stop order
+;; first, closes its own handle, and exits. Overlapped I/O would remove
+;; the wake-marker dance and is the documented follow-up refinement.
 
 (require racket/contract
+         racket/place
          racket/runtime-path
          racket/string)
 
@@ -25,33 +40,17 @@
          start-fs-watch!
          stop-fs-watch!)
 
-(struct fs-watch (thread stop-box stopped root))
+(struct fs-watch (thread stopped root place))
 
 (define (fs-watch-supported?)
   (eq? (system-type 'os) 'windows))
 
-;; FFI bindings load lazily and exactly once; a load failure (non-Windows
-;; host, stripped runtime) leaves this #f and every entry point no-ops.
-(define ffi (box #f))
-
-(define-runtime-path ffi-module "fs-watch-ffi.rkt")
-
-(define (load-ffi!)
-  (when (not (unbox ffi))
-    (define loaded
-      (with-handlers ([exn:fail? (lambda (_) #f)])
-        (dynamic-require ffi-module #f)
-        (define (get name)
-          (dynamic-require ffi-module name))
-        (hash 'open (get 'open-directory-watch!)
-              'read (get 'read-directory-changes!)
-              'close (get 'close-directory-watch!)
-              'open? (get 'watch-handle-open?))))
-    (set-box! ffi loaded)))
+(define-runtime-path place-module "fs-watch-place.rkt")
 
 ;; The marker file lives inside the watched root: subtree watching makes
-;; any change under root wake the blocked read. Milliseconds + a random
-;; suffix keep concurrent watchers from clobbering each other's markers.
+;; any change under root wake the blocked read. Milliseconds in base 36
+;; keep concurrent watchers from clobbering each other's markers. The
+;; place filters these paths out of the event stream (fs-watch-place.rkt).
 (define (stop-marker-path root-str)
   (string-append root-str ".fulcrum-stop-"
                  (number->string (current-milliseconds) 36)))
@@ -60,59 +59,67 @@
   (cond
     [(not (fs-watch-supported?)) #f]
     [else
-     (load-ffi!)
-     (define f (unbox ffi))
+     (define root-str
+       (let ([s (path->string (if (string? root) (string->path root) root))])
+         ;; ReadDirectoryChangesW wants the trailing separator.
+         (if (or (string-suffix? s "\\") (string-suffix? s "/"))
+             s
+             (string-append s "\\"))))
+     (define place
+       (with-handlers ([exn:fail? (lambda (_) #f)])
+         (dynamic-place place-module 'start-fs-watcher)))
      (cond
-       [(not f) #f]
+       [(not place) #f]
        [else
-        (define root-str
-          (let ([s (path->string (if (string? root) (string->path root) root))])
-            ;; ReadDirectoryChangesW wants the trailing separator.
-            (if (or (string-suffix? s "\\") (string-suffix? s "/"))
-                s
-                (string-append s "\\"))))
-        (define handle ((hash-ref f 'open) root-str))
-        (cond
-          [(not (and handle ((hash-ref f 'open?) handle))) #f]
-          [else
-           (define stop-box (box #f))
-           (define stopped (make-semaphore 0))
-           (define watch-thread
-             (thread
-              (lambda ()
-                ;; The thread owns the handle: it closes it on every exit
-                ;; path, so the stopper never touches a handle that is in
-                ;; a pending synchronous read.
-                (let loop ()
-                  (cond
-                    [(unbox stop-box) (void)]
-                    [else
-                     (define result
-                       ((hash-ref f 'read) handle
-                        (make-bytes 65536) 65536 root-str))
-                     (cond
-                       [(not result) (void)]
-                       [(eq? result 'overflow)
-                        (with-handlers ([exn:fail? (lambda (_) (void))])
-                          (on-overflow root-str))
-                        (loop)]
-                       [else
-                        (with-handlers ([exn:fail? (lambda (_) (void))])
-                          (on-events result))
-                        (loop)])]))
-                ;; The thread owns the handle: close it here (its only
-                ;; user), never from the stopper - a cross-thread
-                ;; CloseHandle over a pending synchronous read deadlocks.
-                (with-handlers ([exn:fail? (lambda (_) (void))])
-                  ((hash-ref f 'close) handle))
-                (semaphore-post stopped))))
-           (fs-watch watch-thread stop-box stopped root-str)])])]))
+        (define stopped (make-semaphore 0))
+        (define ready (box #f)) ; 'ready | 'open-failed, set by the relay
+        (define relay
+          (thread
+           (lambda ()
+             (let loop ()
+               ;; The place descriptor doubles as a receive event whose
+               ;; sync result is the message; the dead event fires when
+               ;; the place exits (buffered messages still drain first).
+               (define msg
+                 (sync place
+                       (handle-evt (place-dead-evt place)
+                                   (lambda (_) 'dead))))
+               (cond
+                 [(eq? msg 'dead) (void)]
+                 [(eq? msg 'ready) (set-box! ready 'ready)]
+                 [(eq? msg 'open-failed) (set-box! ready 'open-failed)]
+                 [(eq? msg 'overflow)
+                  (with-handlers ([exn:fail? (lambda (_) (void))])
+                    (on-overflow root-str))
+                  (loop)]
+                 ;; A list of changed paths (possibly empty after marker
+                 ;; filtering): deliver and keep watching.
+                 [else
+                  (with-handlers ([exn:fail? (lambda (_) (void))])
+                    (on-events msg))
+                  (loop)]))
+             (semaphore-post stopped))))
+        (define watch (fs-watch relay stopped root-str place))
+        ;; Bounded readiness: place boot is sub-second, but never hang
+        ;; the caller — a timeout degrades to the no-watcher path.
+        (let wait ([remaining 100]) ; 100 × 100 ms = 10 s
+          (define state (unbox ready))
+          (cond
+            [(eq? state 'ready) watch]
+            [(or (eq? state 'open-failed) (zero? remaining))
+             (stop-fs-watch! watch)
+             #f]
+            [else (sleep 0.1) (wait (sub1 remaining))]))])]))
 
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-thread watch)))
-    (set-box! (fs-watch-stop-box watch) #t)
+    (define place (fs-watch-place watch))
+    ;; Order the stop first: if the read was between reads, the place
+    ;; exits without ever needing the marker.
+    (with-handlers ([exn:fail? (lambda (_) (void))])
+      (place-channel-put place 'stop))
     ;; Wake the blocked read: any change under the watched root returns
-    ;; it, and the thread then exits through its own handle cleanup. A
+    ;; it, and the place then exits through its own handle cleanup. A
     ;; cross-thread CloseHandle over a pending synchronous read would
     ;; deadlock, so the stopper never touches the handle.
     (with-handlers ([exn:fail? (lambda (_) (void))])
@@ -121,7 +128,7 @@
       (with-handlers ([exn:fail? (lambda (_) (void))])
         (delete-file marker)))
     ;; Bounded join: the common case exits within milliseconds; if the
-    ;; wake failed (root vanished) the thread exits at the next real
+    ;; wake failed (root vanished) the place exits at the next real
     ;; change without blocking this caller forever.
-    (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch)))
-    (void)))
+    (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch))))
+  (void))
