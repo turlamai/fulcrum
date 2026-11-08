@@ -82,7 +82,12 @@
     (else
      (define state ((hash-ref f 'wait) event 100))
      (case state
-       ((timeout) (values 'continue pending?))
+       ((timeout)
+        ;; The yield is load-bearing: without a scheduling point this
+        ;; thread cycles wait-foreign-call -> tail-loop forever and
+        ;; starves every other Racket thread in the process.
+        (sleep 0.005)
+        (values 'continue pending?))
        ((failed) (values 'exit pending?))
        ((done)
         (define result ((hash-ref f 'collect) handle buffer root-str ov))
