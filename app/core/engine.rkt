@@ -29,7 +29,6 @@
          "file-catalog.rkt"
          "files.rkt"
          "fs-watch.rkt"
-         "long-path.rkt"
          "fuzzy.rkt"
          "gallery.rkt"
          "paths.rkt"
@@ -577,13 +576,8 @@
   (define recheck (make-hash)) ; dir-string -> (listof due-ms)
   (define flush-sem (make-semaphore 0))
   (define stop-box (box #f))
-  ;; Long-name roots: the watcher's event paths, the reconcile prefixes
-  ;; and the scan's rows must all share one path form, or searches and
-  ;; prunes miss (8.3 short names like RUNNER~1 on CI).
-  (define long-roots
-    (map long-path (engine-file-catalog-roots engine)))
   (define watchers
-    (for/list ([root (in-list long-roots)])
+    (for/list ([root (in-list (engine-file-catalog-roots engine))])
       (start-fs-watch! root
                        (lambda (changed-paths)
                          (for ([p (in-list changed-paths)])
@@ -1011,12 +1005,7 @@
           (make-semaphore 1)
           max-results
           file-index-path
-          ;; Long-name-normalize the roots once, at the single point
-          ;; every consumer reads them from: the scan's rows, the
-          ;; watcher's event paths and the reconcile prefixes must all
-          ;; share one path form (8.3 short names like RUNNER~1 would
-          ;; otherwise split the catalog's world in half).
-          (map long-path file-catalog-roots)
+          file-catalog-roots
           #f
           (make-semaphore 1)
           file-catalog-nudge

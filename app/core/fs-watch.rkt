@@ -26,8 +26,7 @@
 
 (require racket/contract
          racket/runtime-path
-         racket/string
-         "long-path.rkt")
+         racket/string)
 
 (provide fs-watch-supported?
          (struct-out fs-watch)
@@ -145,11 +144,8 @@
        ((not f) #f)
        (else
         (define root-str
-          (let* ((s (long-path (if (string? root) (string->path root) root)))
-                 (s (path->string s)))
-            ;; ReadDirectoryChangesW wants the trailing separator. The
-            ;; root is long-name-normalized so event paths share one
-            ;; form with the scan's rows and the reconcile prefixes.
+          (let ((s (path->string (if (string? root) (string->path root) root))))
+            ;; ReadDirectoryChangesW wants the trailing separator.
             (if (or (string-suffix? s "\\") (string-suffix? s "/"))
                 s
                 (string-append s "\\"))))
