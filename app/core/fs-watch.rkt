@@ -90,7 +90,9 @@
                                    (lambda (_) 'dead))))
                (cond
                  [(eq? msg 'dead) (void)]
-                 [(eq? msg 'ready) (set-box! ready 'ready)]
+                 ;; 'ready keeps the relay alive: every later event batch
+                 ;; flows through this same loop.
+                 [(eq? msg 'ready) (set-box! ready 'ready) (loop)]
                  [(eq? msg 'open-failed) (set-box! ready 'open-failed)]
                  [(eq? msg 'overflow)
                   (with-handlers ([exn:fail? (lambda (_) (void))])

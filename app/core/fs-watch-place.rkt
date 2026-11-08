@@ -34,7 +34,7 @@
 ;; activity, and are filtered out of the event stream so they never
 ;; reach the coalescer. Keep this in sync with fs-watch.rkt.
 (define (stop-marker? path)
-  (regexp-match? #px"\\\\\\.fulcrum-stop-" path))
+  (string-contains? path ".fulcrum-stop-"))
 
 (provide start-fs-watcher)
 
