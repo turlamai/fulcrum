@@ -120,21 +120,30 @@
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-thread watch)))
     (define place (fs-watch-place watch))
-    ;; Order the stop first: if the read was between reads, the place
-    ;; exits without ever needing the marker.
-    (with-handlers ([exn:fail? (lambda (_) (void))])
-      (place-channel-put place 'stop))
-    ;; Wake the blocked read: any change under the watched root returns
-    ;; it, and the place then exits through its own handle cleanup. A
-    ;; cross-thread CloseHandle over a pending synchronous read would
-    ;; deadlock, so the stopper never touches the handle.
-    (with-handlers ([exn:fail? (lambda (_) (void))])
-      (define marker (stop-marker-path (fs-watch-root watch)))
-      (with-output-to-file marker #:exists 'truncate void)
+    ;; Nudge = order the stop, then wake the blocked read with a marker
+    ;; change under the watched root. Cross-place message delivery can
+    ;; lag the poll that checks for it (measured in seconds on the CI/VM
+    ;; class of machines), so a single nudge can miss: each retry re-arms
+    ;; the channel and re-wakes the read until the place's between-reads
+    ;; poll actually sees the order. A cross-thread CloseHandle over a
+    ;; pending synchronous read would deadlock, so the stopper never
+    ;; touches the handle — the place always closes its own.
+    (define (nudge!)
       (with-handlers ([exn:fail? (lambda (_) (void))])
-        (delete-file marker)))
-    ;; Bounded join: the common case exits within milliseconds; if the
-    ;; wake failed (root vanished) the place exits at the next real
-    ;; change without blocking this caller forever.
-    (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch))))
+        (place-channel-put place 'stop))
+      (with-handlers ([exn:fail? (lambda (_) (void))])
+        (define marker (stop-marker-path (fs-watch-root watch)))
+        (with-output-to-file marker #:exists 'truncate void)
+        (with-handlers ([exn:fail? (lambda (_) (void))])
+          (delete-file marker))))
+    ;; Bounded join: the common case exits within the first second or
+    ;; two; if the wake keeps failing (root vanished), the place exits
+    ;; at the next real change or process exit without ever blocking
+    ;; this caller forever.
+    (let retry ([nudges 5])
+      (nudge!)
+      (cond
+        [(sync/timeout 1 (thread-dead-evt (fs-watch-thread watch))) (void)]
+        [(<= nudges 1) (void)]
+        [else (retry (sub1 nudges))])))
   (void))
