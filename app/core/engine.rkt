@@ -566,14 +566,15 @@
 
 (define (engine-start-live-watcher! engine worker)
   (define pending (make-hash)) ; dir-string -> #t
-  ;; Dirs to re-reconcile once more after a delay (see the flusher): a
-  ;; Windows delete notification fires while the file may still sit in
+  ;; Dirs to re-reconcile after delays (see the flusher): a Windows
+  ;; delete notification fires while the file may still sit in
   ;; delete-pending state (another process — antivirus, an indexer —
   ;; holds a handle), so the immediate reconcile sees it still listed
   ;; and cannot prune; when the handle finally releases the file
-  ;; vanishes WITHOUT a second notification, and only this deferred
-  ;; re-check catches the vanish.
-  (define recheck (make-hash)) ; dir-string -> due-ms
+  ;; vanishes WITHOUT a second notification, and only these deferred
+  ;; re-checks catch the vanish. Several deadlines per dir (2/4/6/8 s)
+  ;; span the pending window; each fires one reconcile.
+  (define recheck (make-hash)) ; dir-string -> (listof due-ms)
   (define flush-sem (make-semaphore 0))
   (define stop-box (box #f))
   ;; Long-name roots: the watcher's event paths, the reconcile prefixes
@@ -617,14 +618,21 @@
               [(unbox stop-box) (void)]
               [else
                ;; Due deferred re-checks first (delete-pending window,
-               ;; see `recheck` above).
+               ;; see `recheck` above). Future deadlines stay scheduled.
                (define now (current-inexact-milliseconds))
+               (define due-rows
+                 (for/list ([(d deadlines) (in-hash recheck)])
+                   (let-values (((due future)
+                                 (partition (lambda (ms) (<= ms now))
+                                            deadlines)))
+                     (and (pair? due) (cons d due)))))
                (define due
-                 (for/list ([(d due-ms) (in-hash recheck)]
-                            #:when (<= due-ms now))
-                   d))
-               (for ([d (in-list due)])
-                 (hash-remove! recheck d)
+                 (filter values due-rows))
+               (for ([row (in-list due)])
+                 (define d (car row))
+                 (if (null? (cdr row))
+                     (hash-remove! recheck d)
+                     (hash-set! recheck d (cdr row)))
                  (reconcile! d))
                (when (and (pair? due)
                           (engine-file-catalog-nudge engine))
@@ -635,10 +643,12 @@
                (hash-clear! pending)
                (for ([d (in-list dirs)])
                  (reconcile! d)
-                 ;; Schedule the delete-pending re-check.
-                 (hash-set! recheck
-                            d
-                            (+ (current-inexact-milliseconds) 2000)))
+                 ;; Schedule the delete-pending re-checks: one reconcile
+                 ;; at 2/4/6/8 s, spanning a typical pending window.
+                 (define now (current-inexact-milliseconds))
+                 (hash-set! recheck d
+                            (for/list ((delay-ms (in-list '(2000 4000 6000 8000))))
+                              (+ now delay-ms))))
                (when (and (pair? dirs)
                           (engine-file-catalog-nudge engine))
                  ((engine-file-catalog-nudge engine)))
