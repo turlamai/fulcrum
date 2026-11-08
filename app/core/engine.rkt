@@ -583,6 +583,13 @@
   (cond
     [(null? watchers) (void)]
     [else
+     ;; Arm-reconcile: changes made between the scan's completion and
+     ;; the watcher's first pending read are invisible to the watcher —
+     ;; reconcile every root once so the armed watcher starts from the
+     ;; current disk state (closes the ready→armed race).
+     (for ([root (in-list (engine-file-catalog-roots engine))])
+       (with-handlers ([exn:fail? (lambda (_) (void))])
+         (reconcile-directory-in-catalog! worker root)))
      (define flusher
        (thread
         (lambda ()
