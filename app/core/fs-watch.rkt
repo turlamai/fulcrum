@@ -33,7 +33,8 @@
          start-fs-watch!
          stop-fs-watch!)
 
-(struct fs-watch (thread stop-box stopped handle root))
+(struct fs-watch (thread stop-box stopped handle root diag))
+;; diag: newest-first log of loop events, for failure reports.
 
 (define (fs-watch-supported?)
   (eq? (system-type 'os) 'windows))
@@ -71,7 +72,7 @@
 ;; call here is bounded (the wait at most 100 ms), so the Racket
 ;; scheduler stays live throughout.
 (define (watch-poll! f handle event ov buffer root-str stop-box pending?
-                     on-events on-overflow)
+                     diag on-events on-overflow)
   (cond
     ((unbox stop-box)
      ;; Cancel the pending read so the wait below reaps an abort
@@ -88,7 +89,13 @@
         ;; starves every other Racket thread in the process.
         (sleep 0.005)
         (values 'continue pending?))
-       ((failed) (values 'exit pending?))
+       ((failed)
+        ;; The wait itself failed (transient kernel error on loaded
+        ;; runners): re-issue the read rather than dying silently.
+        (set-box! diag (cons 'wait-failed (unbox diag)))
+        (values 'continue
+                ((hash-ref f 'issue) handle buffer
+                 (bytes-length buffer) event ov)))
        ((done)
         (define result ((hash-ref f 'collect) handle buffer root-str ov))
         (cond
@@ -113,19 +120,14 @@
 ;; The watch thread body: own the handle, loop until stopped, then
 ;; close the handle (its only user — a cross-thread CloseHandle over a
 ;; pending read deadlocks; CancelIoEx is the safe stop lever) and post.
-(define (watch-thread-body! f handle event ov root-str stop-box
-                            stopped armed on-events on-overflow)
-  (define buffer (make-bytes 65536))
-  ;; Arm only once the first read is pending: the caller's first change
-  ;; must land on a listening read, never in the gap between handle
-  ;; open and first issue.
-  (define first-issue
-    ((hash-ref f 'issue) handle buffer (bytes-length buffer) event ov))
-  (semaphore-post armed)
-  (let loop ((pending? first-issue))
+;; The first read is already pending — issued by the caller before this
+;; thread spawned.
+(define (watch-thread-body! f handle event ov buffer root-str stop-box
+                            stopped diag on-events on-overflow)
+  (let loop ((pending? #t))
     (define-values (verdict now-pending?)
       (watch-poll! f handle event ov buffer root-str stop-box pending?
-                   on-events on-overflow))
+                   diag on-events on-overflow))
     (when (eq? verdict 'continue)
       (loop now-pending?)))
   (with-handlers ((exn:fail? (lambda (_) (void))))
@@ -153,26 +155,47 @@
           (else
            (define event ((hash-ref f 'event)))
            (define ov (and event ((hash-ref f 'overlapped) event)))
+           (define buffer (make-bytes 65536))
+           (define diag (box '()))
            (cond
              ((not (and event ov)) #f)
              (else
-              (define stop-box (box #f))
-              (define stopped (make-semaphore 0))
-              (define armed (make-semaphore 0))
-              (define watch-thread
-                (thread
-                 (lambda ()
-                   (watch-thread-body! f handle event ov root-str stop-box
-                                       stopped armed on-events on-overflow))))
-              ;; Arm-before-return: a change made after start! returns
-              ;; must land on a listening read. Bounded; a timeout
-              ;; degrades to the no-watcher path.
-              (if (sync/timeout 5 armed)
-                  (fs-watch watch-thread stop-box stopped handle root-str)
-                  (begin
-                    (stop-fs-watch! (fs-watch watch-thread stop-box stopped
-                                              handle root-str))
-                    #f)))))))))))
+              ;; Arm in the caller: issue the first read here (a bounded
+              ;;, immediately-returning call) so a change made after
+              ;; start! returns always lands on a listening read.
+              (define (arm!) ((hash-ref f 'issue) handle buffer
+                              (bytes-length buffer) event ov))
+              (define armed
+                (let retry ((n 3))
+                  (define ok (arm!))
+                  (cond
+                    (ok #t)
+                    ((> n 1)
+                     (set-box! diag (cons 'issue-retry (unbox diag)))
+                     (sleep 0.1)
+                     (retry (sub1 n)))
+                    (else
+                     (set-box! diag (cons 'issue-failed (unbox diag)))
+                     #f))))
+              (cond
+                ((not armed) #f)
+                (else
+                 (define stop-box (box #f))
+                 (define stopped (make-semaphore 0))
+                 (define watch-thread
+                   (thread
+                    (lambda ()
+                      (watch-thread-body! f handle event ov buffer root-str
+                                          stop-box stopped diag
+                                          on-events on-overflow))))
+                 (define the-watch
+                   (fs-watch watch-thread stop-box stopped handle root-str
+                             diag))
+                 ;; Bounded join on the arming thread handshake is
+                 ;; unnecessary now (arming happened above, before the
+                 ;; thread spawn); the watch is fully live on return.
+                 the-watch)))))))))))
+
 
 (define (stop-fs-watch! watch)
   (unless (or (not watch) (thread-dead? (fs-watch-thread watch)))
