@@ -276,15 +276,32 @@
              (simple-form-path
               (string-append prefix
                              (car (regexp-split #px"[/\\\\]+" rest)))))))
-        ;; A child that is neither a fresh file entry nor an existing
-        ;; directory has vanished: remove its exact row (vanished file)
-        ;; and its whole indexed subtree (vanished directory).
+
+        ;; A child that is in neither the fresh listing's files nor its
+        ;; directories has vanished: remove its exact row (vanished
+        ;; file) and its whole indexed subtree (vanished directory).
+        ;; The listing — captured once, before these checks — is the
+        ;; authority: a just-deleted file can sit in Windows
+        ;; delete-pending state, where file-exists? still answers #t
+        ;; while another process (antivirus, an indexer) holds a handle
+        ;; to it, and trusting that here made prune skip deleted rows
+        ;; for whole test budgets on CI.
+        (define fresh-files
+          (for/set ([hit (in-list file-hits)] #:when (valid-hit? hit))
+            (cdr hit)))
+        (when (getenv "FULCRUM_INDEX_DEBUG")
+          (eprintf "[idx-debug] dir=~s prefix=~s rows=~a fresh-files=~a fresh-children=~a\n"
+                   dir prefix (set-count indexed-children)
+                   (set-count fresh-files) (set-count fresh-children)))
         (define stale
           (for/set ([child (in-set indexed-children)]
                     #:unless (or (set-member? fresh-children child)
-                                 (file-exists? child)
-                                 (directory-exists? child)))
+                                 (set-member? fresh-files child)))
             child))
+        (when (getenv "FULCRUM_INDEX_DEBUG")
+          (eprintf "[idx-debug] stale=~a deletes=~a\n"
+                   (set-count stale)
+                   (length (set->list stale))))
         (for ([child (in-set stale)])
           (define child-prefix
             (string-append (path->string (simple-form-path child))
