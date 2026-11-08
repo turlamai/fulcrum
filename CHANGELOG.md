@@ -4,6 +4,7 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+<<<<<<< HEAD
 ## [0.16.0] - 2026-11-06
 
 ### Added
@@ -20,6 +21,9 @@ independently per platform packaging run.
   wake (the stopper never touches a handle inside a pending synchronous
   read — that deadlocks). On platforms without a watcher implementation
   behavior is unchanged.
+=======
+## [Unreleased]
+>>>>>>> feat/fs-live-watch-20261105
 
 ### Added
 
