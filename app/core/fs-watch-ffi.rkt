@@ -6,9 +6,15 @@
 ;; keeps the FFI surface minimal: ReadDirectoryChangesW parks the OS
 ;; thread until a change lands or the handle closes, so stopping is a
 ;; CloseHandle from another thread.
+;;
+;; Buffer parsing (pure logic, no kernel32 dependency) lives in
+;; fs-watch-parse.rkt so the platform-independent test suite exercises
+;; it on every OS; this module only binds the foreign calls and glues
+;; them to the parser.
 
 (require ffi/unsafe
-         racket/string)
+         racket/string
+         "fs-watch-parse.rkt")
 
 
 (provide open-directory-watch!
@@ -26,31 +32,8 @@
 
 ;; _string/utf-16 encodes foreign input with a byte-order mark; Windows
 ;; would read the BOM as part of the path and fail the open. This ctype
-;; encodes BOM-less UTF-16LE with a two-byte null terminator instead.
-(define (string->utf16le-bytes s)
-  ;; UTF-16LE code units with surrogate pairs, no BOM.
-  (define units
-    (for/list ([ch (in-string s)])
-      (define cp (char->integer ch))
-      (cond
-        [(<= cp #xFFFF)
-         (list cp)]
-        [else
-         (define v (- cp #x10000))
-         (list (+ #xD800 (arithmetic-shift v 10))
-               (+ #xDC00 (bitwise-and v #x3FF)))])))
-  (define byte-count (* 2 (length (apply append units))))
-  (define buf (make-bytes (+ byte-count 2)))
-  (let loop ([chars (apply append units)] [i 0])
-    (cond
-      [(null? chars) (void)]
-      [else
-       (define u (car chars))
-       (bytes-set! buf i (bitwise-and u #xFF))
-       (bytes-set! buf (+ i 1) (arithmetic-shift u -8))
-       (loop (cdr chars) (+ i 2))]))
-  buf)
-
+;; encodes BOM-less UTF-16LE (fs-watch-parse.rkt, tested on every
+;; platform) with a two-byte null terminator instead.
 (define _bomless-utf16le
   (make-ctype _bytes
               (lambda (s)
@@ -114,54 +97,6 @@
 
 (define (close-directory-watch! handle)
   (not (zero? (CloseHandle handle))))
-
-;; UTF-16LE code units from a FILE_NOTIFY_INFORMATION buffer, surrogate
-;; pairs combined so astral-plane filenames survive.
-(define (utf16le-region->string buffer start end)
-  (let loop ([i start] [chars '()])
-    (cond
-      [(>= i end) (list->string (reverse chars))]
-      [else
-       (define unit (bitwise-ior (bytes-ref buffer i)
-                                 (arithmetic-shift (bytes-ref buffer (+ i 1)) 8)))
-       (define low
-         (and (>= unit #xD800) (<= unit #xDBFF) (<= (+ i 4) end)
-              (bitwise-ior (bytes-ref buffer (+ i 2))
-                           (arithmetic-shift (bytes-ref buffer (+ i 3)) 8))))
-       (cond
-         [(and (>= low #xDC00) (<= low #xDFFF))
-          (define cp (+ #x10000
-                        (arithmetic-shift (- unit #xD800) 10)
-                        (- low #xDC00)))
-          (loop (+ i 4) (cons (integer->char cp) chars))]
-         [else
-          (loop (+ i 2) (cons (integer->char unit) chars))])])))
-
-;; Little-endian uint32 from buffer at byte offset (FILE_NOTIFY_INFORMATION
-;; fields are LE uint32s; reading them bytewise avoids any import question).
-(define (le32 buffer offset)
-  (bitwise-ior (bytes-ref buffer offset)
-               (arithmetic-shift (bytes-ref buffer (+ offset 1)) 8)
-               (arithmetic-shift (bytes-ref buffer (+ offset 2)) 16)
-               (arithmetic-shift (bytes-ref buffer (+ offset 3)) 24)))
-
-;; Walks one notification buffer. Returns (values changed-paths overflow?)
-;; where changed-paths are native full paths under root, in unspecified
-;; order, possibly duplicated (renames contribute both halves).
-(define (parse-changes! buffer byte-count root)
-  (define sep-string "\\")
-  (let loop ([offset 0] [paths '()])
-    (if (>= offset byte-count)
-        (values (reverse paths) #f)
-        (let* ([next (le32 buffer offset)]
-               [name-len (le32 buffer (+ offset 8))]
-               [name (utf16le-region->string buffer
-                                             (+ offset 12)
-                                             (+ offset 12 name-len))]
-               [full (string-append root sep-string name)])
-          (cond
-            [(zero? next) (values (cons full (reverse paths)) #f)]
-            [else (loop (+ offset next) (cons full paths))])))))
 
 ;; Blocks until at least one change lands, the handle closes (returns
 ;; #f), or the kernel had to drop events because the buffer filled
