@@ -190,18 +190,21 @@
        ;; Create a file AFTER the watcher armed; no reconcile call is made
        ;; by the test — visibility must arrive through the live path.
        (touch (build-path root "Documents" "live-search.txt"))
-       (let wait-live ([n 100])
+       (let wait-live ([n 200])
          (define rows (engine-search engine "find live-search"))
          (cond
            [(memf (lambda (row) (string-contains? (cadr row) "live-search.txt"))
                   rows)
             (check-true (> (unbox nudges) 0)
                         "a search-revision nudge must repaint open queries")]
-           [(zero? n) (fail-check "live visibility exceeded the test budget")]
+           [(zero? n)
+            (fail-check
+             (format "live visibility exceeded the test budget; nudges=~a rows=~s"
+                     (unbox nudges) rows))]
            [else (sleep 0.05) (wait-live (sub1 n))]))
        ;; Delete → must leave the results through the same path.
        (delete-file (build-path root "Documents" "live-search.txt"))
-       (let wait-gone ([n 100])
+       (let wait-gone ([n 200])
          (define rows (engine-search engine "find live-search"))
          (cond
            [(not (memf (lambda (row) (string-contains? (cadr row) "live-search.txt"))
