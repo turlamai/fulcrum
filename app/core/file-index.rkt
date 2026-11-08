@@ -291,7 +291,7 @@
             (cdr hit)))
         (when (getenv "FULCRUM_INDEX_DEBUG")
           (eprintf "[idx-debug] dir=~s prefix=~s rows=~a fresh-files=~a fresh-children=~a\n"
-                   dir-str prefix (set-count indexed-children)
+                   dir prefix (set-count indexed-children)
                    (set-count fresh-files) (set-count fresh-children)))
         (define stale
           (for/set ([child (in-set indexed-children)]
