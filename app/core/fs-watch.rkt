@@ -208,7 +208,9 @@
     (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch)))
     ;; The thread's loop is bounded (100 ms waits), so this is a
     ;; belt-and-suspenders kill; without it a wedged thread would fail
-    ;; the callers' thread-dead? assertions.
+    ;; the callers' thread-dead? assertions. A kill only lands when the
+    ;; thread leaves a foreign call — give it one loop period to do so.
     (when (not (thread-dead? (fs-watch-thread watch)))
-      (kill-thread (fs-watch-thread watch))))
+      (kill-thread (fs-watch-thread watch))
+      (sync/timeout 0.5 (thread-dead-evt (fs-watch-thread watch)))))
   (void))
