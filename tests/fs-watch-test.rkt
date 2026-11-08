@@ -210,7 +210,7 @@
             (fail-check
              (format "deletion visibility exceeded the test budget; nudges=~a rows=~s"
                      (unbox nudges)
-                     (engine-search engine "find live-search")))
+                     (engine-search engine "find live-search")))]
            [else (sleep 0.05) (wait-gone (sub1 n))]))
        (engine-stop! engine)))))
 
