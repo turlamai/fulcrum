@@ -681,9 +681,16 @@
            (thread
             (lambda ()
               (file-catalog-wait worker 300)
+              ;; A cancel posted while we waited means the engine is
+              ;; stopping: skip arming (and the armed reconcile) so no
+              ;; index connection outlives engine-stop!.
+              (define cancelled?
+                (not (eq? (sync/timeout 0 (file-catalog-worker-cancel worker))
+                          #f)))
               (define state
                 (file-catalog-status-state (engine-file-catalog-status engine)))
-              (when (memq state '(ready partial))
+              (when (and (not cancelled?)
+                         (memq state '(ready partial)))
                 (engine-start-live-watcher! engine worker)))))
          (set-engine-catalog-arm-thread! engine arm-thread))))))
 
@@ -695,16 +702,20 @@
                            (length (engine-file-catalog-roots engine)) #f)))
 
 (define (engine-stop! engine)
-  ;; Kill the arming thread first: if it is between the wait and the
-  ;; armed reconcile, it would open the index DB after the caller has
-  ;; stopped everything (and on Windows, after the caller deleted the
-  ;; temp tree — the file would be recreated, then undeletable).
-  (define arm (engine-catalog-arm-thread engine))
-  (when (and arm (thread-running? arm) (not (thread-dead? arm)))
-    (kill-thread arm))
-  (engine-stop-live-watcher! engine)
+  ;; Stop the worker first: its cancel semaphore doubles as the
+  ;; arming thread's stop signal — the arm thread then skips the
+  ;; armed reconcile (which would open the index DB after everything
+  ;; else stopped, and on Windows after the caller deleted the temp
+  ;; tree, recreating then leaking the file). Join it briefly, kill
+  ;; as a last resort, then stop the watcher and the worker finishes
+  ;; disconnecting.
   (define worker (engine-file-catalog-worker engine))
   (when worker (stop-file-catalog! worker))
+  (define arm (engine-catalog-arm-thread engine))
+  (when (and arm (not (thread-dead? arm)))
+    (sync/timeout 2 (thread-dead-evt arm))
+    (when (not (thread-dead? arm)) (kill-thread arm)))
+  (engine-stop-live-watcher! engine)
   (void))
 
 (define (file-index-status-row engine)

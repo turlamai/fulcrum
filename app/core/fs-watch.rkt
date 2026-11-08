@@ -205,5 +205,10 @@
     ;; Bounded join: CancelIoEx makes the abort deterministic; if the
     ;; wake fails anyway the thread exits at the next real change
     ;; without blocking this caller forever.
-    (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch))))
+    (sync/timeout 5 (thread-dead-evt (fs-watch-thread watch)))
+    ;; The thread's loop is bounded (100 ms waits), so this is a
+    ;; belt-and-suspenders kill; without it a wedged thread would fail
+    ;; the callers' thread-dead? assertions.
+    (when (not (thread-dead? (fs-watch-thread watch)))
+      (kill-thread (fs-watch-thread watch))))
   (void))
