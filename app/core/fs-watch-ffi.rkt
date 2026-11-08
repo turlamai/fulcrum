@@ -148,9 +148,10 @@
 (define (make-overlapped! event)
   (define ov (malloc _bytes 64 'raw))
   (memcpy ov (make-bytes 64) 64)
-    ;; x64 OVERLAPPED: Internal(0) InternalHigh(1) Offset(2) OffsetHigh(3)
-  ;; hEvent(4) in 8-byte slots - hEvent at byte offset 24.
-  (ptr-set! ov _int64 4 event)
+  ;; x64 OVERLAPPED layout: Internal(0-8) InternalHigh(8-16) Offset(16-20)
+  ;; OffsetHigh(20-24) hEvent(24-32) — hEvent is the 8-byte slot at index
+  ;; 3 (byte offset 24); the Offset pair above it is two 4-byte fields.
+  (ptr-set! ov _int64 3 event)
   ov)
 
 ;; Issues one overlapped directory read: returns immediately with the
