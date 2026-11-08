@@ -972,7 +972,12 @@
           (make-semaphore 1)
           max-results
           file-index-path
-          file-catalog-roots
+          ;; Long-name-normalize the roots once, at the single point
+          ;; every consumer reads them from: the scan's rows, the
+          ;; watcher's event paths and the reconcile prefixes must all
+          ;; share one path form (8.3 short names like RUNNER~1 would
+          ;; otherwise split the catalog's world in half).
+          (map long-path file-catalog-roots)
           #f
           (make-semaphore 1)
           file-catalog-nudge
