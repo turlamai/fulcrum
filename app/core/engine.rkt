@@ -61,7 +61,7 @@
   #:transparent)
 
 (struct engine
-  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live)
+  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread)
   #:mutable)
 
 ;; Prepared application rows: the fuzzy fields are immutable per rebuild,
@@ -677,13 +677,15 @@
                                 (engine-file-catalog-roots engine)
                                 #:on-progress (engine-file-catalog-nudge engine)))
          (set-engine-file-catalog-worker! engine worker)
-         (thread
-          (lambda ()
-            (file-catalog-wait worker 300)
-            (define state
-              (file-catalog-status-state (engine-file-catalog-status engine)))
-            (when (memq state '(ready partial))
-              (engine-start-live-watcher! engine worker)))))))))
+         (define arm-thread
+           (thread
+            (lambda ()
+              (file-catalog-wait worker 300)
+              (define state
+                (file-catalog-status-state (engine-file-catalog-status engine)))
+              (when (memq state '(ready partial))
+                (engine-start-live-watcher! engine worker)))))
+         (set-engine-catalog-arm-thread! engine arm-thread))))))
 
 (define (engine-file-catalog-status engine)
   (define worker (engine-file-catalog-worker engine))
@@ -693,6 +695,13 @@
                            (length (engine-file-catalog-roots engine)) #f)))
 
 (define (engine-stop! engine)
+  ;; Kill the arming thread first: if it is between the wait and the
+  ;; armed reconcile, it would open the index DB after the caller has
+  ;; stopped everything (and on Windows, after the caller deleted the
+  ;; temp tree — the file would be recreated, then undeletable).
+  (define arm (engine-catalog-arm-thread engine))
+  (when (and arm (thread-running? arm) (not (thread-dead? arm)))
+    (kill-thread arm))
   (engine-stop-live-watcher! engine)
   (define worker (engine-file-catalog-worker engine))
   (when worker (stop-file-catalog! worker))
@@ -1009,6 +1018,7 @@
           #f
           (make-semaphore 1)
           file-catalog-nudge
+          #f
           #f))
 
 (define (engine-rebuild-index! engine)
