@@ -71,6 +71,10 @@
      (cond
        [(not place) #f]
        [else
+        ;; Hand the place its watch target first: its entry point blocks
+        ;; on the root before anything else.
+        (with-handlers ([exn:fail? (lambda (_) (void))])
+          (place-channel-put place root-str))
         (define stopped (make-semaphore 0))
         (define ready (box #f)) ; 'ready | 'open-failed, set by the relay
         (define relay

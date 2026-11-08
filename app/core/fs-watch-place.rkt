@@ -40,6 +40,9 @@
 
 (define (start-fs-watcher ch)
   (define root (place-channel-get ch))
+  ;; A 'stop racing in before the root means the watcher was never
+  ;; really armed: nothing to watch, nothing to clean up.
+  (when (eq? root 'stop) (exit 0))
   (define handle (open-directory-watch! root))
   (cond
     [(not handle)
