@@ -48,15 +48,19 @@
          p
          (let* ((s (if (string? p) p (path->string p)))
                 (buf (make-bytes 2048))
-                (n (fn s buf 1024)))
-           (if (or (zero? n) (> n 1024))
-               p
-               (let decode ((i 0) (chars '()))
-                 (define lo (bytes-ref buf i))
-                 (define hi (bytes-ref buf (+ i 1)))
-                 (define unit (bitwise-ior lo (arithmetic-shift hi 8)))
-                 (cond
-                   ((zero? unit) (list->string (reverse chars)))
-                   (else (decode (+ i 2)
-                                 (cons (integer->char unit) chars)))))))))
+                (n (fn s buf 1024))
+                (long
+                 (if (or (zero? n) (> n 1024))
+                     s
+                     (let decode ((i 0) (chars '()))
+                       (define lo (bytes-ref buf i))
+                       (define hi (bytes-ref buf (+ i 1)))
+                       (define unit (bitwise-ior lo (arithmetic-shift hi 8)))
+                       (cond
+                         ((zero? unit) (list->string (reverse chars)))
+                         (else (decode (+ i 2)
+                                       (cons (integer->char unit)
+                                             chars))))))))
+           ;; Preserve the caller's type: paths stay paths.
+           (if (string? p) long (string->path long)))))
     (else p)))
