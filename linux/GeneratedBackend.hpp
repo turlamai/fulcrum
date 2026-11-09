@@ -20,7 +20,7 @@ inline constexpr char kModuleName[] = "backend";
 inline constexpr char kEntryName[] = "start";
 inline constexpr char kDisplayName[] = "Fulcrum";
 inline constexpr char kVersion[] = "0.16.1";
-inline constexpr std::int64_t kBuild = 30;
+inline constexpr std::int64_t kBuild = 31;
 inline constexpr char kIdentifier[] = "site.jrtx.fulcrum";
 inline constexpr char kReleaseChannel[] = "stable";
 
