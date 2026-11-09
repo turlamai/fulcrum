@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Fulcrum
+Comment=One keystroke. Everything within reach.
+Exec=RivetHost
+Icon=site.jrtx.fulcrum
+Terminal=false
+Categories=Utility;
+StartupWMClass=Fulcrum
