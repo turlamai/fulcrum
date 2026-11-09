@@ -212,7 +212,10 @@
   (check-equal? (file-search-result-hits completed)
                 '(("report.txt" . "/home/me/report.txt"))))
 
-(test-case "a newer file query cancels the superseded backend"
+(test-case "a newer claim of the same query cancels the superseded backend"
+  ;; Cancellation is a resource guard for re-runs of the same text (the
+  ;; revision nudge), not a correctness tool — the host generation-guards
+  ;; stale responses on its own.
   (define first-started (make-semaphore 0))
   (define calls 0)
   (define (runner _program _args #:timeout-ms [_timeout-ms 3000]
@@ -230,7 +233,7 @@
      (lambda ()
        (async-channel-put
         first-result
-        (file-search/status "old" 8
+        (file-search/status "report" 8
                             #:os 'unix
                             #:resolve (lambda (_) "/usr/bin/find")
                             #:run runner)))))
@@ -246,6 +249,110 @@
   (check-equal? (file-search-result-hits newest)
                 '(("new-report.txt" . "/home/me/new-report.txt")))
   (check-not-false (sync/timeout 1 (thread-dead-evt first-worker))))
+
+(test-case "a different query never cancels another query's backend search"
+  ;; RVT1 workers run concurrently, so claim order is not request order.
+  ;; Cancelling across queries let an older request kill the newest one's
+  ;; platform stage — on Windows the newest visible query then painted
+  ;; with its file rows silently missing (issue: Windows find broken).
+  (define first-started (make-semaphore 0))
+  (define calls 0)
+  (define first-was-cancelled? #f)
+  (define (runner _program _args #:timeout-ms [_timeout-ms 3000]
+                                  #:cancel-evt [cancel-evt never-evt])
+    (set! calls (add1 calls))
+    (cond
+      [(= calls 1)
+       (semaphore-post first-started)
+       ;; The "report" claim lands while this worker runs; it must leave
+       ;; this "old" search alone.
+       (when (sync/timeout 2 cancel-evt)
+         (set! first-was-cancelled? #t))
+       "/home/me/old-report.txt\n"]
+      [else "/home/me/new-report.txt\n"]))
+  (define first-result (make-async-channel 1))
+  (define first-worker
+    (thread
+     (lambda ()
+       (async-channel-put
+        first-result
+        (file-search/status "old" 8
+                            #:os 'unix
+                            #:resolve (lambda (_) "/usr/bin/find")
+                            #:run runner)))))
+  (sync first-started)
+  (define newest
+    (file-search/status "report" 8
+                        #:os 'unix
+                        #:resolve (lambda (_) "/usr/bin/find")
+                        #:run runner))
+  (define first-outcome (sync/timeout 3 first-result))
+  (check-false first-was-cancelled?
+               "an older request claiming late must not cancel the newest query")
+  (check-equal? (file-search-result-status first-outcome) 'ok)
+  (check-equal? (file-search-result-hits first-outcome)
+                '(("old-report.txt" . "/home/me/old-report.txt")))
+  (check-equal? (file-search-result-status newest) 'ok)
+  (check-not-false (sync/timeout 1 (thread-dead-evt first-worker))))
+
+(test-case "a cancelled platform stage still answers from the local index"
+  ;; The newest visible query can legitimately be cancelled (a same-query
+  ;; re-claim from the revision nudge). Dropping the already-gathered
+  ;; catalog hits then left Windows users with a results list stuck on
+  ;; unrelated app rows; cancellation must degrade to the cache exactly
+  ;; like a timeout does.
+  (define dir (make-temporary-file "fulcrum-cancel-cache-~a" 'directory))
+  (define index-path (build-path dir "index.sqlite3"))
+  (dynamic-wind
+    void
+    (lambda ()
+      (define seeded
+        (file-search/status
+         "report" 8
+         #:os 'unix
+         #:resolve (lambda (_) "/usr/bin/locate")
+         #:run (lambda (_program _args #:timeout-ms [_timeout-ms 3000]
+                                       #:cancel-evt [_cancel-evt never-evt])
+                 "/home/me/report.md\n")
+         #:index-path index-path))
+      (check-equal? (file-search-result-status seeded) 'ok)
+      (define started (make-semaphore 0))
+      (define cancelled-runner
+        (lambda (_program _args #:timeout-ms [_timeout-ms 3000]
+                              #:cancel-evt [cancel-evt never-evt])
+          (semaphore-post started)
+          (sync cancel-evt)
+          'cancelled))
+      (define blocked-result (make-async-channel 1))
+      (define blocked-worker
+        (thread
+         (lambda ()
+           (async-channel-put
+            blocked-result
+            (file-search/status
+             "report" 8
+             #:os 'unix
+             #:resolve (lambda (_) "/usr/bin/locate")
+             #:run cancelled-runner
+             #:index-path index-path)))))
+      (sync started)
+      ;; A same-query re-claim (the revision nudge) cancels the platform
+      ;; stage; the catalog hits it already collected must survive.
+      (file-search/status
+       "report" 8
+       #:os 'unix
+       #:resolve (lambda (_) "/usr/bin/locate")
+       #:run (lambda (_program _args #:timeout-ms [_timeout-ms 3000]
+                                     #:cancel-evt [_cancel-evt never-evt])
+               "/home/me/fresh-report.md\n")
+       #:index-path index-path)
+      (define rescued (sync/timeout 3 blocked-result))
+      (check-equal? (file-search-result-status rescued) 'ok)
+      (check-equal? (file-search-result-backend rescued) 'fulcrum-index)
+      (check-equal? (file-search-result-hits rescued)
+                    '(("report.md" . "/home/me/report.md")))
+      (check-not-false (sync/timeout 1 (thread-dead-evt blocked-worker))))
+    (lambda () (delete-directory/files dir))))
 
 (test-case "platform results seed the persistent index and rescue a timeout"
   (define dir (make-temporary-file "fulcrum-search-index-~a" 'directory))
