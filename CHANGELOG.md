@@ -4,46 +4,49 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
-## [0.16.0] - 2026-11-06
-
-### Added
-
-- **Live file watching on Windows.** The local catalog now observes the
-  filesystem continuously instead of scanning once per process: after the
-  first scan completes, one `ReadDirectoryChangesW` watcher per scanned
-  root feeds changed paths into a 400 ms coalescer, and each changed
-  directory is re-listed and reconciled into the persistent index —
-  creates, renames and deletes become visible in open queries without
-  retyping, well inside the architecture document's two-second
-  mutation-visibility target. The reconcile is idempotent (duplicated or
-  reordered events are harmless), prunes vanished directories' whole
-  indexed subtrees, never touches rows outside the affected directory's
-  root, and reuses the root's scan generation so a concurrent
-  finish-scan cannot prune freshly reconciled rows. On platforms without
-  a watcher implementation behavior is unchanged; kernel-buffer overflow
-  is handled as an honest gap healed by the next full scan.
+## [0.16.1] - 2026-11-09
 
 ### Fixed
 
-- **Windows: the watcher could freeze the whole process, then crash on
-  its first event.** Two defects landed with the slice and both are
-  fixed together (issue #190). First, the blocking synchronous
-  `ReadDirectoryChangesW` call was issued from a plain thread inside
-  the main place — a place multiplexes all of its Racket threads on one
-  OS thread, so the first pending read stalled the entire scheduler
-  (backend tests hung for the full six-hour CI timeout and the packaged
-  backend froze at startup). The watcher now runs in the dedicated
-  place it was always specified to use: the kernel32 surface is loaded
-  only inside that place, a relay thread in the main place forwards
-  events to the caller's callbacks, and stop keeps the marker-file wake
-  (the stopper never touches a handle inside a pending synchronous read
-  — that deadlocks). Second, once events flowed, the notification
-  parser crashed on the first character of every real filename — the
-  surrogate-pair probe compared the `#f` its `(and ...)` chain yields
-  for ordinary characters. The parser, the UTF-16LE path encoder, and
-  their tests now live in a platform-independent module
-  (`fs-watch-parse.rkt`) exercised by every OS's CI run, alongside the
-  double-separator and astral-encoding fixes found on the way.
+- **Windows: typed `find` queries never showed file results.** Every
+  keystroke starts a search, and the searches raced for one global
+  cancel slot that carried no query identity — an older request claiming
+  late (RVT1 workers run concurrently, so claim order is not request
+  order) cancelled the *newest* query's platform search, which on
+  Windows takes seconds. The cancelled response also discarded the
+  local-catalog hits it had already collected, so the launcher stayed on
+  unrelated app rows with no error — during the initial catalog crawl
+  and after it (issue #193). Claims now supersede only another claim for
+  the same query text; a cancelled platform stage degrades to the
+  catalog hits exactly like a timeout does; a cancelled search with an
+  empty cache paints the honest coverage/progress row instead of
+  nothing.
+- **Windows: the launcher jumped every ~750 ms while the catalog
+  crawled.** The initial build nudges `search-revision` about once a
+  second and the host repainted per push — clearing and rebuilding the
+  whole results list and snapping the selection back to the top for the
+  entire crawl (issue #194). Revision pushes now coalesce into one
+  query re-run 400 ms after the last push; a re-run that returned the
+  rows already on screen no longer rebuilds the list; a real rebuild
+  keeps the selection when the selected row survives.
+
+## [0.16.0] - 2026-11-06
+
+### Changed
+
+- **Packaging dependency bump.** `RIVET_PIN` moved to c29e62f for the
+  rpm 6 `%files` quoting fixes (rivet#431): rpm 6 treats quoted entries
+  as literals instead of globbing them, which broke the x86_64 rpm leg
+  on newer builders.
+
+### Not shipped
+
+- The live-filesystem watcher PRs (#189, #191, #192) were merged and
+  then reverted before tagging (commit 6e679da), so v0.16.0 ships the
+  same product behavior as v0.15.2 plus the packaging bump above.
+  Windows live watching remains upcoming under #99; the revert pulled
+  its freeze/crash fixes (#190) back out with it. (The published
+  release notes carried this correction; this section now matches it.)
 
 ## [0.15.2] - 2026-11-05
 
