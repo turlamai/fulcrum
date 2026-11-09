@@ -22,7 +22,7 @@ concurrency:
 env:
   # Unified immutable upstream revision containing AppImage handoff,
   # branded-DMG signature preservation, and macOS update rollback safety.
-  RIVET_PIN: 1a38a5cebb17cc883411b7fbcc238023e9c1f950
+  RIVET_PIN: c29e62fb785e8f7844c211f0a686c449ca0be550
 jobs:
   backend:
     name: Backend tests (${{ matrix.os }})
@@ -146,7 +146,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up embeddable Racket CS
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@1a38a5cebb17cc883411b7fbcc238023e9c1f950
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@c29e62fb785e8f7844c211f0a686c449ca0be550
       # Installed after the embeddable runtime so Rivet's catalog closure and
       # Fulcrum's SQLite dependency (db-lib) resolve against the minimal build.
       - name: Install Rivet (catalog)
