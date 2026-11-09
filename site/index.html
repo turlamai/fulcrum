@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-kit-id="fulcrum">
 
 <head>
     <meta charset="UTF-8">
@@ -7,7 +7,7 @@
     <title>Fulcrum 支点 — 一次按键，直达一切。</title>
     <meta name="description" content="Fulcrum（支点）是 macOS、Windows 与 Linux 上的键盘优先启动器：一个全局热键唤出浮动命令面板——模糊搜索应用与文件、剪贴板历史、片段、计算、网络搜索 bang 与插件，本地工具与可选在线集成。">
     <link rel="canonical" href="https://fulcrum.jrtx.site/">
-    <meta name="theme-color" content="#c15f3c">
+    <meta name="theme-color" content="#D97757">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Fulcrum">
     <meta property="og:title" content="Fulcrum — One keystroke. Everything within reach.">
@@ -15,11 +15,10 @@
     <meta property="og:url" content="https://fulcrum.jrtx.site/">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Fulcrum — One keystroke. Everything within reach.">
-    <meta name="twitter:description" content="Fulcrum is a keyboard-first launcher for macOS, Windows and Linux. One global hotkey opens a floating command palette: apps, files, clipboard history, snippets, calculation, web-search bangs and plugins — local tools with optional online integrations.">
+    <meta name="twitter:description" content="Fulcrum is a keyboard-first launcher for macOS, Windows and Linux — local tools with optional online integrations.">
+
+    <!-- Theme pre-paint: no flash before the stylesheet paints. -->
     <script>
-        // Anti-flash: set the theme before the stylesheet paints — from
-        // localStorage when the user has picked manually, otherwise from the
-        // system preference.
         (function () {
             var t;
             try { t = localStorage.getItem('fulcrum-theme'); } catch (e) {}
@@ -29,598 +28,520 @@
             document.documentElement.dataset.theme = t;
         })();
     </script>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%23c15f3c'/%3E%3Cpath d='M108 404 L404 404' stroke='%23FFFFFF' stroke-width='30' stroke-linecap='round'/%3E%3Cpath d='M256 236 L344 388 L168 388 Z' fill='%23FFFFFF'/%3E%3Cpath d='M132 282 L380 176' stroke='%23FFFFFF' stroke-width='24' stroke-linecap='round'/%3E%3Ccircle cx='398' cy='168' r='30' fill='%23FFFFFF'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="styles.css">
+
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%23D97757'/%3E%3Cpath d='M108 404 L404 404' stroke='%23FFFFFF' stroke-width='30' stroke-linecap='round'/%3E%3Cpath d='M256 236 L344 388 L168 388 Z' fill='%23FFFFFF'/%3E%3Cpath d='M132 282 L380 176' stroke='%23FFFFFF' stroke-width='24' stroke-linecap='round'/%3E%3Ccircle cx='398' cy='168' r='30' fill='%23FFFFFF'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="family.css">
+    <link rel="stylesheet" href="site.css">
     <link rel="preload" href="fonts/newsreader-latin-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="fonts/newsreader-latin-var-italic.woff2" as="font" type="font/woff2" crossorigin>
-    <script>document.documentElement.classList.add('js-anim')</script>
-    <style>
-        /* Fulcrum's per-site accent family (warm copper), re-asserted over
-           the shared stylesheet's neutral defaults — family pattern. */
-        :root {
-            --accent: #c15f3c;
-            --accent-hover: #a94f30;
-            --accent-soft: #f7e5dd;
-            --accent-tint: rgba(193, 95, 60, 0.08);
-            --accent-bright: #d97a55;
-        }
-    #pricing .pricing-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-#pricing .plan-price { font-size:clamp(2rem,4vw,3rem); overflow-wrap:anywhere; }
-@media (max-width:700px) { #pricing .pricing-grid { grid-template-columns:minmax(0,1fr); } }
-</style>
-<script>
-var _hmt = _hmt || [];
-(function() {
-  var hm = document.createElement("script");
-  hm.src = "https://hm.baidu.com/hm.js?8e2445912635226bcba0c400bfb6079d";
-  var s = document.getElementsByTagName("script")[0];
-  s.parentNode.insertBefore(hm, s);
-})();
-</script>
-<style>
-  #product-support { display:flex; flex-wrap:wrap; justify-content:center; gap:12px 24px; padding:24px; font:inherit; border-top:1px solid var(--border, #a8a29e); }
-  #product-support a:focus-visible { outline:2px solid currentColor; outline-offset:4px; }
-  html:lang(en) #product-support .support-zh, html:lang(zh) #product-support .support-en { display:none; }
-</style>
-<style id="product-start-style">
-.product-availability{font-size:.95rem;line-height:1.65;max-width:72ch;margin:18px 0;opacity:.85}
-.hero-demo-caption{margin:12px auto 0;text-align:center;font-size:.82rem;line-height:1.5;color:var(--muted,var(--text-muted,#777));opacity:.9} .hero .product-availability{margin-left:auto;margin-right:auto}
-.product-start{max-width:1120px;margin:64px auto;padding:32px 24px;border-top:1px solid var(--border,#aaa);font:inherit;line-height:1.65}
-.product-start h2{font-size:clamp(1.7rem,3vw,2.4rem);letter-spacing:-.025em;margin:0 0 16px}.product-start h3{font-size:1.05rem;margin:0 0 10px}.product-start p{margin:0 0 16px;max-width:74ch}.product-start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;margin:28px 0}.product-start a{text-decoration:underline;text-underline-offset:4px;overflow-wrap:anywhere}.product-start a:focus-visible{outline:2px solid currentColor;outline-offset:5px}.product-start .start-links{display:flex;gap:16px 24px;flex-wrap:wrap}.product-start .start-status{font-weight:600}.product-start .start-limits{font-size:.95em}
-html:lang(en) .reader-zh,html:lang(zh) .reader-en{display:none!important}@media(max-width:700px){.product-start{margin:40px auto;padding:24px 20px}.product-start-grid{grid-template-columns:1fr;gap:18px}}
-</style>
-<style>.lang-menu li.lang-choice{padding:0}.lang-menu .lang-choice button{display:block;width:100%;padding:8px 12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.lang-menu .lang-choice button:focus-visible{outline:2px solid currentColor;outline-offset:-2px;border-radius:4px}</style>
-<style id="visual-showcase-css">
-/* Visual Showcase: process illustration, intentionally not an app screenshot. */
-.vs-showcase{padding:clamp(48px,7vw,88px) 24px;background:var(--bg,var(--surface,#faf7f2));color:var(--text,var(--ink,#24211d))}
-.vs-showcase *{box-sizing:border-box}
-.vs-showcase .vs-wrap{max-width:1080px;margin:0 auto}
-.vs-showcase .vs-intro{text-align:center;max-width:680px;margin:0 auto 28px}
-.vs-showcase .vs-label{text-transform:uppercase;letter-spacing:.14em;font-size:.7rem;font-weight:700;color:var(--accent,#b85d3f)}
-.vs-showcase h2{font:inherit;font-size:clamp(1.65rem,3.3vw,2.5rem);font-weight:700;line-height:1.2;letter-spacing:-.04em;margin:12px 0}
-.vs-showcase .vs-lead,.vs-showcase .vs-caption{color:var(--text-2,var(--muted,#6b6660));line-height:1.7}
-.vs-showcase .vs-frame{padding:clamp(18px,3vw,34px);border:1px solid var(--border,var(--line,#e8e2d9));background:var(--bg-card,var(--surface,#fff));border-radius:24px;box-shadow:0 20px 60px rgba(36,29,18,.07);overflow:hidden}
-.vs-showcase .vs-stage{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.vs-showcase .vs-step{position:relative;min-height:170px;padding:22px 18px;border-radius:16px;background:var(--bg,var(--surface,#faf7f2));border:1px solid var(--border,var(--line,#e8e2d9))}
-.vs-showcase .vs-step:not(:last-child):after{content:"→";position:absolute;z-index:1;right:-15px;top:50%;transform:translateY(-50%);width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:var(--bg-card,var(--surface,#fff));color:var(--accent,#b85d3f);border:1px solid var(--border,var(--line,#e8e2d9))}
-.vs-showcase .vs-glyph{font-size:1.75rem;display:block;margin-bottom:24px;color:var(--accent,#b85d3f)}
-.vs-showcase .vs-step b{display:block;font-size:1.03rem;margin-bottom:7px}
-.vs-showcase .vs-step small{display:block;color:var(--text-2,var(--muted,#6b6660));font-size:.84rem;line-height:1.5}
-.vs-showcase .vs-caption{font-size:.79rem;text-align:center;margin:16px 0 0}
-.vs-showcase .vs-art{margin-bottom:22px;background:var(--bg,var(--surface,#f6f3ed));border:1px solid var(--border,var(--line,#e8e2d9));border-radius:18px;padding:22px;overflow:hidden;min-height:185px}
-.vs-showcase .vs-task-art{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
-.vs-showcase .vs-mini-board{background:var(--bg-card,var(--surface,#fff));border-radius:14px;border:1px solid var(--border,var(--line,#e8e2d9));padding:15px;box-shadow:0 6px 24px rgba(10,10,10,.04)}
-.vs-showcase .vs-mini-title{font-size:.76rem;color:var(--text-2,var(--muted,#6b6660));font-weight:700;margin-bottom:12px}
-.vs-showcase .vs-mini-task{display:flex;align-items:center;gap:10px;padding:9px 3px;border-top:1px solid var(--border,var(--line,#e8e2d9));font-size:.9rem}
-.vs-showcase .vs-ring{flex:none;height:17px;width:17px;border:2px solid var(--accent,#b85d3f);border-radius:50%}
-.vs-showcase .vs-ring.done{background:var(--accent,#b85d3f);position:relative}.vs-showcase .vs-ring.done:after{content:"✓";color:#fff;font-size:12px;position:absolute;left:2px;top:-3px}
-.vs-showcase .vs-mini-tag{margin-left:auto;color:var(--accent,#b85d3f);background:var(--accent-soft,#f7e5dd);font-size:.7rem;padding:3px 6px;border-radius:6px}
-.vs-showcase .vs-reader-art{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
-.vs-showcase .vs-paper,.vs-showcase .vs-annotation{border-radius:14px;background:var(--bg-card,var(--surface,#fff));border:1px solid var(--border,var(--line,#e8e2d9));padding:18px}
-.vs-showcase .vs-paper-title{font-size:.75rem;letter-spacing:.1em;color:var(--text-2,var(--muted,#6b6660));margin-bottom:22px}
-.vs-showcase .vs-line{height:9px;background:var(--border,var(--line,#e8e2d9));border-radius:8px;margin:12px 0;max-width:100%}
-.vs-showcase .vs-line.short{width:57%}.vs-showcase .vs-line.mid{width:82%}
-.vs-showcase .vs-highlight{height:15px;border-radius:3px;width:72%;background:color-mix(in srgb,var(--accent,#d97757) 32%,transparent)}
-.vs-showcase .vs-note-label{font-size:.72rem;letter-spacing:.09em;color:var(--accent,#b85d3f);font-weight:800}
-.vs-showcase .vs-note-body{font-size:.93rem;line-height:1.7;margin:18px 0}
-.vs-showcase .vs-note-foot{font-size:.75rem;color:var(--text-2,var(--muted,#6b6660))}
-html:lang(en) .vs-zh,html:lang(zh) .vs-en{display:none!important}
-@media(max-width:700px){.vs-showcase .vs-stage{grid-template-columns:1fr}.vs-showcase .vs-step{min-height:120px}.vs-showcase .vs-step:not(:last-child):after{right:calc(50% - 14px);top:auto;bottom:-15px;transform:rotate(90deg)}.vs-showcase .vs-glyph{margin-bottom:12px}.vs-showcase .vs-reader-art{grid-template-columns:1fr 1fr}.vs-showcase .vs-art{padding:14px}}
-@media(prefers-reduced-motion:reduce){.vs-showcase *, .vs-showcase *:before,.vs-showcase *:after{animation:none!important;transition:none!important}}
-.vs-showcase .vs-wide{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}.vs-showcase .vs-pane{min-width:0;border-radius:14px;border:1px solid var(--border,var(--line,#ddd));background:var(--bg-card,var(--surface,#fff));padding:22px}.vs-showcase .vs-arrow{font-size:2rem;color:var(--accent,#c15f3c)}.vs-showcase .vs-pane-title{font-size:.76rem;letter-spacing:.11em;font-weight:700;color:var(--accent,#c15f3c);margin-bottom:14px}.vs-showcase .vs-pane-content{font-size:1rem;line-height:1.9;overflow-wrap:anywhere}.vs-showcase .vs-code{font-family:ui-monospace,monospace;font-size:.82rem;line-height:2}.vs-showcase .vs-bubbles{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}.vs-showcase .vs-bubble{border:1px solid var(--border,var(--line,#ddd));border-radius:999px;padding:12px 16px;background:var(--bg-card,var(--surface,#fff))}.vs-showcase .vs-symbol{display:grid;place-items:center;height:110px;width:110px;border-radius:40px;margin:20px auto 4px;background:var(--accent-soft,#f7e5dd);color:var(--accent,#c15f3c);font-size:3.2rem}.vs-showcase .vs-waves{display:flex;align-items:center;justify-content:center;gap:6px;height:95px}.vs-showcase .vs-waves span{width:8px;border-radius:8px;background:var(--accent,#c15f3c)}@media(max-width:700px){.vs-showcase .vs-wide{grid-template-columns:1fr}.vs-showcase .vs-arrow{transform:rotate(90deg);text-align:center}}
-</style></head>
+    <script src="family.js" defer></script>
+</head>
 
 <body>
-
-    <!-- Nav -->
-    <nav class="nav-container">
-        <div class="nav-wrapper">
-            <div class="nav-brand">
-                <svg class="nav-logo" width="28" height="28" viewBox="0 0 512 512" fill="none">
-                    <rect width="512" height="512" rx="115" fill="#c15f3c"/>
+    <header class="kit-nav">
+        <div class="kit-container kit-nav-inner">
+            <a class="kit-brand" href="/">
+                <svg class="kit-brand-mark" viewBox="0 0 512 512" fill="none" aria-hidden="true">
+                    <rect width="512" height="512" rx="115" fill="#D97757"/>
                     <path d="M108 404 L404 404" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
                     <path d="M256 236 L344 388 L168 388 Z" fill="#FFFFFF"/>
                     <path d="M132 282 L380 176" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/>
                     <circle cx="398" cy="168" r="30" fill="#FFFFFF"/>
                 </svg>
-                Fulcrum
-            </div>
-            <ul class="nav-menu">
-                <li><a href="#features" class="optional" data-i18n="nav.features">功能</a></li>
-                <li><a href="#platforms" class="optional" data-i18n="nav.platforms">平台</a></li>
-                <li><a href="#product-design" class="optional" data-i18n="nav.compare">设计</a></li>
-                <li><a href="#start-here" class="optional" data-i18n="nav.pricing">开始使用</a></li>
-                <li><a href="guide.html" data-i18n="nav.guide">手册</a></li>
-                <li><a href="https://github.com/turlamai/fulcrum" class="optional">GitHub</a></li>
-                <li class="lang-dropdown-wrapper">
-                    <button class="lang-btn" onclick="void 0">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="2" y1="12" x2="22" y2="12"></line>
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                        </svg>
-                        <span id="current-lang-label">English</span>
-                    </button>
-                    <ul class="lang-menu">
-                        <li class="lang-choice"><button type="button" onclick="setLanguage('en')">English</button></li>
-                        <li class="lang-choice"><button type="button" onclick="setLanguage('zh')">简体中文</button></li>
-                    </ul>
-                </li>
-                <li><button class="theme-btn" id="theme-btn" type="button" aria-label="Toggle theme">◐</button></li>
-            </ul>
-        </div>
-    </nav>
-
-    <!-- Hero -->
-    <section class="hero" id="overview">
-        <div class="container">
-            <span class="eyebrow animate-on-scroll" data-i18n="hero.eyebrow">键盘优先的启动器 · macOS · Windows · Linux</span>
-            <h1 class="animate-on-scroll">
-                <span data-i18n="hero.h1a">一次按键，</span>
-                <span class="accent" data-i18n="hero.h1b">直达一切。</span>
-            </h1>
-<p class="reader-en product-availability" lang="en">Development preview. Existing launcher, clipboard, plugins and BYOK features remain free. No Pro checkout is open.</p><p class="reader-zh product-availability" lang="zh">开发预览。已有启动器、剪贴板、插件和 BYOK 功能保持免费；尚未开放 Pro 购买。</p>
-            <p class="lead animate-on-scroll" data-i18n="hero.lead">Fulcrum（支点）是 macOS、Windows 与 Linux 上的键盘优先启动器。按下全局热键，浮出命令面板：模糊搜索应用与文件、回溯剪贴板历史、展开片段、随手计算、发起网络搜索、运行插件——一切都在本机完成。</p>
-
-            <div class="hero-buttons animate-on-scroll">
-                <a href="https://github.com/turlamai/fulcrum/releases/latest" class="btn btn-primary" data-i18n="hero.cta-primary">下载 macOS 版</a>
-                <a href="guide.html" class="btn btn-secondary" data-i18n="hero.cta-docs">阅读文档</a>
-                <a href="https://github.com/turlamai/fulcrum/releases" class="btn btn-secondary" data-i18n="hero.all-releases">全部版本</a>
-            </div>
-
-            <div class="hero-visual animate-on-scroll">
-                <div class="launcher" role="img" aria-labelledby="hero-demo-caption">
-                    <div class="launcher-search">
-                        <span class="launcher-chevron" aria-hidden="true">›</span>
-                        <span class="launcher-query">ful</span>
-                        <span class="launcher-caret" aria-hidden="true"></span>
-                    </div>
-                    <div class="launcher-results">
-                        <div class="launcher-row is-active">
-                            <span class="row-icon" aria-hidden="true">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
-                            </span>
-                            <span class="row-title">Figma</span>
-                            <span class="row-kind" data-i18n="launcher.row1-kind">应用</span>
-                        </div>
-                        <div class="launcher-row">
-                            <span class="row-icon" aria-hidden="true">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                            </span>
-                            <span class="row-title" data-i18n="launcher.row2-title">fulcrum 更新日志</span>
-                            <span class="row-kind" data-i18n="launcher.row2-kind">片段</span>
-                        </div>
-                        <div class="launcher-row">
-                            <span class="row-icon" aria-hidden="true">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="12" x2="9.01" y2="12"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="9" y1="16" x2="9.01" y2="16"/><line x1="15" y1="16" x2="15.01" y2="16"/></svg>
-                            </span>
-                            <span class="row-title">1+2*3</span>
-                            <span class="row-value">= 7</span>
-                            <span class="row-kind" data-i18n="launcher.row3-kind">计算器</span>
-                        </div>
-                        <div class="launcher-row">
-                            <span class="row-icon" aria-hidden="true">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                            </span>
-                            <span class="row-title">!gh fuzzy search</span>
-                            <span class="row-kind" data-i18n="launcher.row4-kind">网络搜索</span>
-                        </div>
-                    </div>
-                    <div class="launcher-footer">
-                        <span class="launcher-hint"><span class="launcher-kbd">↑↓</span><span data-i18n="launcher.hint-navigate">选择</span></span>
-                        <span class="launcher-hint"><span class="launcher-kbd">↵</span><span data-i18n="launcher.hint-open">打开</span></span>
-                        <span class="launcher-hint launcher-hint-right"><span class="launcher-kbd">esc</span><span data-i18n="launcher.hint-dismiss">关闭</span></span>
-                    </div>
-                </div>
-                <p class="hero-demo-caption" id="hero-demo-caption" data-i18n="hero.demo-caption">界面示意（HTML 模型，并非实际软件截图）</p>
-            </div>
-        </div>
-    </section>
-<!-- Visual Showcase: illustration, not UI screenshot --><section class="vs-showcase" id="visual-showcase" aria-label="Product workflow illustration"><div class="vs-wrap"><div class="vs-intro"><span class="vs-label">PRODUCT IN CONTEXT · 产品如何工作</span><h2><span lang="zh-CN" class="vs-zh">一个热键，把想法变成动作。</span><span lang="en" class="vs-en">One shortcut from thought to action.</span></h2><p class="vs-lead"><span lang="zh-CN" class="vs-zh">主页已有交互模型；补充一张可理解的工作流程图，但不将旧版本图片冒充现有界面。</span><span lang="en" class="vs-en">A workflow illustration alongside the existing HTML concept model—not an old image passed off as the current interface.</span></p></div><div class="vs-frame"><div class="vs-art vs-wide"><div class="vs-pane"><div class="vs-pane-title">HOTKEY</div><div class="vs-pane-content"><strong>⌘ / Ctrl + Space</strong><br><span lang="zh-CN" class="vs-zh">呼出启动器</span><span lang="en" class="vs-en">Invoke the launcher</span></div></div><div class="vs-arrow">→</div><div class="vs-pane"><div class="vs-pane-title">SEARCH &amp; ACT</div><div class="vs-pane-content">⌕ <span lang="zh-CN" class="vs-zh">应用、文件、操作</span><span lang="en" class="vs-en">Apps, files, actions</span><br>↵ <span lang="zh-CN" class="vs-zh">选择并执行</span><span lang="en" class="vs-en">Select and run</span></div></div></div><div class="vs-stage"><div class="vs-step"><span class="vs-glyph" aria-hidden="true">⌘</span><b><span lang="zh-CN" class="vs-zh">唤出</span><span lang="en" class="vs-en">Invoke</span></b><small><span lang="zh-CN" class="vs-zh">从当前桌面进入命令面板</span><span lang="en" class="vs-en">Open the command palette</span></small></div><div class="vs-step"><span class="vs-glyph" aria-hidden="true">⌕</span><b><span lang="zh-CN" class="vs-zh">查找</span><span lang="en" class="vs-en">Find</span></b><small><span lang="zh-CN" class="vs-zh">筛选已有的本地结果</span><span lang="en" class="vs-en">Filter local results</span></small></div><div class="vs-step"><span class="vs-glyph" aria-hidden="true">↵</span><b><span lang="zh-CN" class="vs-zh">执行</span><span lang="en" class="vs-en">Act</span></b><small><span lang="zh-CN" class="vs-zh">确定目标后启动或运行</span><span lang="en" class="vs-en">Open or run the chosen target</span></small></div></div><p class="vs-caption"><span lang="zh-CN" class="vs-zh">概念工作流示意，非当前软件截图；以安装版本和用户手册为准。</span><span lang="en" class="vs-en">Conceptual workflow, not a current app screenshot. Refer to the installed version and user guide.</span></p></div></div></section><!-- End Visual Showcase -->
-
-
-    <!-- Features -->
-    <section id="features">
-        <div class="container">
-            <span class="eyebrow animate-on-scroll" data-i18n="features.eyebrow">为什么是 Fulcrum</span>
-            <h2 class="section-title animate-on-scroll">
-                <span data-i18n="features.title-a">你伸手可及的一切，</span>
-                <span class="accent" data-i18n="features.title-b">只差一次按键。</span>
-            </h2>
-            <p class="section-lead animate-on-scroll" data-i18n="features.lead">Fulcrum 平时隐于幕后，一个热键唤出——此后应用、文件、剪贴、计算与命令，都只差几个字母。</p>
-
-            <div class="bento-grid">
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f1-title">疾速模糊搜索</h3>
-                    <p data-i18n="features.f1-body">敲几个字母，结果随输入即时出现——跨应用、文件与操作的亚秒级模糊匹配。</p>
-                </div>
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f2-title">所有应用</h3>
-                    <p data-i18n="features.f2-body">每个已安装的应用，一次查询直达。启动、切换、完成——不必再在菜单和 Dock 里翻找。</p>
-                </div>
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f3-title">剪贴板历史</h3>
-                    <p data-i18n="features.f3-body">复制过的一切都保存在本机、随时可搜。上周的链接，像昨天的随取随贴。</p>
-                </div>
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f4-title">文本片段</h3>
-                    <p data-i18n="features.f4-body">把反复输入的回复、模板和代码片段存起来——按名字随处展开。</p>
-                </div>
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="12" x2="9.01" y2="12"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="9" y1="16" x2="9.01" y2="16"/><line x1="15" y1="16" x2="15.01" y2="16"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f5-title">计算器：函数与常量</h3>
-                    <p data-i18n="features.f5-body">边输入边计算——支持 sqrt、sin、log 与 π、e 等常量，无需切换应用。</p>
-                </div>
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f6-title">网络搜索 bang</h3>
-                    <p data-i18n="features.f6-body">!g 谷歌、!gh GitHub、!w 维基百科、!so Stack Overflow——一个 bang 直达对应的搜索框。</p>
-                </div>
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f7-title">系统命令</h3>
-                    <p data-i18n="features.f7-body">锁屏、睡眠、静音——系统操作也在同一块面板里，不必翻菜单。</p>
-                </div>
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f8-title">插件生态</h3>
-                    <p data-i18n="features.f8-body">语言无关的插件协议：JSON over stdio。用什么语言写插件都行，Fulcrum 负责运行。</p>
-                </div>
-                <div class="bento-card animate-on-scroll">
-                    <div class="card-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    </div>
-                    <h3 data-i18n="features.f9-title">本地工具与可选在线集成，默认私有</h3>
-                    <p data-i18n="features.f9-body">搜索索引、剪贴板历史与片段保存在本地。插件、AI 与文件夹同步可将选定数据发送至外部服务。核心功能无需注册账号。</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Platforms -->
-    <section id="platforms">
-        <div class="container">
-            <span class="eyebrow animate-on-scroll" data-i18n="platforms.eyebrow">跨平台</span>
-            <h2 class="section-title animate-on-scroll">
-                <span data-i18n="platforms.title-a">一个 Racket 后端。</span>
-                <span class="accent" data-i18n="platforms.title-b">三套一等原生 UI。</span>
-            </h2>
-            <p class="section-lead animate-on-scroll" data-i18n="platforms.lead">基于 Rivet 框架构建：一个共享的 Racket 后端嵌入每个应用，每个平台都是一等原生 UI。没有任何 WebView。</p>
-
-            <div class="platforms-grid">
-                <div class="platform-card animate-on-scroll">
-                    <div class="platform-icon">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg>
-                    </div>
-                    <div class="platform-name">macOS</div>
-                    <div class="platform-format">SwiftUI</div>
-                </div>
-                <div class="platform-card animate-on-scroll">
-                    <div class="platform-icon">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    </div>
-                    <div class="platform-name">Windows</div>
-                    <div class="platform-format">WinUI 3</div>
-                </div>
-                <div class="platform-card animate-on-scroll">
-                    <div class="platform-icon">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                    </div>
-                    <div class="platform-name">Linux</div>
-                    <div class="platform-format">GTK4</div>
-                </div>
-            </div>
-
-            <div class="chips-row animate-on-scroll">
-                <a class="rivet-chip" href="https://rivet.jrtx.site">
-                    <svg width="14" height="14" viewBox="0 0 512 512" fill="none">
-                        <rect width="512" height="512" rx="115" fill="#0891B2"/>
-                        <circle cx="256" cy="150" r="40" fill="#FFFFFF"/>
-                        <path d="M256 190 L256 330" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round"/>
-                        <path d="M256 240 L170 290 M256 240 L342 290" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/>
-                        <circle cx="170" cy="290" r="22" fill="none" stroke="#FFFFFF" stroke-width="20"/>
-                        <circle cx="342" cy="290" r="22" fill="none" stroke="#FFFFFF" stroke-width="20"/>
-                        <path d="M170 312 L170 400 M342 312 L342 400" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
-                    </svg>
-                    <span data-i18n="chip.rivet">基于 Rivet 构建</span>
-                </a>
-            </div>
-        </div>
-    </section>
-
-    <!-- Compare -->
-    <section id="product-design">
-        <div class="container">
-            <span class="eyebrow animate-on-scroll" data-i18n="design.eyebrow">设计</span>
-            <h2 class="section-title animate-on-scroll" data-i18n="design.title">一个共享核心，三个原生桌面</h2>
-            <p class="section-lead animate-on-scroll" data-i18n="design.lead">Fulcrum 使用共享 Racket 后端，在 macOS、Windows 和 Linux 分别提供原生界面。了解实际功能、平台限制以及安装方式，请阅读用户指南。</p>
-            <p><a href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.zh-CN.md">阅读中文用户指南</a> · <a href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.md">English guide</a></p>
-        </div>
-    </section>
-
-    <!-- Pricing -->
-
-
-    <!-- Footer -->
-    <section id="start-here" class="product-start" aria-label="Get started / 开始使用">
-<h2 class="reader-en " lang="en">Start with one useful session.</h2><h2 class="reader-zh " lang="zh">从一次有效使用开始。</h2><p class="reader-en start-status" lang="en">Existing launcher, clipboard, plugins and BYOK features remain free. No Pro checkout is open.</p><p class="reader-zh start-status" lang="zh">已有启动器、剪贴板、插件和 BYOK 功能保持免费；尚未开放 Pro 购买。</p><p class="reader-en " lang="en">Desktop developer previews for macOS, Windows and Linux. Permission and shortcut behavior varies with the OS and Linux display session.</p><p class="reader-zh " lang="zh">提供 macOS、Windows、Linux 桌面开发预览。权限与快捷键行为取决于系统及 Linux 图形会话。</p><div class="product-start-grid"><article><h3 class="reader-en " lang="en">01</h3><h3 class="reader-zh " lang="zh">01</h3><p class="reader-en " lang="en">Open Fulcrum and use the configured global shortcut to summon the window. Resolve shortcut conflicts in Settings.</p><p class="reader-zh " lang="zh">打开 Fulcrum，用设置中的全局快捷键呼出窗口；快捷键冲突在设置中解决。</p></article><article><h3 class="reader-en " lang="en">02</h3><h3 class="reader-zh " lang="zh">02</h3><p class="reader-en " lang="en">Enter 12*12 and confirm 144; then search for an installed application and launch it.</p><p class="reader-zh " lang="zh">输入 12*12 确认得到 144，再搜索并启动一个已安装应用。</p></article><article><h3 class="reader-en " lang="en">03</h3><h3 class="reader-zh " lang="zh">03</h3><p class="reader-en " lang="en">Enable clipboard history, plugins and AI separately, only after reviewing the data and permissions each needs.</p><p class="reader-zh " lang="zh">分别按需启用剪贴板历史、插件和 AI，先了解各自需要的数据与权限。</p></article></div><p class="reader-en start-limits" lang="en">This is a developer preview. New multi-step workflow automation is planned and is not an available paid feature. AI lifecycle extraction is tracked in <a href="https://github.com/turlamai/fulcrum/issues/89">#89</a>.</p><p class="reader-zh start-limits" lang="zh">当前为开发预览。新增多步骤工作流自动化仍在规划，尚不是可购买能力。AI 生命周期拆分见 <a href="https://github.com/turlamai/fulcrum/issues/89">#89</a>。</p><div class="start-links"><a class="reader-en" lang="en" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.md">Installation, privacy &amp; recovery</a><a class="reader-zh" lang="zh" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.zh-CN.md">安装、隐私与恢复</a><a href="https://github.com/turlamai/fulcrum/issues"><span class="reader-en " lang="en">Get help</span><span class="reader-zh " lang="zh">反馈与帮助</span></a></div>
-</section>
-<footer>
-        <div class="footer-content">
-            <div class="footer-brand">
-                <svg width="22" height="22" viewBox="0 0 512 512" fill="none">
-                    <rect width="512" height="512" rx="115" fill="#c15f3c"/>
-                    <path d="M108 404 L404 404" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
-                    <path d="M256 236 L344 388 L168 388 Z" fill="#FFFFFF"/>
-                    <path d="M132 282 L380 176" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/>
-                    <circle cx="398" cy="168" r="30" fill="#FFFFFF"/>
-                </svg>
-                Fulcrum
-            </div>
-            <div class="footer-links">
+                <span>Fulcrum</span>
+            </a>
+            <nav class="kit-nav-links">
+                <a href="#features" data-i18n="nav.features">功能</a>
+                <a href="#platforms" data-i18n="nav.platforms">平台</a>
+                <a href="#product-design" data-i18n="nav.compare">设计</a>
+                <a href="#start-here" data-i18n="nav.pricing">开始使用</a>
+                <a href="guide.html" data-i18n="nav.guide">手册</a>
                 <a href="https://github.com/turlamai/fulcrum">GitHub</a>
-                <a href="https://github.com/turlamai/fulcrum/blob/main/CHANGELOG.md" data-i18n="footer.changelog">更新日志</a>
-                <a href="https://rivet.jrtx.site">Rivet</a>
-                <a href="https://glaze.jrtx.site">Glaze</a>
+            </nav>
+            <div class="kit-nav-actions">
+                <div class="kit-lang">
+                    <button class="kit-lang-btn" type="button" aria-haspopup="true" aria-expanded="false">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c-4.6 4-4.6 8.4 0 12.4 4.6-4 4.6-8.4 0-12.4z"/></svg>
+                        <span class="kit-lang-current">简体中文</span>
+                    </button>
+                    <ul class="kit-lang-menu">
+                        <li><button type="button" data-kit-lang="zh">简体中文</button></li>
+                        <li><button type="button" data-kit-lang="en">English</button></li>
+                    </ul>
+                </div>
+                <button class="kit-icon-btn kit-theme-toggle" type="button" aria-pressed="false" aria-label="Theme">
+                    <svg class="kit-icon-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="4"/><path d="M10 1.5v2M10 16.5v2M1.5 10h2M16.5 10h2M4 4l1.4 1.4M14.6 14.6L16 16M16 4l-1.4 1.4M5.4 14.6L4 16"/></svg>
+                    <svg class="kit-icon-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M16.5 12.2A7 7 0 0 1 7.8 3.5a7 7 0 1 0 8.7 8.7z"/></svg>
+                </button>
             </div>
-            <div class="footer-note">© 2026 TuringLambda AI</div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Hero -->
+        <section class="kit-hero" id="overview">
+            <div class="kit-container">
+                <span class="kit-eyebrow" data-i18n="hero.eyebrow">键盘优先的启动器 · macOS · Windows · Linux</span>
+                <h1><span data-i18n="hero.h1a">一次按键，</span> <span class="kit-accent-word" data-i18n="hero.h1b">直达一切。</span></h1>
+                <p class="kit-lead" data-i18n="hero.lead">Fulcrum（支点）是 macOS、Windows 与 Linux 上的键盘优先启动器。按下全局热键，浮出命令面板：模糊搜索应用与文件、回溯剪贴板历史、展开片段、随手计算、发起网络搜索、运行插件——一切都在本机完成。</p>
+                <div class="kit-btn-row">
+                    <div class="kit-dl">
+                        <a class="kit-btn kit-btn--primary" data-kit-dl-primary href="https://github.com/turlamai/fulcrum/releases/latest">
+                            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 2.5v10M6 9l4 4 4-4M3.5 16.5h13"/></svg>
+                            <span class="kit-dl-label" data-i18n="dl.generic">获取 Fulcrum</span>
+                        </a>
+                        <button class="kit-dl-caret" type="button" aria-haspopup="true" aria-expanded="false" aria-label="All platforms">
+                            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 5.5L7 9.5l4-4"/></svg>
+                        </button>
+                        <ul class="kit-dl-menu">
+                            <li><a href="https://github.com/turlamai/fulcrum/releases/latest" data-kit-dl="mac"><span class="kit-dl-os" data-i18n="dl.mac">macOS 版</span><span class="kit-dl-kind">.dmg</span></a></li>
+                            <li><a href="https://github.com/turlamai/fulcrum/releases/latest" data-kit-dl="win"><span class="kit-dl-os" data-i18n="dl.win">Windows 版</span><span class="kit-dl-kind">.msi</span></a></li>
+                            <li><a href="https://github.com/turlamai/fulcrum/releases/latest" data-kit-dl="linux"><span class="kit-dl-os" data-i18n="dl.linux">Linux 版</span><span class="kit-dl-kind">.tar.gz</span></a></li>
+                            <li class="kit-dl-note kit-hidden" data-i18n="dl.note">当前平台请前往 Releases 页面选取对应安装包。</li>
+                        </ul>
+                    </div>
+                    <a class="kit-btn kit-btn--secondary" href="guide.html" data-i18n="hero.cta-docs">阅读文档</a>
+                    <a class="kit-btn kit-btn--ghost" href="https://github.com/turlamai/fulcrum/releases"><span data-i18n="hero.all-releases">全部版本</span><span class="kit-btn-arrow">›</span></a>
+                </div>
+                <p class="kit-hero-meta"><span class="kit-badge" data-i18n="hero.availability">开发预览。已有启动器、剪贴板、插件和 BYOK 功能保持免费；尚未开放 Pro 购买。</span></p>
+
+                <div class="hero-visual">
+                    <div class="launcher" role="img" aria-labelledby="hero-demo-caption">
+                        <div class="launcher-search">
+                            <span class="launcher-chevron" aria-hidden="true">›</span>
+                            <span class="launcher-query">ful</span>
+                            <span class="launcher-caret" aria-hidden="true"></span>
+                        </div>
+                        <div class="launcher-results">
+                            <div class="launcher-row is-active">
+                                <span class="row-icon" aria-hidden="true">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+                                </span>
+                                <span class="row-title">Figma</span>
+                                <span class="row-kind" data-i18n="launcher.row1-kind">应用</span>
+                            </div>
+                            <div class="launcher-row">
+                                <span class="row-icon" aria-hidden="true">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                                </span>
+                                <span class="row-title" data-i18n="launcher.row2-title">fulcrum 更新日志</span>
+                                <span class="row-kind" data-i18n="launcher.row2-kind">片段</span>
+                            </div>
+                            <div class="launcher-row">
+                                <span class="row-icon" aria-hidden="true">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="12" x2="9.01" y2="12"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="9" y1="16" x2="9.01" y2="16"/><line x1="15" y1="16" x2="15.01" y2="16"/></svg>
+                                </span>
+                                <span class="row-title">1+2*3</span>
+                                <span class="row-value">= 7</span>
+                                <span class="row-kind" data-i18n="launcher.row3-kind">计算器</span>
+                            </div>
+                            <div class="launcher-row">
+                                <span class="row-icon" aria-hidden="true">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                                </span>
+                                <span class="row-title">!gh fuzzy search</span>
+                                <span class="row-kind" data-i18n="launcher.row4-kind">网络搜索</span>
+                            </div>
+                        </div>
+                        <div class="launcher-footer">
+                            <span class="launcher-hint"><span class="launcher-kbd">↑↓</span><span data-i18n="launcher.hint-navigate">选择</span></span>
+                            <span class="launcher-hint"><span class="launcher-kbd">↵</span><span data-i18n="launcher.hint-open">打开</span></span>
+                            <span class="launcher-hint launcher-hint-right"><span class="launcher-kbd">esc</span><span data-i18n="launcher.hint-dismiss">关闭</span></span>
+                        </div>
+                    </div>
+                    <p class="hero-demo-caption" id="hero-demo-caption" data-i18n="hero.demo-caption">界面示意（HTML 模型，并非实际软件截图）</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Workflow illustration -->
+        <section class="kit-section kit-section--alt" id="visual-showcase" aria-label="Product workflow illustration">
+            <div class="vs-wrap">
+                <div class="vs-intro">
+                    <span class="vs-label">PRODUCT IN CONTEXT · 产品如何工作</span>
+                    <h2 data-i18n="wf.title">一个热键，把想法变成动作。</h2>
+                    <p class="vs-lead" data-i18n="wf.lead">主页已有交互模型；补充一张可理解的工作流程图，但不将旧版本图片冒充现有界面。</p>
+                </div>
+                <div class="vs-frame">
+                    <div class="vs-wide">
+                        <div class="vs-pane">
+                            <div class="vs-pane-title">HOTKEY</div>
+                            <div class="vs-pane-content"><strong>⌘ / Ctrl + Space</strong><br><span data-i18n="wf.hotkey-desc">呼出启动器</span></div>
+                        </div>
+                        <div class="vs-arrow" aria-hidden="true">→</div>
+                        <div class="vs-pane">
+                            <div class="vs-pane-title">SEARCH &amp; ACT</div>
+                            <div class="vs-pane-content">⌕ <span data-i18n="wf.search-apps">应用、文件、操作</span><br>↵ <span data-i18n="wf.search-run">选择并执行</span></div>
+                        </div>
+                    </div>
+                    <div class="vs-stage">
+                        <div class="vs-step"><span class="vs-glyph" aria-hidden="true">⌘</span><b data-i18n="wf.s1t">唤出</b><small data-i18n="wf.s1b">从当前桌面进入命令面板</small></div>
+                        <div class="vs-step"><span class="vs-glyph" aria-hidden="true">⌕</span><b data-i18n="wf.s2t">查找</b><small data-i18n="wf.s2b">筛选已有的本地结果</small></div>
+                        <div class="vs-step"><span class="vs-glyph" aria-hidden="true">↵</span><b data-i18n="wf.s3t">执行</b><small data-i18n="wf.s3b">确定目标后启动或运行</small></div>
+                    </div>
+                    <p class="vs-caption" data-i18n="wf.caption">概念工作流示意，非当前软件截图；以安装版本和用户手册为准。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="kit-section" id="features">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="features.eyebrow">为什么是 Fulcrum</span>
+                <h2 class="kit-h2"><span data-i18n="features.title-a">你伸手可及的一切，</span> <span class="kit-accent-word" data-i18n="features.title-b">只差一次按键。</span></h2>
+                <p class="kit-lead" data-i18n="features.lead">Fulcrum 平时隐于幕后，一个热键唤出——此后应用、文件、剪贴、计算与命令，都只差几个字母。</p>
+                <div class="kit-grid kit-grid--3" style="margin-top: 44px;">
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+                        <h3 data-i18n="features.f1-title">疾速模糊搜索</h3>
+                        <p data-i18n="features.f1-body">敲几个字母，结果随输入即时出现——跨应用、文件与操作的亚秒级模糊匹配。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
+                        <h3 data-i18n="features.f2-title">所有应用</h3>
+                        <p data-i18n="features.f2-body">每个已安装的应用，一次查询直达。启动、切换、完成——不必再在菜单和 Dock 里翻找。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></span>
+                        <h3 data-i18n="features.f3-title">剪贴板历史</h3>
+                        <p data-i18n="features.f3-body">复制过的一切都保存在本机、随时可搜。上周的链接，像昨天的随取随贴。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
+                        <h3 data-i18n="features.f4-title">文本片段</h3>
+                        <p data-i18n="features.f4-body">把反复输入的回复、模板和代码片段存起来——按名字随处展开。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="12" x2="9.01" y2="12"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="9" y1="16" x2="9.01" y2="16"/><line x1="15" y1="16" x2="15.01" y2="16"/></svg></span>
+                        <h3 data-i18n="features.f5-title">计算器：函数与常量</h3>
+                        <p data-i18n="features.f5-body">边输入边计算——支持 sqrt、sin、log 与 π、e 等常量，无需切换应用。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+                        <h3 data-i18n="features.f6-title">网络搜索 bang</h3>
+                        <p data-i18n="features.f6-body">!g 谷歌、!gh GitHub、!w 维基百科、!so Stack Overflow——一个 bang 直达对应的搜索框。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></span>
+                        <h3 data-i18n="features.f7-title">系统命令</h3>
+                        <p data-i18n="features.f7-body">锁屏、睡眠、静音——系统操作也在同一块面板里，不必翻菜单。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
+                        <h3 data-i18n="features.f8-title">插件生态</h3>
+                        <p data-i18n="features.f8-body">语言无关的插件协议：JSON over stdio。用什么语言写插件都行，Fulcrum 负责运行。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                        <h3 data-i18n="features.f9-title">本地工具与可选在线集成，默认私有</h3>
+                        <p data-i18n="features.f9-body">搜索索引、剪贴板历史与片段保存在本地。插件、AI 与文件夹同步可将选定数据发送至外部服务。核心功能无需注册账号。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Platforms -->
+        <section class="kit-section kit-section--alt" id="platforms">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="platforms.eyebrow">跨平台</span>
+                <h2 class="kit-h2"><span data-i18n="platforms.title-a">一个 Racket 后端。</span> <span class="kit-accent-word" data-i18n="platforms.title-b">三套一等原生 UI。</span></h2>
+                <p class="kit-lead" data-i18n="platforms.lead">基于 Rivet 框架构建：一个共享的 Racket 后端嵌入每个应用，每个平台都是一等原生 UI。没有任何 WebView。</p>
+                <div class="kit-platforms" style="margin-top: 36px;">
+                    <span class="kit-platform-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg>macOS <small>SwiftUI</small></span>
+                    <span class="kit-platform-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Windows <small>WinUI 3</small></span>
+                    <span class="kit-platform-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Linux <small>GTK4</small></span>
+                </div>
+                <div style="margin-top: 22px;">
+                    <a class="rivet-chip" href="https://rivet.jrtx.site">
+                        <svg width="14" height="14" viewBox="0 0 512 512" fill="none" aria-hidden="true">
+                            <rect width="512" height="512" rx="115" fill="#0891B2"/>
+                            <circle cx="256" cy="150" r="40" fill="#FFFFFF"/>
+                            <path d="M256 190 L256 330" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round"/>
+                            <path d="M256 240 L170 290 M256 240 L342 290" stroke="#FFFFFF" stroke-width="34" stroke-linecap="round"/>
+                            <circle cx="170" cy="290" r="22" fill="none" stroke="#FFFFFF" stroke-width="20"/>
+                            <circle cx="342" cy="290" r="22" fill="none" stroke="#FFFFFF" stroke-width="20"/>
+                            <path d="M170 312 L170 400 M342 312 L342 400" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
+                        </svg>
+                        <span data-i18n="chip.rivet">基于 Rivet 构建</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Design -->
+        <section class="kit-section kit-section--tight" id="product-design">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="design.eyebrow">设计</span>
+                <h2 class="kit-h2" data-i18n="design.title">一个共享核心，三个原生桌面</h2>
+                <p class="kit-lead" data-i18n="design.lead">Fulcrum 使用共享 Racket 后端，在 macOS、Windows 和 Linux 分别提供原生界面。了解实际功能、平台限制以及安装方式，请阅读用户指南。</p>
+                <p style="margin-top: 18px;"><a class="kit-btn kit-btn--secondary" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.zh-CN.md" data-i18n="design.guide">阅读中文用户指南</a></p>
+            </div>
+        </section>
+
+        <!-- Get started -->
+        <section class="kit-section" id="start-here">
+            <div class="kit-container">
+                <span class="kit-kicker" data-i18n="nav.pricing">开始使用</span>
+                <h2 class="kit-h2" data-i18n="start.title">从一次有效使用开始。</h2>
+                <p class="kit-lead"><span class="kit-badge" data-i18n="hero.availability">开发预览。已有启动器、剪贴板、插件和 BYOK 功能保持免费；尚未开放 Pro 购买。</span> <span data-i18n="start.note">提供 macOS、Windows、Linux 桌面开发预览。权限与快捷键行为取决于系统及 Linux 图形会话。</span></p>
+                <div class="kit-steps" style="margin-top: 44px;">
+                    <div class="kit-step">
+                        <h3>01</h3>
+                        <p data-i18n="start.s1">打开 Fulcrum，用设置中的全局快捷键呼出窗口；快捷键冲突在设置中解决。</p>
+                    </div>
+                    <div class="kit-step">
+                        <h3>02</h3>
+                        <p data-i18n="start.s2">输入 12*12 确认得到 144，再搜索并启动一个已安装应用。</p>
+                    </div>
+                    <div class="kit-step">
+                        <h3>03</h3>
+                        <p data-i18n="start.s3">分别按需启用剪贴板历史、插件和 AI，先了解各自需要的数据与权限。</p>
+                    </div>
+                </div>
+                <p class="kit-text-2" style="margin-top: 30px; max-width: 62ch;"><span data-i18n="start.limits-a">当前为开发预览。新增多步骤工作流自动化仍在规划，尚不是可购买能力。AI 生命周期拆分见 </span><a href="https://github.com/turlamai/fulcrum/issues/89">#89</a><span data-i18n="start.limits-b">。</span></p>
+                <div class="start-links">
+                    <a href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.zh-CN.md" data-i18n="start.guide">安装、隐私与恢复</a>
+                    <a href="https://github.com/turlamai/fulcrum/issues" data-i18n="start.help">反馈与帮助</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="kit-footer">
+        <div class="kit-container">
+            <div class="kit-footer-grid">
+                <div>
+                    <a class="kit-brand" href="/">
+                        <svg class="kit-brand-mark" viewBox="0 0 512 512" fill="none" aria-hidden="true">
+                            <rect width="512" height="512" rx="115" fill="#D97757"/>
+                            <path d="M108 404 L404 404" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
+                            <path d="M256 236 L344 388 L168 388 Z" fill="#FFFFFF"/>
+                            <path d="M132 282 L380 176" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/>
+                            <circle cx="398" cy="168" r="30" fill="#FFFFFF"/>
+                        </svg>
+                        <span>Fulcrum</span>
+                    </a>
+                    <p class="kit-footer-tagline" data-i18n="footer.tagline">一次按键，直达一切。</p>
+                </div>
+                <div>
+                    <h4 data-i18n="footer.product">产品</h4>
+                    <ul>
+                        <li><a href="#features" data-i18n="nav.features">功能</a></li>
+                        <li><a href="guide.html" data-i18n="nav.guide">手册</a></li>
+                        <li><a href="https://github.com/turlamai/fulcrum/blob/main/CHANGELOG.md" data-i18n="footer.changelog">更新日志</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 data-i18n="footer.family">家族</h4>
+                    <ul>
+                        <li><a href="https://jrtx.site/" data-i18n="footer.portal">全部产品</a></li>
+                        <li><a href="https://rivet.jrtx.site">Rivet</a></li>
+                        <li><a href="https://glaze.jrtx.site">Glaze</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 data-i18n="footer.legal">条款</h4>
+                    <ul>
+                        <li><a href="https://github.com/turlamai/fulcrum" data-i18n="nav.github">GitHub</a></li>
+                        <li><a href="https://github.com/turlamai/fulcrum/blob/main/LICENSE" data-i18n="footer.license">许可协议</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="kit-footer-bottom">
+                <span>© 2026 TuringLambda AI</span>
+                <span class="kit-mono">site-kit v1.0.1</span>
+            </div>
         </div>
     </footer>
-<nav id="product-support" aria-label="Support / 支持"><a href="https://github.com/turlamai/fulcrum/issues"><span class="support-zh">反馈</span><span class="support-en" lang="en">Feedback</span></a> <a href="https://github.com/turlamai/fulcrum/releases"><span class="support-zh">发布与更新</span><span class="support-en" lang="en">Releases</span></a> <a href="https://github.com/turlamai/fulcrum/blob/main/LICENSE"><span class="support-zh">源码许可</span><span class="support-en" lang="en">Source license</span></a> <a class="support-zh" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.zh-CN.md">使用与帮助</a> <a class="support-en" lang="en" href="https://github.com/turlamai/fulcrum/blob/main/docs/user-guide.md">Usage & help</a></nav>
 
-    <script>
-        // Resolve canonical versioned assets for the visitor's OS. If the
-        // GitHub API is unavailable, the stable Release page remains usable.
-        // No versionless binary alias is required in the published assets.
-        (function () {
-            var page = 'https://github.com/turlamai/fulcrum/releases/latest';
-            var ua = navigator.userAgent;
-            var os = /Windows/i.test(ua) ? 'win' : (/Mac|iPhone|iPad/i.test(ua) ? 'mac' : (/Linux|X11/i.test(ua) ? 'linux' : 'mac'));
-            var arch = os === 'linux' && /aarch64|arm/i.test(ua) ? 'arm64' : (os === 'linux' ? 'x64' : 'arm64');
-            var release = null;
-            var links = document.querySelectorAll('a[data-i18n="hero.cta-primary"]');
-            var key = 'hero.cta-' + {mac: 'mac', win: 'win', linux: 'linux'}[os];
-            links.forEach(function (a) { a.setAttribute('data-i18n', key); });
-            function updateDownload() {
-                var suffix = {mac: 'macos-' + arch + '.dmg', win: 'windows-x64.msi', linux: 'linux-' + arch + '.tar.gz'}[os];
-                var url = page;
-                if (release && !release.draft && !release.prerelease &&
-                    /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(release.tag_name)) {
-                    var name = 'fulcrum-' + release.tag_name.slice(1) + '-' + suffix;
-                    var exact = 'https://github.com/turlamai/fulcrum/releases/download/' + release.tag_name + '/' + name;
-                    var asset = (release.assets || []).find(function (a) { return a.name === name && a.size > 0 && a.browser_download_url === exact; });
-                    if (asset) url = exact;
-                }
-                links.forEach(function (a) { a.href = url; });
-            }
-            updateDownload();
-            if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
-                navigator.userAgentData.getHighEntropyValues(['architecture', 'platform']).then(function (h) {
-                    if (!h || /Windows/i.test(h.platform || '')) return;
-                    var resolved = h.architecture === 'arm' ? 'arm64' : (h.architecture === 'x86' ? 'x64' : null);
-                    if (resolved && resolved !== arch) { arch = resolved; updateDownload(); }
-                }).catch(function () {});
-            }
-            fetch('https://api.github.com/repos/turlamai/fulcrum/releases/latest',
-                  {headers: {'Accept': 'application/vnd.github+json'}})
-                .then(function (r) { if (!r.ok) throw new Error('release lookup'); return r.json(); })
-                .then(function (data) { release = data; updateDownload(); })
-                .catch(function () { /* The Releases page is the safe fallback. */ });
-        })();
-    </script>
-    <script>
-        // Unified language policy (family standard): explicit choice wins;
-        // otherwise follow the browser locale. Default copy is Chinese —
-        // data-i18n keys below resolve against these dictionaries.
-        (function () {
-            var LANGUAGE_OVERRIDE_KEY = 'fulcrum-lang-override-v2';
-            var LEGACY_LANGUAGE_KEY = 'site-lang';
+    <script type="application/json" id="kit-i18n">{
+  "zh": {
+    "nav.compare": "设计",
+    "nav.features": "功能",
+    "nav.guide": "手册",
+    "nav.platforms": "平台",
+    "nav.pricing": "开始使用",
+    "hero.all-releases": "全部版本",
+    "hero.availability": "开发预览。已有启动器、剪贴板、插件和 BYOK 功能保持免费；尚未开放 Pro 购买。",
+    "hero.cta-docs": "阅读文档",
+    "hero.demo-caption": "界面示意（HTML 模型，并非实际软件截图）",
+    "hero.eyebrow": "键盘优先的启动器 · macOS · Windows · Linux",
+    "hero.h1a": "一次按键，",
+    "hero.h1b": "直达一切。",
+    "hero.lead": "Fulcrum（支点）是 macOS、Windows 与 Linux 上的键盘优先启动器。按下全局热键，浮出命令面板：模糊搜索应用与文件、回溯剪贴板历史、展开片段、随手计算、发起网络搜索、运行插件——一切都在本机完成。",
+    "dl.generic": "获取 Fulcrum",
+    "dl.linux": "Linux 版",
+    "dl.mac": "macOS 版",
+    "dl.note": "当前平台请前往 Releases 页面选取对应安装包。",
+    "dl.win": "Windows 版",
+    "launcher.hint-dismiss": "关闭",
+    "launcher.hint-navigate": "选择",
+    "launcher.hint-open": "打开",
+    "launcher.row1-kind": "应用",
+    "launcher.row2-kind": "片段",
+    "launcher.row2-title": "fulcrum 更新日志",
+    "launcher.row3-kind": "计算器",
+    "launcher.row4-kind": "网络搜索",
+    "wf.caption": "概念工作流示意，非当前软件截图；以安装版本和用户手册为准。",
+    "wf.hotkey-desc": "呼出启动器",
+    "wf.lead": "主页已有交互模型；补充一张可理解的工作流程图，但不将旧版本图片冒充现有界面。",
+    "wf.s1b": "从当前桌面进入命令面板",
+    "wf.s1t": "唤出",
+    "wf.s2b": "筛选已有的本地结果",
+    "wf.s2t": "查找",
+    "wf.s3b": "确定目标后启动或运行",
+    "wf.s3t": "执行",
+    "wf.search-apps": "应用、文件、操作",
+    "wf.search-run": "选择并执行",
+    "wf.title": "一个热键，把想法变成动作。",
+    "features.eyebrow": "为什么是 Fulcrum",
+    "features.f1-body": "敲几个字母，结果随输入即时出现——跨应用、文件与操作的亚秒级模糊匹配。",
+    "features.f1-title": "疾速模糊搜索",
+    "features.f2-body": "每个已安装的应用，一次查询直达。启动、切换、完成——不必再在菜单和 Dock 里翻找。",
+    "features.f2-title": "所有应用",
+    "features.f3-body": "复制过的一切都保存在本机、随时可搜。上周的链接，像昨天的随取随贴。",
+    "features.f3-title": "剪贴板历史",
+    "features.f4-body": "把反复输入的回复、模板和代码片段存起来——按名字随处展开。",
+    "features.f4-title": "文本片段",
+    "features.f5-body": "边输入边计算——支持 sqrt、sin、log 与 π、e 等常量，无需切换应用。",
+    "features.f5-title": "计算器：函数与常量",
+    "features.f6-body": "!g 谷歌、!gh GitHub、!w 维基百科、!so Stack Overflow——一个 bang 直达对应的搜索框。",
+    "features.f6-title": "网络搜索 bang",
+    "features.f7-body": "锁屏、睡眠、静音——系统操作也在同一块面板里，不必翻菜单。",
+    "features.f7-title": "系统命令",
+    "features.f8-body": "语言无关的插件协议：JSON over stdio。用什么语言写插件都行，Fulcrum 负责运行。",
+    "features.f8-title": "插件生态",
+    "features.f9-body": "搜索索引、剪贴板历史与片段保存在本地。插件、AI 与文件夹同步可将选定数据发送至外部服务。核心功能无需注册账号。",
+    "features.f9-title": "本地工具与可选在线集成，默认私有",
+    "features.lead": "Fulcrum 平时隐于幕后，一个热键唤出——此后应用、文件、剪贴、计算与命令，都只差几个字母。",
+    "features.title-a": "你伸手可及的一切，",
+    "features.title-b": "只差一次按键。",
+    "platforms.eyebrow": "跨平台",
+    "platforms.lead": "基于 Rivet 框架构建：一个共享的 Racket 后端嵌入每个应用，每个平台都是一等原生 UI。没有任何 WebView。",
+    "platforms.title-a": "一个 Racket 后端。",
+    "platforms.title-b": "三套一等原生 UI。",
+    "chip.rivet": "基于 Rivet 构建",
+    "design.eyebrow": "设计",
+    "design.guide": "阅读中文用户指南",
+    "design.lead": "Fulcrum 使用共享 Racket 后端，在 macOS、Windows 和 Linux 分别提供原生界面。了解实际功能、平台限制以及安装方式，请阅读用户指南。",
+    "design.title": "一个共享核心，三个原生桌面",
+    "start.guide": "安装、隐私与恢复",
+    "start.help": "反馈与帮助",
+    "start.limits-a": "当前为开发预览。新增多步骤工作流自动化仍在规划，尚不是可购买能力。AI 生命周期拆分见 ",
+    "start.limits-b": "。",
+    "start.note": "提供 macOS、Windows、Linux 桌面开发预览。权限与快捷键行为取决于系统及 Linux 图形会话。",
+    "start.s1": "打开 Fulcrum，用设置中的全局快捷键呼出窗口；快捷键冲突在设置中解决。",
+    "start.s2": "输入 12*12 确认得到 144，再搜索并启动一个已安装应用。",
+    "start.s3": "分别按需启用剪贴板历史、插件和 AI，先了解各自需要的数据与权限。",
+    "start.title": "从一次有效使用开始。",
+    "footer.changelog": "更新日志",
+    "footer.family": "家族",
+    "footer.legal": "条款",
+    "footer.license": "许可协议",
+    "footer.portal": "全部产品",
+    "footer.product": "产品",
+    "footer.tagline": "一次按键，直达一切。",
+    "nav.github": "GitHub"
+  },
+  "en": {
+    "nav.compare": "Design",
+    "nav.features": "Features",
+    "nav.guide": "Manual",
+    "nav.platforms": "Platforms",
+    "nav.pricing": "Get started",
+    "hero.all-releases": "All releases",
+    "hero.availability": "Development preview. Existing launcher, clipboard, plugins and BYOK features remain free. No Pro checkout is open.",
+    "hero.cta-docs": "Read the Docs",
+    "hero.demo-caption": "UI illustration (HTML mockup, not an application screenshot)",
+    "hero.eyebrow": "Keyboard-first launcher · macOS · Windows · Linux",
+    "hero.h1a": "One keystroke.",
+    "hero.h1b": "Everything within reach.",
+    "hero.lead": "Fulcrum is a keyboard-first launcher for macOS, Windows and Linux. Press one global hotkey and a floating command palette appears: fuzzy-search apps and files, revisit your clipboard history, expand snippets, calculate, fire web-search bangs and run plugins — all on-device.",
+    "dl.generic": "Get Fulcrum",
+    "dl.linux": "For Linux",
+    "dl.mac": "For macOS",
+    "dl.note": "Pick the right package from the Releases page for your platform.",
+    "dl.win": "For Windows",
+    "launcher.hint-dismiss": "dismiss",
+    "launcher.hint-navigate": "navigate",
+    "launcher.hint-open": "open",
+    "launcher.row1-kind": "Application",
+    "launcher.row2-kind": "Snippet",
+    "launcher.row2-title": "fulcrum changelog",
+    "launcher.row3-kind": "Calculator",
+    "launcher.row4-kind": "Web Search",
+    "wf.caption": "Conceptual workflow, not a current app screenshot. Refer to the installed version and user guide.",
+    "wf.hotkey-desc": "Invoke the launcher",
+    "wf.lead": "A workflow illustration alongside the existing HTML concept model — not an old image passed off as the current interface.",
+    "wf.s1b": "Open the command palette",
+    "wf.s1t": "Invoke",
+    "wf.s2b": "Filter local results",
+    "wf.s2t": "Find",
+    "wf.s3b": "Open or run the chosen target",
+    "wf.s3t": "Act",
+    "wf.search-apps": "Apps, files, actions",
+    "wf.search-run": "Select and run",
+    "wf.title": "One shortcut from thought to action.",
+    "features.eyebrow": "Why Fulcrum",
+    "features.f1-body": "Type a few letters and results appear as you type — sub-second fuzzy matching across apps, files and actions.",
+    "features.f1-title": "Blazing fuzzy search",
+    "features.f2-body": "Every installed application, one query away. Launch it, switch to it, done — no digging through menus or docks.",
+    "features.f2-title": "All your apps",
+    "features.f3-body": "Everything you copy is kept and searchable on-device. Paste last week's link like it was yesterday's.",
+    "features.f3-title": "Clipboard history",
+    "features.f4-body": "Save the replies, templates and code fragments you keep retyping — expand them anywhere by name.",
+    "features.f4-title": "Snippets",
+    "features.f5-body": "Inline math as you type — sqrt, sin, log and constants like π and e, without switching apps.",
+    "features.f5-title": "Calculator with functions & constants",
+    "features.f6-body": "!g Google, !gh GitHub, !w Wikipedia, !so Stack Overflow — a bang jumps straight into the right search box.",
+    "features.f6-title": "Web-search bangs",
+    "features.f7-body": "Lock the screen, sleep, mute — system actions live in the same palette, no menu digging required.",
+    "features.f7-title": "System commands",
+    "features.f8-body": "A language-agnostic plugin protocol: JSON over stdio. Write plugins in any language; Fulcrum runs them.",
+    "features.f8-title": "Plugin ecosystem",
+    "features.f9-body": "Search indexes, clipboard history and snippets are stored locally. Plugins, AI and folder sync can send selected data to external services. The core needs no account.",
+    "features.f9-title": "local tools with optional online integrations, private by default",
+    "features.lead": "Fulcrum stays out of the way until one hotkey calls it — then apps, files, clips, calculations and commands are a few letters away.",
+    "features.title-a": "Everything you reach for,",
+    "features.title-b": "one keystroke away.",
+    "platforms.eyebrow": "Platforms",
+    "platforms.lead": "Built with the Rivet framework: one shared Racket backend embedded in each app, first-party native UI on every platform. No WebView anywhere.",
+    "platforms.title-a": "One Racket backend.",
+    "platforms.title-b": "Three first-party UIs.",
+    "chip.rivet": "Built with Rivet",
+    "design.eyebrow": "Design",
+    "design.guide": "Read the user guide (Chinese)",
+    "design.lead": "Fulcrum uses a shared Racket backend with native interfaces for macOS, Windows and Linux. Read the user guide for supported features, platform limitations and installation.",
+    "design.title": "One shared core, three native desktops",
+    "start.guide": "Installation, privacy & recovery",
+    "start.help": "Get help",
+    "start.limits-a": "This is a developer preview. New multi-step workflow automation is planned and is not an available paid feature. AI lifecycle extraction is tracked in ",
+    "start.limits-b": ".",
+    "start.note": "Desktop developer previews for macOS, Windows and Linux. Permission and shortcut behavior varies with the OS and Linux display session.",
+    "start.s1": "Open Fulcrum and use the configured global shortcut to summon the window. Resolve shortcut conflicts in Settings.",
+    "start.s2": "Enter 12*12 and confirm 144, then search for an installed application and launch it.",
+    "start.s3": "Enable clipboard history, plugins and AI separately, only after reviewing the data and permissions each needs.",
+    "start.title": "Start with one useful session.",
+    "footer.changelog": "Changelog",
+    "footer.family": "Family",
+    "footer.legal": "Legal",
+    "footer.license": "License",
+    "footer.portal": "All products",
+    "footer.product": "Product",
+    "footer.tagline": "One keystroke. Everything within reach.",
+    "nav.github": "GitHub"
+  }
+}</script>
 
-            var zh = {
-                "nav.features": "功能", "nav.platforms": "平台", "nav.compare": "设计", "nav.pricing": "开始使用", "nav.guide": "手册",
-                "hero.eyebrow": "键盘优先的启动器 · macOS · Windows · Linux",
-                "hero.h1a": "一次按键，", "hero.h1b": "直达一切。",
-                "hero.lead": "Fulcrum（支点）是 macOS、Windows 与 Linux 上的键盘优先启动器。按下全局热键，浮出命令面板：模糊搜索应用与文件、回溯剪贴板历史、展开片段、随手计算、发起网络搜索、运行插件——一切都在本机完成。",
-                "hero.cta-primary": "下载 macOS 版", "hero.cta-docs": "阅读文档",
-                "hero.cta-mac": "下载 macOS 版", "hero.cta-win": "下载 Windows 版", "hero.cta-linux": "下载 Linux 版",
-                "hero.all-releases": "全部版本", "hero.demo-caption": "界面示意（HTML 模型，并非实际软件截图）",
-                "launcher.row1-kind": "应用",
-                "launcher.row2-title": "fulcrum 更新日志", "launcher.row2-kind": "片段",
-                "launcher.row3-kind": "计算器",
-                "launcher.row4-kind": "网络搜索",
-                "launcher.hint-navigate": "选择", "launcher.hint-open": "打开", "launcher.hint-dismiss": "关闭",
-                "features.eyebrow": "为什么是 Fulcrum",
-                "features.title-a": "你伸手可及的一切，", "features.title-b": "只差一次按键。",
-                "features.lead": "Fulcrum 平时隐于幕后，一个热键唤出——此后应用、文件、剪贴、计算与命令，都只差几个字母。",
-                "features.f1-title": "疾速模糊搜索",
-                "features.f1-body": "敲几个字母，结果随输入即时出现——跨应用、文件与操作的亚秒级模糊匹配。",
-                "features.f2-title": "所有应用",
-                "features.f2-body": "每个已安装的应用，一次查询直达。启动、切换、完成——不必再在菜单和 Dock 里翻找。",
-                "features.f3-title": "剪贴板历史",
-                "features.f3-body": "复制过的一切都保存在本机、随时可搜。上周的链接，像昨天的随取随贴。",
-                "features.f4-title": "文本片段",
-                "features.f4-body": "把反复输入的回复、模板和代码片段存起来——按名字随处展开。",
-                "features.f5-title": "计算器：函数与常量",
-                "features.f5-body": "边输入边计算——支持 sqrt、sin、log 与 π、e 等常量，无需切换应用。",
-                "features.f6-title": "网络搜索 bang",
-                "features.f6-body": "!g 谷歌、!gh GitHub、!w 维基百科、!so Stack Overflow——一个 bang 直达对应的搜索框。",
-                "features.f7-title": "系统命令",
-                "features.f7-body": "锁屏、睡眠、静音——系统操作也在同一块面板里，不必翻菜单。",
-                "features.f8-title": "插件生态",
-                "features.f8-body": "语言无关的插件协议：JSON over stdio。用什么语言写插件都行，Fulcrum 负责运行。",
-                "features.f9-title": "本地工具与可选在线集成，默认私有",
-                "features.f9-body": "搜索索引、剪贴板历史与片段保存在本地。插件、AI 与文件夹同步可将选定数据发送至外部服务。核心功能无需注册账号。",
-                "platforms.eyebrow": "跨平台",
-                "platforms.title-a": "一个 Racket 后端。", "platforms.title-b": "三套一等原生 UI。",
-                "platforms.lead": "基于 Rivet 框架构建：一个共享的 Racket 后端嵌入每个应用，每个平台都是一等原生 UI。没有任何 WebView。",
-                "chip.rivet": "基于 Rivet 构建",
-                "design.eyebrow": "设计", "design.title": "一个共享核心，三个原生桌面", "design.lead": "Fulcrum 使用共享 Racket 后端，在 macOS、Windows 和 Linux 分别提供原生界面。了解实际功能、平台限制以及安装方式，请阅读用户指南。",
-
-
-
-
-
-
-
-
-
-
-                "footer.changelog": "更新日志"
-            };
-
-            var en = {
-                "nav.features": "Features", "nav.platforms": "Platforms", "nav.compare": "Design", "nav.pricing": "Get started", "nav.guide": "Manual",
-                "hero.eyebrow": "Keyboard-first launcher · macOS · Windows · Linux",
-                "hero.h1a": "One keystroke.", "hero.h1b": "Everything within reach.",
-                "hero.lead": "Fulcrum is a keyboard-first launcher for macOS, Windows and Linux. Press one global hotkey and a floating command palette appears: fuzzy-search apps and files, revisit your clipboard history, expand snippets, calculate, fire web-search bangs and run plugins — all on-device.",
-                "hero.cta-primary": "Download for macOS", "hero.cta-docs": "Read the Docs",
-                "hero.cta-mac": "Download for macOS", "hero.cta-win": "Download for Windows", "hero.cta-linux": "Download for Linux",
-                "hero.all-releases": "All releases", "hero.demo-caption": "UI illustration (HTML mockup, not an application screenshot)",
-                "launcher.row1-kind": "Application",
-                "launcher.row2-title": "fulcrum changelog", "launcher.row2-kind": "Snippet",
-                "launcher.row3-kind": "Calculator",
-                "launcher.row4-kind": "Web Search",
-                "launcher.hint-navigate": "navigate", "launcher.hint-open": "open", "launcher.hint-dismiss": "dismiss",
-                "features.eyebrow": "Why Fulcrum",
-                "features.title-a": "Everything you reach for,", "features.title-b": "one keystroke away.",
-                "features.lead": "Fulcrum stays out of the way until one hotkey calls it — then apps, files, clips, calculations and commands are a few letters away.",
-                "features.f1-title": "Blazing fuzzy search",
-                "features.f1-body": "Type a few letters and results appear as you type — sub-second fuzzy matching across apps, files and actions.",
-                "features.f2-title": "All your apps",
-                "features.f2-body": "Every installed application, one query away. Launch it, switch to it, done — no digging through menus or docks.",
-                "features.f3-title": "Clipboard history",
-                "features.f3-body": "Everything you copy is kept and searchable on-device. Paste last week's link like it was yesterday's.",
-                "features.f4-title": "Snippets",
-                "features.f4-body": "Save the replies, templates and code fragments you keep retyping — expand them anywhere by name.",
-                "features.f5-title": "Calculator with functions & constants",
-                "features.f5-body": "Inline math as you type — sqrt, sin, log and constants like π and e, without switching apps.",
-                "features.f6-title": "Web-search bangs",
-                "features.f6-body": "!g Google, !gh GitHub, !w Wikipedia, !so Stack Overflow — a bang jumps straight into the right search box.",
-                "features.f7-title": "System commands",
-                "features.f7-body": "Lock the screen, sleep, mute — system actions live in the same palette, no menu digging required.",
-                "features.f8-title": "Plugin ecosystem",
-                "features.f8-body": "A language-agnostic plugin protocol: JSON over stdio. Write plugins in any language; Fulcrum runs them.",
-                "features.f9-title": "local tools with optional online integrations, private by default",
-                "features.f9-body": "Search indexes, clipboard history and snippets are stored locally. Plugins, AI and folder sync can send selected data to external services. The core needs no account.",
-                "platforms.eyebrow": "Platforms",
-                "platforms.title-a": "One Racket backend.", "platforms.title-b": "Three first-party UIs.",
-                "platforms.lead": "Built with the Rivet framework: one shared Racket backend embedded in each app, first-party native UI on every platform. No WebView anywhere.",
-                "chip.rivet": "Built with Rivet",
-                "design.eyebrow": "Design", "design.title": "One shared core, three native desktops", "design.lead": "Fulcrum uses a shared Racket backend with native interfaces for macOS, Windows and Linux. Read the user guide for supported features, platform limitations and installation.",
-
-
-
-
-
-
-
-
-
-
-                "footer.changelog": "Changelog"
-            };
-
-            var pageMetadata = {
-                en: {
-                    title: 'Fulcrum — One keystroke. Everything within reach.',
-                    description: 'Fulcrum is a keyboard-first launcher for macOS, Windows and Linux. One global hotkey opens a floating command palette: fuzzy-search apps and files, clipboard history, snippets, calculation, web-search bangs and plugins — local tools with optional online integrations.'
-                },
-                zh: {
-                    title: 'Fulcrum 支点 — 一次按键，直达一切。',
-                    description: 'Fulcrum（支点）是 macOS、Windows 与 Linux 上的键盘优先启动器：一个全局热键唤出浮动命令面板——模糊搜索应用与文件、剪贴板历史、片段、计算、网络搜索 bang 与插件，本地工具与可选在线集成。'
-                }
-            };
-
-            function readLanguageOverride() {
-                try {
-                    var saved = localStorage.getItem(LANGUAGE_OVERRIDE_KEY);
-                    return saved === 'zh' || saved === 'en' ? saved : null;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            function detectBrowserLanguage() {
-                var locale = (navigator.languages && navigator.languages[0]) || navigator.language || '';
-                if (!locale) return 'zh';
-                return String(locale).toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
-            }
-
-            function applyLanguage(lang, persist) {
-                if (persist) {
-                    try { localStorage.setItem(LANGUAGE_OVERRIDE_KEY, lang); } catch (e) { /* private mode */ }
-                }
-
-                var dict = lang === 'en' ? en : zh;
-                var nodes = document.querySelectorAll('[data-i18n]');
-                for (var i = 0; i < nodes.length; i++) {
-                    var key = nodes[i].getAttribute('data-i18n');
-                    if (dict[key]) nodes[i].textContent = dict[key];
-                }
-                document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-                document.documentElement.setAttribute('data-language', lang);
-
-                var label = document.getElementById('current-lang-label');
-                if (label) label.textContent = lang === 'zh' ? '简体中文' : 'English';
-
-                var metadata = pageMetadata[lang];
-                if (metadata) {
-                    document.title = metadata.title;
-                    var description = document.querySelector('meta[name="description"]');
-                    if (description) description.setAttribute('content', metadata.description);
-                }
-            }
-
-            window.setLanguage = function (lang) {
-                if (lang !== 'zh' && lang !== 'en') return;
-                applyLanguage(lang, true);
-            };
-
-            try { localStorage.removeItem(LEGACY_LANGUAGE_KEY); } catch (e) { /* private mode */ }
-            applyLanguage(readLanguageOverride() || detectBrowserLanguage(), false);
-
-            window.addEventListener('languagechange', function () {
-                if (!readLanguageOverride()) applyLanguage(detectBrowserLanguage(), false);
-            });
-        })();
-
-        // Theme toggle: flip data-theme and persist the explicit choice.
-        document.getElementById('theme-btn').addEventListener('click', function () {
-            var next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-            document.documentElement.dataset.theme = next;
-            try { localStorage.setItem('fulcrum-theme', next); } catch (e) { /* private mode */ }
-        });
-
-        // Scroll-in animation.
-        var observer = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('is-visible');
-                    observer.unobserve(entry.target);
-                }
-            });
-        }, { threshold: 0.12 });
-        document.querySelectorAll('.animate-on-scroll').forEach(function (el) { observer.observe(el); });
+    <script type="application/json" id="kit-download">
+    {
+        "repo": "turlamai/fulcrum",
+        "assets": {
+            "mac": "fulcrum-{v}-macos-{arch}.dmg",
+            "win": "fulcrum-{v}-windows-x64.msi",
+            "linux": "fulcrum-{v}-linux-{arch}.tar.gz"
+        }
+    }
     </script>
 </body>
 
