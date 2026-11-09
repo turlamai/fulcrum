@@ -11,7 +11,8 @@
          racket/string
          rackunit
          "../app/core/engine.rkt"
-         "../app/core/files.rkt")
+         "../app/core/files.rkt"
+         "../app/core/search-normalize.rkt")
 
 (define (row-id row) (list-ref row 0))
 (define (row-kind row) (list-ref row 3))
@@ -392,6 +393,37 @@
       (check-equal? (file-search-result-hits offline)
                     '(("report.md" . "/home/me/report.md"))))
     (lambda () (delete-directory/files dir))))
+
+(test-case "an explicit find query leads with file rows, fuzzy matches follow"
+  ;; App fuzzy matches score 100+ and otherwise bury the file surface
+  ;; below the fold: a `find` query names the file surface outright, so
+  ;; its rows lead regardless of score (#193 follow-up; the #116
+  ;; acceptance criterion is that the probe hit is the first row).
+  (define engine (make-engine #:clipboard-store #f
+                              #:snippet-store #f
+                              #:plugin-manager #f))
+  ;; Inject one fuzzy-matching app ('f' first char passes the provider's
+  ;; prefilter; "settings" scores against the query) so the ranking
+  ;; competition is deterministic on every OS.
+  (set-engine-apps-prepared!
+   engine
+   (list (vector "a-finder-settings"
+                 "Finder Settings"
+                 "C:/fixtures/FinderSettings.lnk"
+                 ""
+                 ""
+                 (search-fields-with-pinyin
+                  (list (cons 1.0 "Finder Settings")
+                        (cons 0.7 "")
+                        (cons 0.4 "C:/fixtures/FinderSettings.lnk"))))))
+  (define rows (engine-search engine "find settings"))
+  (define kinds (map (lambda (r) (list-ref r 3)) rows))
+  (define first-file (index-of kinds "File"))
+  (define first-app (index-of kinds "Application"))
+  (check-not-false first-file "a find query must surface at least one file-area row")
+  (when (and first-file first-app)
+    (check-true (< first-file first-app)
+                "file rows must lead fuzzy app matches for explicit find queries")))
 
 (test-case "engine provider: honest row without Spotlight, real rows with it"
   (define engine (make-engine #:clipboard-store #f

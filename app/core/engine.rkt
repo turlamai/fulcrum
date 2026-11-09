@@ -944,9 +944,24 @@
       (cons (+ (or (result-priority r) 0)
                (recents-boost engine (result-id r) (result-arg r)))
             r)))
+  (define sorted (sort scored > #:key car))
+  ;; An explicit `find <text>` query names the file surface outright.
+  ;; Fuzzy app rows score 100+ and bury every file hit (fixed priority
+  ;; 85) below the fold, so the surface's rows lead and the remaining
+  ;; providers follow in score order — the same principle the backend
+  ;; applies to its own surface words ("settings", "update").
+  (define ordered
+    (if (and (> (string-length q) (string-length find-file-prefix))
+             (string-prefix? (string-downcase q) find-file-prefix))
+        (append (filter (lambda (pr) (string=? (result-kind (cdr pr)) "File"))
+                        sorted)
+                (filter (lambda (pr)
+                          (not (string=? (result-kind (cdr pr)) "File")))
+                        sorted))
+        sorted))
   (define top
-    (take (sort scored > #:key car)
-          (min (engine-max-results engine) (length scored))))
+    (take ordered
+          (min (engine-max-results engine) (length ordered))))
   (map result->row (map cdr top)))
 
 ;; ---- actions ------------------------------------------------------------

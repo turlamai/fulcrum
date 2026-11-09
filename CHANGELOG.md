@@ -21,6 +21,15 @@ independently per platform packaging run.
   catalog hits exactly like a timeout does; a cancelled search with an
   empty cache paints the honest coverage/progress row instead of
   nothing.
+- **All platforms: explicit `find` queries ranked file hits below
+  unrelated fuzzy matches.** App rows score 100+ before relevance is
+  considered, so a `find probe` painted seven weak app matches first and
+  the actual file hits sat below the fold — indistinguishable from no
+  results at all (issue #193 follow-up; the #116 acceptance criterion is
+  that the probe hit is the first row). A `find <text>` query names the
+  file surface outright, so its rows now lead and every other provider
+  follows in score order — the same surface principle the backend
+  already applies to "settings" and "update".
 - **Windows: the launcher jumped every ~750 ms while the catalog
   crawled.** The initial build nudges `search-revision` about once a
   second and the host repainted per push — clearing and rebuilding the
