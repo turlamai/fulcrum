@@ -58,11 +58,20 @@
   ./fulcrum-<version>-linux-x86_64.AppImage
   ```
 
+- **.flatpak** —— 任意发行版（`x64`、`arm64`），单文件沙箱包：
+
+  ```
+  flatpak --user install ./fulcrum-<version>-linux-x64.flatpak
+  flatpak run site.jrtx.fulcrum
+  ```
+
+  包内只含应用本体，首次安装时会从 Flatpak 远端拉取 GNOME Platform 运行时。
+
 - **.tar.gz** / **.zip** —— 便携包（命名用 `x64` / `arm64`）：解压后运行其中的 `RivetHost` 可执行文件。
 
-deb/rpm 安装在 `/opt/fulcrum`，并注册桌面入口，Fulcrum 会像普通应用一样出现在 GNOME Activities 和 KDE 应用菜单里，从那里启动即可。AppImage 与 tar.gz 不注册桌面入口，直接运行文件本身（终端或文件管理器）。
+deb/rpm 安装在 `/opt/fulcrum`，并注册桌面入口，Fulcrum 会像普通应用一样出现在 GNOME Activities 和 KDE 应用菜单里，从那里启动即可。AppImage 与 tar.gz 不注册桌面入口，直接运行文件本身（终端或文件管理器）。Flatpak 安装会以自己的 app id 出现在桌面菜单里。
 
-**关于升级：** 从装进系统包管理器那一刻起，升级就归包管理器管。应用内检查仍会告诉你有新版本，但把升级交还给包管理器——绝不用下载的 tar 包覆盖 `/opt` 或 `/usr`。按发行版惯例升级（`apt`、`dnf`、`zypper`），或用新版官方 .deb/.rpm 直接覆盖安装。AppImage 则可以原地更新：**Quit and install** 原子替换正在运行的 AppImage 并重启。tar.gz 便携包手动替换：解压新包、替换旧目录，再重启。
+**关于升级：** 从装进系统包管理器那一刻起，升级就归包管理器管。应用内检查仍会告诉你有新版本，但把升级交还给包管理器——绝不用下载的 tar 包覆盖 `/opt` 或 `/usr`。按发行版惯例升级（`apt`、`dnf`、`zypper`），或用新版官方 .deb/.rpm 直接覆盖安装。Flatpak 安装同样归包管理器管：`flatpak --user update site.jrtx.fulcrum` 负责升级。AppImage 则可以原地更新：**Quit and install** 原子替换正在运行的 AppImage 并重启。tar.gz 便携包手动替换：解压新包、替换旧目录，再重启。
 
 ---
 
@@ -235,7 +244,7 @@ Run 注册表项；Linux 在当前用户的 XDG 配置目录创建自动启动 .
 
 ## 更新
 
-输入 `update` → **Check for updates now**。后台下载；macOS 原地换装重启。Windows 选择 **Quit and install** 后，已校验的 MSI 以被动模式交给 Windows Installer，完成后自动重启。Linux 上 AppImage 原子替换；deb/rpm 安装归系统包管理器管——检查会报告新版本，升级留给 apt/dnf/zypper；tar.gz 便携包手动替换。更新包 Ed25519 签名——校验失败拒收，绝不安装。
+输入 `update` → **Check for updates now**。后台下载；macOS 原地换装重启。Windows 选择 **Quit and install** 后，已校验的 MSI 以被动模式交给 Windows Installer，完成后自动重启。Linux 上 AppImage 原子替换；deb/rpm 与 Flatpak 安装归系统包管理器管——检查会报告新版本，升级留给 apt/dnf/zypper 或 `flatpak --user update`；tar.gz 便携包手动替换。更新包 Ed25519 签名——校验失败拒收，绝不安装。
 
 ---
 

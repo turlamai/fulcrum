@@ -58,11 +58,20 @@ Pick the format that matches your distribution on the [official releases page](h
   ./fulcrum-<version>-linux-x86_64.AppImage
   ```
 
+- **.flatpak** — any distribution (`x64`, `arm64`), sandboxed single-file bundle:
+
+  ```
+  flatpak --user install ./fulcrum-<version>-linux-x64.flatpak
+  flatpak run site.jrtx.fulcrum
+  ```
+
+  The bundle carries the app payload only; the first install pulls the GNOME Platform runtime from your Flatpak remote.
+
 - **.tar.gz** / **.zip** — portable archives (named `x64` / `arm64`): extract and run the bundled `RivetHost` executable.
 
-A deb/rpm install lands in `/opt/fulcrum` and registers a desktop entry, so Fulcrum shows up in the GNOME Activities overview and the KDE application menu like any installed app — launch it from there. AppImage and tar.gz installs register no desktop entry; run the file itself, from a terminal or your file manager.
+A deb/rpm install lands in `/opt/fulcrum` and registers a desktop entry, so Fulcrum shows up in the GNOME Activities overview and the KDE application menu like any installed app — launch it from there. AppImage and tar.gz installs register no desktop entry; run the file itself, from a terminal or your file manager. Flatpak installs appear in the desktop menu under their own app id.
 
-**About upgrades:** once a deb/rpm package is installed, the system package manager owns upgrades. Fulcrum's in-app check still tells you a new version exists, but it defers to the package manager — it will never overwrite `/opt` or `/usr` with a downloaded tarball. Upgrade through your distribution's usual workflow (`apt`, `dnf`, `zypper`), or install the next official .deb/.rpm over the current one. An AppImage, however, updates in place: **Quit and install** atomically replaces the running AppImage and relaunches. Portable tar.gz installs are replaced by hand: extract the new archive, replace the old folder, then relaunch.
+**About upgrades:** once a deb/rpm package is installed, the system package manager owns upgrades. Fulcrum's in-app check still tells you a new version exists, but it defers to the package manager — it will never overwrite `/opt` or `/usr` with a downloaded tarball. Upgrade through your distribution's usual workflow (`apt`, `dnf`, `zypper`), or install the next official .deb/.rpm over the current one. A Flatpak install is package-manager-owned the same way: `flatpak --user update site.jrtx.fulcrum` upgrades it. An AppImage, however, updates in place: **Quit and install** atomically replaces the running AppImage and relaunches. Portable tar.gz installs are replaced by hand: extract the new archive, replace the old folder, then relaunch.
 
 ---
 
@@ -352,11 +361,11 @@ Query `update` → **Check for updates now**. Downloads run in the
 background; macOS swaps itself and relaunches. On Windows, **Quit and
 install** hands the verified MSI to the Windows Installer in passive
 mode and relaunches. On Linux, an AppImage install is replaced
-atomically the same way, a deb/rpm install defers to your package
-manager (the check reports the new version; the upgrade stays with
-apt/dnf/zypper), and a portable tar.gz install is replaced by hand.
-Updates are Ed25519 signed — a failed verification is refused, never
-installed.
+atomically the same way, a deb/rpm or Flatpak install defers to your
+package manager (the check reports the new version; the upgrade stays
+with apt/dnf/zypper or `flatpak --user update`), and a portable tar.gz
+install is replaced by hand. Updates are Ed25519 signed — a failed
+verification is refused, never installed.
 
 ---
 
