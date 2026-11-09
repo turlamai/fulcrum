@@ -19,6 +19,53 @@
 
 ---
 
+## Windows 安装（开发预览）
+
+1. 从 [官方 Releases](https://github.com/turlamai/fulcrum/releases/latest) 下载 **.msi 安装包**：`fulcrum-<version>-windows-x64.msi`。Windows 目前只出 x64 包，暂无 ARM64。旁边还有便携 **.zip**（内容与 MSI 一致，只是不带安装器）。
+2. 双击运行 MSI。这是按机器安装：Windows 会弹出管理员授权（UAC），程序装进 Program Files，并在开始菜单创建 **Fulcrum** 快捷方式（桌面同样创建）。
+3. 从**开始菜单**启动 Fulcrum。搜索面板隐藏时它驻留托盘；用 <kbd>Alt</kbd>+<kbd>Space</kbd> 或备用热键唤出。
+4. 不想安装的话，解压便携 zip，运行解压目录里的 `RivetHost.exe`；开始菜单和注册表不会有任何新增。
+
+**关于 SmartScreen：** 当前开发预览版未做代码签名。首次运行安装器或应用时 SmartScreen 可能弹警告。先确认下载来源是官方 Releases，再选择继续运行；哪些平台当前有签名、哪些没有，见[发布信任与平台签名策略](release-signing-policy.md)。不要全局关闭 SmartScreen。
+
+**升级：** 输入 `update`，Fulcrum 会下载并校验 MSI；选 **Quit and install**，安装以被动模式交给 Windows Installer——一次管理员授权，原地升级，随后自动重启。自己双击下载好的 `.msi` 也可以，升级时 Fulcrum 可以保持运行。
+
+---
+
+## Linux 安装（开发预览）
+
+按发行版在 [官方 Releases](https://github.com/turlamai/fulcrum/releases/latest) 选择格式：
+
+- **.deb** —— Debian、Ubuntu 及衍生版（`amd64`、`arm64`）：
+
+  ```
+  sudo dpkg -i fulcrum-<version>-linux-amd64.deb
+  # 或者
+  sudo apt install ./fulcrum-<version>-linux-amd64.deb
+  ```
+
+- **.rpm** —— Fedora/RHEL 与 openSUSE（`x86_64`、`aarch64`）：
+
+  ```
+  sudo dnf install ./fulcrum-<version>-linux-x86_64.rpm     # Fedora/RHEL
+  sudo zypper install ./fulcrum-<version>-linux-x86_64.rpm  # openSUSE
+  ```
+
+- **.AppImage** —— 任意发行版（`x86_64`、`aarch64`），免安装：
+
+  ```
+  chmod +x fulcrum-<version>-linux-x86_64.AppImage
+  ./fulcrum-<version>-linux-x86_64.AppImage
+  ```
+
+- **.tar.gz** / **.zip** —— 便携包（命名用 `x64` / `arm64`）：解压后运行其中的 `RivetHost` 可执行文件。
+
+deb/rpm 安装在 `/opt/fulcrum`，并注册桌面入口，Fulcrum 会像普通应用一样出现在 GNOME Activities 和 KDE 应用菜单里，从那里启动即可。AppImage 与 tar.gz 不注册桌面入口，直接运行文件本身（终端或文件管理器）。
+
+**关于升级：** 从装进系统包管理器那一刻起，升级就归包管理器管。应用内检查仍会告诉你有新版本，但把升级交还给包管理器——绝不用下载的 tar 包覆盖 `/opt` 或 `/usr`。按发行版惯例升级（`apt`、`dnf`、`zypper`），或用新版官方 .deb/.rpm 直接覆盖安装。AppImage 则可以原地更新：**Quit and install** 原子替换正在运行的 AppImage 并重启。tar.gz 便携包手动替换：解压新包、替换旧目录，再重启。
+
+---
+
 ## 一分钟上手
 
 1. 按 <kbd>Alt</kbd>+<kbd>Space</kbd>（macOS 是 <kbd>⌥</kbd>+<kbd>Space</kbd>），面板出现。
@@ -64,7 +111,7 @@ add snippet addr 南京西路 42 号
 
 在邮件里输入 `addr` + 空格，就变成了 `南京西路 42 号`。在 `settings` → `expansion-enabled` 里可以开关（macOS 和 Windows 支持；Linux 合成器不允许所需的输入监听）。
 
-片段通过 [Sync beta](#sync-beta) 跨机器同步。
+片段通过 [Sync beta](#同步-beta) 跨机器同步。
 
 ### 网页搜索
 
@@ -188,7 +235,7 @@ Run 注册表项；Linux 在当前用户的 XDG 配置目录创建自动启动 .
 
 ## 更新
 
-输入 `update` → **Check for updates now**。后台下载；macOS 原地换装重启。更新包 Ed25519 签名——校验失败拒收，绝不安装。
+输入 `update` → **Check for updates now**。后台下载；macOS 原地换装重启。Windows 选择 **Quit and install** 后，已校验的 MSI 以被动模式交给 Windows Installer，完成后自动重启。Linux 上 AppImage 原子替换；deb/rpm 安装归系统包管理器管——检查会报告新版本，升级留给 apt/dnf/zypper；tar.gz 便携包手动替换。更新包 Ed25519 签名——校验失败拒收，绝不安装。
 
 ---
 
@@ -283,6 +330,8 @@ Fulcrum 优先保证搜索响应、原生交互的可预期性、清晰的错误
 ## 平台与安装
 
 提供 macOS、Windows、Linux 桌面开发预览。权限与快捷键行为取决于系统及 Linux 图形会话。
+
+各平台安装步骤：[macOS](#macos-安装与首次启动) · [Windows](#windows-安装开发预览) · [Linux](#linux-安装开发预览)。
 
 从[官方 Releases](https://github.com/turlamai/fulcrum/releases)选择明确标注系统和架构的附件，阅读该版本说明并核对附带校验文件。未列出的附件或平台不视为已交付。预览构建可能没有系统发行者签名或公证；不要为安装而关闭系统安全保护。
 
