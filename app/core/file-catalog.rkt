@@ -350,17 +350,7 @@
           root-str
           best)))
   (define root-str containing)
-  ;; The reconcile dir can arrive with a trailing separator — Windows
-  ;; delete notifications derive it from a watcher root that already
-  ;; ends in one, and appending sep-string then doubles the separator,
-  ;; which never matches the single-separator paths stored in the
-  ;; index. Strip every trailing separator before building the prefix.
-  (define dir-str
-    (let strip ((s (path->string dir-path)))
-      (if (and (> (string-length s) 1)
-               (or (string-suffix? s "\\") (string-suffix? s "/")))
-          (strip (substring s 0 (sub1 (string-length s))))
-          s)))
+  (define dir-str (path->string dir-path))
   (cond
     [(not root-str) #f]
     [else

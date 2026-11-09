@@ -38,19 +38,6 @@ jobs:
         with:
           version: stable
           distribution: full
-      - name: Exclude the temp dir from Defender (FS churn tests)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # The backend tests create/delete/reconcile temp trees at high
-          # frequency; Defender's real-time scan races that cycle and
-          # makes file-exists?, listings and deletes nondeterministic
-          # (deletion-pending windows). Standard CI practice: exclude
-          # the runner temp dir and the racket processes for the job.
-          Add-MpPreference -ExclusionPath $env:RUNNER_TEMP -ErrorAction SilentlyContinue
-          Add-MpPreference -ExclusionProcess "racket.exe" -ErrorAction SilentlyContinue
-          Add-MpPreference -ExclusionProcess "raco.exe" -ErrorAction SilentlyContinue
-
       - name: Export trusted Mozilla CA roots for Windows Racket
         if: runner.os == 'Windows'
         shell: pwsh
