@@ -679,10 +679,13 @@
                              "File" "" "doc" "" "Timed out"
                              "find file search timeout plocate"
                              85))]
-                   ;; A newer keystroke superseded this query. Every host also
-                   ;; generation-guards painting, so the stale response stays
-                   ;; silent instead of flashing an unavailable/timeout row.
-                   [(cancelled) '()]
+                   ;; A same-query re-claim (the revision nudge) cancelled
+                   ;; this search and its cache held nothing. Hosts
+                   ;; generation-guard painting, so a superseded response
+                   ;; never paints regardless; when this response IS the
+                   ;; newest visible one, the honest coverage/progress row
+                   ;; beats leaving the previous query's rows stuck.
+                   [(cancelled) (list (file-search-empty-row engine))]
                    [else
                     (list
                      (result "noop"

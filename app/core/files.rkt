@@ -37,20 +37,30 @@
 ;; deterministic Fulcrum ranking on every host.
 (define file-search-candidate-limit 128)
 
-;; At most one platform query is useful. Native hosts generation-guard their
-;; UI, but without backend cancellation every superseded keystroke still left
-;; a PowerShell/mdfind/locate process running until timeout.
+;; At most one platform query per text is useful. Native hosts
+;; generation-guard their UI, but without backend cancellation every
+;; superseded re-run of the same text (the revision nudge) still left a
+;; PowerShell/mdfind/locate process running until timeout.
+;;
+;; The claim carries its query and supersedes only another claim for the
+;; SAME text. RVT1 workers run concurrently, so claim order is not request
+;; order; cancelling across queries let an older request kill the newest
+;; one's platform stage, and on Windows the newest visible query then
+;; painted with its file rows silently missing. Different queries race to
+;; completion instead — the host's generation guard drops stale responses,
+;; so cross-query cancellation bought nothing but that breakage.
 (define active-search-lock (make-semaphore 1))
-(define active-search-cancel (box #f))
+(define active-search-cancel (box #f))  ; #f or (cons query cancel-semaphore)
 
-(define (claim-file-search!)
+(define (claim-file-search! query)
   (define cancel (make-semaphore 0))
   (call-with-semaphore
    active-search-lock
    (lambda ()
      (define previous (unbox active-search-cancel))
-     (when previous (semaphore-post previous))
-     (set-box! active-search-cancel cancel)))
+     (when (and previous (string=? (car previous) query))
+       (semaphore-post (cdr previous)))
+     (set-box! active-search-cancel (cons query cancel))))
   cancel)
 
 (define (release-file-search! cancel)
@@ -59,7 +69,8 @@
    (lambda ()
      ;; A late completion must never clear the newer query's cancellation
      ;; handle.
-     (when (eq? cancel (unbox active-search-cancel))
+     (define current (unbox active-search-cancel))
+     (when (and current (eq? cancel (cdr current)))
        (set-box! active-search-cancel #f)))))
 
 (define (file-search-backend os resolver)
@@ -207,7 +218,7 @@
   ;; Claim before touching the persistent index. Otherwise an older request
   ;; delayed in SQLite could claim after a newer request and cancel the wrong
   ;; process when RVT1 workers run concurrently.
-  (define cancel (and backend (claim-file-search!)))
+  (define cancel (and backend (claim-file-search! query)))
   (define cache-result
     (and index-path
          (file-index-search/status index-path query file-search-candidate-limit)))
@@ -249,7 +260,15 @@
             (lambda () (release-file-search! cancel))))
         (cond
           [(eq? output 'cancelled)
-           (file-search-result '() 'cancelled backend)]
+           ;; A same-query re-claim (the revision nudge) cancelled the
+           ;; platform stage. Degrade to the catalog hits like a timeout
+           ;; does: on Windows, silently dropping them left the newest
+           ;; visible query stuck on unrelated app rows with no file rows
+           ;; at all.
+           (if (null? cached)
+               (file-search-result '() 'cancelled backend)
+               (file-search-result (rank-file-hits query cached limit)
+                                   'ok 'fulcrum-index))]
           [(false? output)
            (if (null? cached)
                (file-search-result '() 'timeout backend)

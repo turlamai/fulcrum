@@ -775,6 +775,11 @@ std::wstring t_format(char const* key, std::vector<std::wstring> const& args) {
 MainWindow::MainWindow() {
   InitializeComponent();
   Title(L"Fulcrum");
+  // One UI-thread timer coalescing search-revision pushes (see
+  // RefreshForRevision).
+  revision_timer_ = DispatcherQueue().CreateTimer();
+  revision_timer_.IsRepeating(false);
+  revision_timer_.Tick({this, &MainWindow::OnRevisionTimerTick});
   // i18n tables before any UI string is composed: the staged shared/i18n
   // JSON when packaged, the embedded fallback otherwise.
   load_i18n(executable_path().parent_path());
@@ -1456,9 +1461,20 @@ void MainWindow::DismissDetailPanel() {
 }
 
 void MainWindow::RefreshForRevision() {
-  // Backend-side data changed (FPP2 daemon push): re-run the query the
-  // user is looking at, debounced; only the newest search may paint.
+  // Backend-side data changed (file-catalog progress, FPP2 daemon pushes):
+  // re-run the query the user is looking at, debounced. The initial catalog
+  // build nudges about once a second; repainting per push tore the list
+  // down mid-keystroke. The generation bump drops any in-flight paint so
+  // only the post-quiet re-run lands.
   search_generation_ += 1;
+  revision_timer_.Interval(std::chrono::milliseconds{400});
+  revision_timer_.Stop();
+  revision_timer_.Start();
+}
+
+void MainWindow::OnRevisionTimerTick(
+    winrt::Windows::Foundation::IInspectable const&,
+    winrt::Windows::Foundation::IInspectable const&) {
   SearchAsync(std::wstring(QueryBox().Text()));
 }
 
@@ -1642,8 +1658,44 @@ void MainWindow::ApplyActions(std::vector<rivet_app::ResultRow> rows) {
   HintBar().Text(t("navigationHintActions"));
 }
 
+namespace {
+
+bool rows_identical(std::vector<rivet_app::ResultRow> const& a,
+                    std::vector<rivet_app::ResultRow> const& b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    auto const& x = a[i];
+    auto const& y = b[i];
+    if (x.id != y.id || x.title != y.title || x.subtitle != y.subtitle ||
+        x.kind != y.kind || x.arg != y.arg || x.icon != y.icon ||
+        x.hint != y.hint || x.badge != y.badge) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
 void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
   actions_mode_ = false;
+  // A revision-driven re-run usually returns exactly the rows on screen.
+  // Rebuilding anyway cleared the whole ListView — the launcher jumped and
+  // the selection snapped back to the top on every catalog batch.
+  if (rows_identical(rows_, rows)) {
+    return;
+  }
+  // When the rebuild is real, keep the user's selection if the selected
+  // row survived the update.
+  std::string selected_id;
+  std::string selected_arg;
+  auto const previous = ResultsList().SelectedIndex();
+  if (previous >= 0 && previous < static_cast<int>(rows_.size())) {
+    selected_id = rows_[static_cast<std::size_t>(previous)].id;
+    selected_arg = rows_[static_cast<std::size_t>(previous)].arg;
+  }
   rows_ = std::move(rows);
   auto items = ResultsList().Items();
   items.Clear();
@@ -1656,7 +1708,19 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
     items.Append(item);
   }
   if (!rows_.empty()) {
-    ResultsList().SelectedIndex(0);
+    auto preserved = -1;
+    if (!selected_id.empty()) {
+      for (std::size_t i = 0; i < rows_.size(); ++i) {
+        if (rows_[i].id == selected_id && rows_[i].arg == selected_arg) {
+          preserved = static_cast<int>(i);
+          break;
+        }
+      }
+    }
+    ResultsList().SelectedIndex(preserved >= 0 ? preserved : 0);
+    if (preserved > 0) {
+      ResultsList().ScrollIntoView(ResultsList().SelectedItem());
+    }
   } else {
     ResultsList().SelectedIndex(-1);
   }

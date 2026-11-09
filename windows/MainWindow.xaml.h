@@ -113,6 +113,9 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ApplyLanguage();
   void MoveSelection(int delta);
   void ApplyResults(std::vector<rivet_app::ResultRow> rows);
+  // Fires 400ms after the last revision push: re-runs the visible query.
+  void OnRevisionTimerTick(winrt::Windows::Foundation::IInspectable const&,
+                           winrt::Windows::Foundation::IInspectable const&);
   // The ↵ chip on each row is visible only while that row is selected;
   // the chips are stored parallel to rows_.
   void UpdateEnterChips();
@@ -151,6 +154,10 @@ struct MainWindow : MainWindowT<MainWindow> {
   // owns the visual tree so these stay alive with it).
   std::vector<winrt::Microsoft::UI::Xaml::Controls::Border> enter_chips_;
   std::atomic<std::uint64_t> search_generation_{0};
+  // Coalesces bursts of search-revision pushes into one query re-run.
+  // The initial catalog build nudges about once a second; repainting per
+  // push tore the list down mid-keystroke (the jumping launcher).
+  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer revision_timer_{nullptr};
   std::uint64_t hotkey_atom_{0};
   std::atomic<bool> clipboard_listener_installed_{false};
   std::wstring last_recorded_clipboard_;
