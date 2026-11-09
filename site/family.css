@@ -1,4 +1,4 @@
-/* site-kit v1.0.1 — generated from github.com/turlamai/site-kit; do not edit per-site. */
+/* site-kit v1.0.2 — generated from github.com/turlamai/site-kit; do not edit per-site. */
 /* ============================================================
    site-kit family.css — jrtx.site family design system
    Single source of truth: github.com/turlamai/site-kit
@@ -65,6 +65,10 @@ html[data-theme="dark"] {
 
 /* ---------- Reset & base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
+
+/* Component display declarations (kit-btn etc.) beat the UA [hidden] rule;
+   language blocks and other hidden content rely on this staying absolute. */
+[hidden] { display: none !important; }
 
 html {
     -webkit-text-size-adjust: 100%;
@@ -709,3 +713,15 @@ html[data-theme="dark"] .kit-card-icon { color: var(--kit-accent); }
 /* Accent word inside a split display headline */
 .kit-accent-word { color: var(--kit-accent-strong); }
 html[data-theme="dark"] .kit-accent-word { color: var(--kit-accent); }
+
+/* Tiny metadata chip (e.g. the framework layer a product is built on) */
+.kit-chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 2.5px 9px;
+    border-radius: 999px;
+    background: var(--kit-surface-2);
+    color: var(--kit-text-2);
+}

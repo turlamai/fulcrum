@@ -1,4 +1,4 @@
-/* site-kit v1.0.1 — generated from github.com/turlamai/site-kit; do not edit per-site. */
+/* site-kit v1.0.2 — generated from github.com/turlamai/site-kit; do not edit per-site. */
 /* ============================================================
    site-kit family.js — shared engine for jrtx.site family sites
    Single source of truth: github.com/turlamai/site-kit
@@ -19,8 +19,10 @@
 
     var docEl = document.documentElement;
     var siteId = docEl.dataset.kitId || 'site';
-    var THEME_KEY = siteId + '-theme';
-    var LANG_KEY = siteId + '-lang-override-v2';
+    // Per-site storage keys follow the site id; a site may carry forward its
+    // historical keys via data-kit-theme-key / data-kit-lang-key.
+    var THEME_KEY = docEl.dataset.kitThemeKey || siteId + '-theme';
+    var LANG_KEY = docEl.dataset.kitLangKey || siteId + '-lang-override-v2';
 
     function readJSON(id) {
         var el = document.getElementById(id);
@@ -92,6 +94,31 @@
         }
         function apply() {
             document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+            // Per-language document title and description (dict key "__meta__").
+            var meta = dicts.__meta__ || null;
+            if (meta) {
+                var m = meta[lang];
+                if (m) {
+                    if (m.title) document.title = m.title;
+                    if (m.description) {
+                        var md = document.querySelector('meta[name="description"]');
+                        if (md) md.setAttribute('content', m.description);
+                    }
+                }
+            }
+            // data-lang-block="zh|en": show only in that language.
+            var blocks = document.querySelectorAll('[data-lang-block]');
+            for (var b = 0; b < blocks.length; b++) {
+                var want = blocks[b].getAttribute('data-lang-block') === lang;
+                if (want) blocks[b].removeAttribute('hidden');
+                else blocks[b].setAttribute('hidden', '');
+            }
+            // data-en-href / data-zh-href: per-language link targets.
+            var hrefs = document.querySelectorAll('[data-en-href],[data-zh-href]');
+            for (var h = 0; h < hrefs.length; h++) {
+                var v = hrefs[h].getAttribute('data-' + lang + '-href');
+                if (v) hrefs[h].setAttribute('href', v);
+            }
             var nodes = document.querySelectorAll('[data-i18n]');
             for (var i = 0; i < nodes.length; i++) {
                 var value = t(nodes[i].getAttribute('data-i18n'));
