@@ -19,6 +19,53 @@ Press one key. Everything on your computer is within reach.
 
 ---
 
+## Install on Windows (developer preview)
+
+1. Download the **.msi installer** from the [official releases page](https://github.com/turlamai/fulcrum/releases/latest): `fulcrum-<version>-windows-x64.msi`. Windows builds ship for x64 only — there is no ARM64 package yet. A portable **.zip** rides alongside (same payload as the MSI, minus the installer).
+2. Run the MSI. It installs per machine: Windows asks for administrator approval (UAC), the files land in Program Files, and a **Fulcrum** shortcut is created in the Start menu (a desktop shortcut too).
+3. Launch **Fulcrum from the Start menu**. It stays in the tray while its search panel is hidden; summon it with <kbd>Alt</kbd>+<kbd>Space</kbd> or the fallback configured hotkey.
+4. If you would rather not install anything, extract the portable ZIP and run `RivetHost.exe` from the extracted folder. Nothing is added to the Start menu or the registry.
+
+**About SmartScreen:** Current developer-preview builds are unsigned. SmartScreen may warn when you first run the installer or the app. Confirm the download came from the official release before choosing to run anyway; the [release trust and platform signing policy](release-signing-policy.md) documents what is and is not signed today. Do not disable SmartScreen system-wide.
+
+**Upgrades:** Query `update` and Fulcrum downloads the verified MSI; **Quit and install** hands it to the Windows Installer in passive mode — one administrator prompt, an in-place upgrade, then Fulcrum relaunches itself. Double-clicking the downloaded `.msi` yourself also works, and Fulcrum can stay running during that upgrade.
+
+---
+
+## Install on Linux (developer preview)
+
+Pick the format that matches your distribution on the [official releases page](https://github.com/turlamai/fulcrum/releases/latest):
+
+- **.deb** — Debian, Ubuntu and derivatives (`amd64`, `arm64`):
+
+  ```
+  sudo dpkg -i fulcrum-<version>-linux-amd64.deb
+  # or
+  sudo apt install ./fulcrum-<version>-linux-amd64.deb
+  ```
+
+- **.rpm** — Fedora/RHEL and openSUSE (`x86_64`, `aarch64`):
+
+  ```
+  sudo dnf install ./fulcrum-<version>-linux-x86_64.rpm     # Fedora/RHEL
+  sudo zypper install ./fulcrum-<version>-linux-x86_64.rpm  # openSUSE
+  ```
+
+- **.AppImage** — any distribution (`x86_64`, `aarch64`), nothing installed:
+
+  ```
+  chmod +x fulcrum-<version>-linux-x86_64.AppImage
+  ./fulcrum-<version>-linux-x86_64.AppImage
+  ```
+
+- **.tar.gz** / **.zip** — portable archives (named `x64` / `arm64`): extract and run the bundled `RivetHost` executable.
+
+A deb/rpm install lands in `/opt/fulcrum` and registers a desktop entry, so Fulcrum shows up in the GNOME Activities overview and the KDE application menu like any installed app — launch it from there. AppImage and tar.gz installs register no desktop entry; run the file itself, from a terminal or your file manager.
+
+**About upgrades:** once a deb/rpm package is installed, the system package manager owns upgrades. Fulcrum's in-app check still tells you a new version exists, but it defers to the package manager — it will never overwrite `/opt` or `/usr` with a downloaded tarball. Upgrade through your distribution's usual workflow (`apt`, `dnf`, `zypper`), or install the next official .deb/.rpm over the current one. An AppImage, however, updates in place: **Quit and install** atomically replaces the running AppImage and relaunches. Portable tar.gz installs are replaced by hand: extract the new archive, replace the old folder, then relaunch.
+
+---
+
 ## Your first minute
 
 1. Press <kbd>Alt</kbd>+<kbd>Space</kbd> (macOS: <kbd>⌥</kbd>+<kbd>Space</kbd>). A panel appears.
@@ -302,8 +349,14 @@ Or edit `settings.json` in the data directory.
 ## Updates
 
 Query `update` → **Check for updates now**. Downloads run in the
-background; macOS swaps itself and relaunches. Updates are Ed25519
-signed — a failed verification is refused, never installed.
+background; macOS swaps itself and relaunches. On Windows, **Quit and
+install** hands the verified MSI to the Windows Installer in passive
+mode and relaunches. On Linux, an AppImage install is replaced
+atomically the same way, a deb/rpm install defers to your package
+manager (the check reports the new version; the upgrade stays with
+apt/dnf/zypper), and a portable tar.gz install is replaced by hand.
+Updates are Ed25519 signed — a failed verification is refused, never
+installed.
 
 ---
 
@@ -435,6 +488,8 @@ Existing launcher, clipboard, plugins and BYOK features remain free. No Pro chec
 ## Platforms and installation
 
 Desktop developer previews for macOS, Windows and Linux. Permission and shortcut behavior varies with the OS and Linux display session.
+
+Step-by-step install guides: [macOS](#install-and-first-launch-on-macos) · [Windows](#install-on-windows-developer-preview) · [Linux](#install-on-linux-developer-preview).
 
 Use [official Releases](https://github.com/turlamai/fulcrum/releases), select an explicitly listed OS/architecture asset, read its release notes and check supplied checksums. An absent asset/platform is not a delivery promise. Preview builds may lack publisher signing or notarization; do not disable system-wide security protections to install them.
 
