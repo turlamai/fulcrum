@@ -32,6 +32,8 @@ env:
 permissions:
   contents: write
   actions: read
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -515,6 +517,17 @@ jobs:
           python3 scripts/check_release_public_assets.py "$version" public
           (cd public && sha256sum -c SHA256SUMS)
           ls -la public/
+      # Family standard (movebit-origin): every public release asset carries
+      # verifiable build provenance. public/ is the fail-closed inventory the
+      # gate just verified, so the glob set is exact; sidecars never land here.
+      - name: Attest public build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            public/fulcrum-*
+            public/SHA256SUMS
+            public/update-manifest.json
+            public/manifest.json
       - uses: softprops/action-gh-release@v2
         id: create-release
         with:
