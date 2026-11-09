@@ -33,7 +33,8 @@ class ReleaseInventoryTests(unittest.TestCase):
     def test_complete_release_includes_both_signed_feeds_in_checksums(self) -> None:
         manifest = write_checksums(self.public, VERSION)
         rows = manifest.read_text().splitlines()
-        self.assertEqual(len(rows), 20)
+        # 16 fixed packages + one RPM per arch + both signed feed names.
+        self.assertEqual(len(rows), len(FIXED_SUFFIXES) + len(RPM_ARCHES) + len(UPDATE_FEEDS))
         actual = {}
         for row in rows:
             digest, name = row.split("  ", 1)

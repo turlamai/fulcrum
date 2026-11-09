@@ -310,6 +310,45 @@ jobs:
             echo "::error::unsigned release produced no signed update manifest"; exit 1;
           }
         shell: bash
+      # Wraps the tar.gz payload into a Flatpak bundle from the flatpak/
+      # manifest template (family contract: deb+rpm+AppImage+Flatpak+tar.gz).
+      # The manifest's module closure covers the two NEEDED entries outside
+      # the GNOME Platform runtime (liblz4.so.1, libtinfo.so.6). Like deb/rpm,
+      # the flatpak install shape is manual-by-design and stays out of the
+      # signed channel manifest.
+      - name: Flatpak bundle
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '\r\n' < VERSION)"
+          ARCH="${{ matrix.arch }}"
+          case "$ARCH" in x64) FPARCH=x86_64 ;; arm64) FPARCH=aarch64 ;; esac
+          sudo apt-get update
+          sudo apt-get install --yes flatpak flatpak-builder
+          # User-level everything: runner accounts install runtimes and
+          # build without root. GNOME 50 is the oldest supported platform
+          # runtime (48 went EOL 2026-03-24); its glibc covers the
+          # ubuntu-built payload.
+          flatpak --user remote-add --if-not-exists flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install -y --noninteractive flathub \
+            "org.gnome.Platform/${FPARCH}/50" "org.gnome.Sdk/${FPARCH}/50"
+          # The manifest template carries version/arch/sha placeholders so
+          # the archive source's checksum is exact per release.
+          cp "dist/fulcrum-${VERSION}-linux-${ARCH}.tar.gz" .
+          SHA="$(sha256sum "fulcrum-${VERSION}-linux-${ARCH}.tar.gz" | cut -d' ' -f1)"
+          sed -e "s/__VERSION__/${VERSION}/" -e "s/__ARCH__/${ARCH}/" \
+              -e "s/__SHA256__/${SHA}/" \
+              flatpak/site.jrtx.fulcrum.yml > site.jrtx.fulcrum.gen.yml
+          # --disable-rofiles-fuse: runners have no /dev/fuse.
+          flatpak-builder --user --force-clean --disable-rofiles-fuse \
+            --repo=flatpak-repo flatpak-build site.jrtx.fulcrum.gen.yml
+          flatpak build-bundle flatpak-repo \
+            "fulcrum-${VERSION}-linux-${ARCH}.flatpak" site.jrtx.fulcrum stable
+          rm -rf flatpak-build flatpak-repo \
+            "fulcrum-${VERSION}-linux-${ARCH}.tar.gz" site.jrtx.fulcrum.gen.yml
+          test -f "fulcrum-${VERSION}-linux-${ARCH}.flatpak"
       - name: Verify mounted Finder DMG installer
         if: matrix.platform == 'macos'
         shell: bash
@@ -654,6 +693,8 @@ jobs:
             "fulcrum-${version}-linux-arm64.deb" \
             "fulcrum-${version}-linux-x86_64.AppImage" \
             "fulcrum-${version}-linux-aarch64.AppImage" \
+            "fulcrum-${version}-linux-x64.flatpak" \
+            "fulcrum-${version}-linux-arm64.flatpak" \
             "fulcrum-${version}-linux-x64.tar.gz" \
             "fulcrum-${version}-linux-arm64.tar.gz" \
             "fulcrum-${version}-linux-x64.tar.gz.sig" \

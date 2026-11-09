@@ -18,6 +18,7 @@ FIXED_SUFFIXES = (
     "linux-arm64.zip", "linux-x64.zip",
     "linux-amd64.deb", "linux-arm64.deb",
     "linux-x86_64.AppImage", "linux-aarch64.AppImage",
+    "linux-x64.flatpak", "linux-arm64.flatpak",
     "linux-x64.tar.gz", "linux-arm64.tar.gz",
     "linux-x64.tar.gz.sig", "linux-arm64.tar.gz.sig",
 )
@@ -96,7 +97,7 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         print(f"release-assets: {exc}", file=sys.stderr)
         return 1
-    print(f"release-assets: verified 18 packages + 2 signed feed names: {manifest}")
+    print(f"release-assets: verified 20 packages + 2 signed feed names: {manifest}")
     return 0
 
 
