@@ -222,3 +222,5 @@ void FsWatchHost::ReconcileLoop() {
     }
   }
 }
+
+}  // namespace fulcrum::windows

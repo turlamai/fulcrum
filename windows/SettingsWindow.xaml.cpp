@@ -743,4 +743,3 @@ void SettingsWindow::UpdateInstall_Click(
 }
 
 }  // namespace winrt::RivetHost::implementation
-}  // namespace winrt::RivetHost::implementation
