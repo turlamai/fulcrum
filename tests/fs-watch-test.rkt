@@ -161,7 +161,7 @@
         (check-true (thread-dead? (fs-watch-thread watch))
                     "watch thread must exit on stop")))]))
 
-(test-case "engine wiring: created files become searchable live (Windows)"
+(test-case "engine wiring: arming deferred; the catalog scans and answers cleanly (Windows)"
   (unless (fs-watch-supported?)
     (displayln "engine live wiring: skipped off-Windows (watcher no-op)"))
   (when (fs-watch-supported?)
@@ -180,42 +180,26 @@
                       #:file-catalog-nudge
                       (lambda () (set-box! nudges (add1 (unbox nudges))))))
        (engine-start-file-catalog! engine)
-       ;; Wait for the scan to complete and the watcher to arm.
+       ;; Wait for the scan to complete.
        (let wait-ready ([n 100])
          (cond
            [(memq (file-catalog-status-state (engine-file-catalog-status engine))
                   '(ready partial)) (void)]
            [(zero? n) (fail-check "catalog did not finish")]
            [else (sleep 0.05) (wait-ready (sub1 n))]))
-       ;; Create a file AFTER the watcher armed; no reconcile call is made
-       ;; by the test — visibility must arrive through the live path.
+       ;; Arming is deferred while the packaged-runtime reconcile
+       ;; investigation is open (see engine.rkt): the scan completes, the
+       ;; live watchers stay unpublished, and the engine must neither
+       ;; crash nor leak the machinery.
+       (sleep 0.5)
+       (check-false (engine-file-catalog-live engine))
+       ;; The deferred state still answers queries without error.
        (touch (build-path root "Documents" "live-search.txt"))
-       (let wait-live ([n 200])
-         (define rows (engine-search engine "find live-search"))
-         (cond
-           [(memf (lambda (row) (string-contains? (cadr row) "live-search.txt"))
-                  rows)
-            (check-true (> (unbox nudges) 0)
-                        "a search-revision nudge must repaint open queries")]
-           [(zero? n)
-            (fail-check
-             (format "live visibility exceeded the test budget; nudges=~a rows=~s"
-                     (unbox nudges) rows))]
-           [else (sleep 0.05) (wait-live (sub1 n))]))
-       ;; Delete → must leave the results through the same path.
-       (delete-file (build-path root "Documents" "live-search.txt"))
-       (let wait-gone ([n 200])
-         (define rows (engine-search engine "find live-search"))
-         (cond
-           [(not (memf (lambda (row) (string-contains? (cadr row) "live-search.txt"))
-                       rows)) (check-true #t)]
-           [(zero? n)
-            (fail-check
-             (format "deletion visibility exceeded the test budget; nudges=~a rows=~s"
-                     (unbox nudges)
-                     (engine-search engine "find live-search")))]
-           [else (sleep 0.05) (wait-gone (sub1 n))]))
-       (engine-stop! engine)))))
+       (define rows (engine-search engine "find live-search"))
+       (check-true (list? rows))
+       ;; Stop must stay clean with the machinery present but inert.
+       (engine-stop! engine)
+       (check-false (engine-file-catalog-live engine))))))
 
 (test-case "engine-stop! shuts the watcher down cleanly"
   (when (fs-watch-supported?)

@@ -8,15 +8,6 @@ independently per platform packaging run.
 
 ### Added
 
-- **Windows: live file watching is back, and `find` answers instantly
-  from the live catalog.** The watcher stack (issue #99, #190) re-lands
-  with its full fix record: one overlapped-I/O `ReadDirectoryChangesW`
-  watcher per scanned root, armed by the engine right after the scan
-  with a reconcile-first pass that closes the ready→armed race, the
-  delete-pending chain with staggered re-checks, and Defender
-  exclusions in CI. Creates, renames and deletes show up in open
-  queries inside the architecture document's two-second target, and
-  the catalog stays current without rescanning.
 - **Windows: `find` answers from the live catalog without launching a
   platform search process per query.** Once the catalog's scan
   completes, the persistent index is the authoritative source —
@@ -26,6 +17,19 @@ independently per platform packaging run.
   platform stage to fill gaps and seed the index; macOS and Linux
   behavior is unchanged, where Spotlight and plocate are already
   instant.
+
+### Deferred
+
+- **Windows: live file watching stays out of this release.** The
+  watcher machinery (issue #99, #190) is restored in the tree with its
+  full test suite — overlapped-I/O `ReadDirectoryChangesW` per scanned
+  root, engine wiring, the delete-pending chain — and arming is
+  deferred: on the packaged embedded runtime the armed watchers
+  reconcile correctly under plain racket.exe CI but do not reconcile
+  in the shipped build (verified on a clean Windows VM: catalog ready,
+  new files in watched roots never land). Scanning behavior remains
+  the proven once-per-process model; restart Fulcrum to pick up
+  filesystem changes. The investigation continues under #99.
 
 ### Fixed
 

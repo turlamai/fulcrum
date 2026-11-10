@@ -677,21 +677,17 @@
                                 (engine-file-catalog-roots engine)
                                 #:on-progress (engine-file-catalog-nudge engine)))
          (set-engine-file-catalog-worker! engine worker)
-         (define arm-thread
-           (thread
-            (lambda ()
-              (file-catalog-wait worker 300)
-              ;; The worker posts the cancel semaphore on normal
-              ;; completion too, so the arm stop is a dedicated box:
-              ;; engine-stop! sets it, and arming (which opens the
-              ;; index DB) is skipped after a stop.
-              (define stopped? (unbox (engine-catalog-arm-stop engine)))
-              (define state
-                (file-catalog-status-state (engine-file-catalog-status engine)))
-              (when (and (not stopped?)
-                         (memq state '(ready partial)))
-                (engine-start-live-watcher! engine worker)))))
-         (set-engine-catalog-arm-thread! engine arm-thread))))))
+         ;; Watcher arming is deferred (issue #99): on the packaged
+         ;; embedded runtime the armed watchers publish but never
+         ;; reconcile — filesystem events stop flowing into the catalog
+         ;; (verified on a clean Windows VM: catalog ready, new files in
+         ;; watched roots never land). The same code reconciles fine
+         ;; under plain racket.exe CI, so the delta is the embedded
+         ;; runtime, and it stays under investigation; the fs-watch
+         ;; suite and this machinery stay in the tree for it. Scanning
+         ;; behavior is the proven 0.16.x model: once per process, on
+         ;; the first find query.
+         (void))))))
 
 (define (engine-file-catalog-status engine)
   (define worker (engine-file-catalog-worker engine))
