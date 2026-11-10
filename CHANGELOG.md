@@ -4,6 +4,54 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [0.17.0] - 2026-11-10
+
+### Added
+
+- **Windows: live file watching is back, and `find` answers instantly
+  from the live catalog.** The watcher stack (issue #99, #190) re-lands
+  with its full fix record: one overlapped-I/O `ReadDirectoryChangesW`
+  watcher per scanned root, armed by the engine right after the scan
+  with a reconcile-first pass that closes the ready→armed race, the
+  delete-pending chain with staggered re-checks, and Defender
+  exclusions in CI. Creates, renames and deletes show up in open
+  queries inside the architecture document's two-second target, and
+  the catalog stays current without rescanning.
+- **Windows: `find` answers from the live catalog without launching a
+  platform search process per query.** Once the catalog's scan
+  completes, the persistent index is the authoritative source —
+  queries that the catalog already answers return in milliseconds
+  instead of spawning `powershell.exe` (the per-query spawn budgeted
+  up to nine seconds). Thin or still-scanning catalogs keep the
+  platform stage to fill gaps and seed the index; macOS and Linux
+  behavior is unchanged, where Spotlight and plocate are already
+  instant.
+
+### Fixed
+
+- **All platforms: explicit `find` queries ranked file hits below
+  unrelated fuzzy matches.** App rows score 100+ before relevance is
+  considered, so a `find probe` painted weak app matches first and the
+  actual file hits sat below the fold — indistinguishable from no
+  results at all (issue #193 follow-up; the #116 acceptance criterion
+  is that the probe hit is the first row). A `find <text>` query names
+  the file surface outright, so its rows now lead and every other
+  provider follows in score order.
+- **Windows: typed `find` queries never showed file results.** Every
+  keystroke starts a search, and the searches raced for one global
+  cancel slot that carried no query identity — an older request
+  claiming late cancelled the *newest* query's platform search. The
+  cancelled response also discarded the local-catalog hits it had
+  already collected (issue #193). Claims now supersede only another
+  claim for the same query text; a cancelled platform stage degrades
+  to the catalog hits exactly like a timeout does.
+- **Windows: the launcher jumped every ~750 ms while the catalog
+  crawled.** The host repainted per revision push and rebuilt the
+  whole results list, snapping the selection back to the top (issue
+  #194). Revision pushes now coalesce into one query re-run, identical
+  rows no longer rebuild the list, and real rebuilds keep the
+  selection.
+
 ## [0.16.1] - 2026-11-09
 
 ### Fixed
