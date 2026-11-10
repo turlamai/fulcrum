@@ -722,9 +722,12 @@ final class LauncherModel: ObservableObject {
             run(row)
             return
         }
+        // query is an optional-self property too: capture its value before
+        // entering the [weak self] task (same compiler rule as searchAPI).
+        let currentQuery = query
         Task { [weak self, searchAPI] in
             var freshRow = row
-            if let fresh = try? await searchAPI.search(query) {
+            if let fresh = try? await searchAPI.search(currentQuery) {
                 let freshRows = fresh.compactMap { ResultRow.from($0) }
                 if let match = freshRows.first(where: { $0.rowId == row.rowId }) {
                     freshRow = match
