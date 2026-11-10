@@ -236,6 +236,16 @@
                   '(ready partial)) (void)]
            [(zero? n) (fail-check "catalog did not finish")]
            [else (sleep 0.05) (wait-ready (sub1 n))]))
+       ;; Arming is asynchronous by design: the arm thread waits for the
+       ;; scan worker to exit, reconciles every root, and only then
+       ;; publishes the live watchers. `ready` therefore precedes `live`
+       ;; by the reconcile + index-open window; poll for it the same way
+       ;; the scan was polled.
+       (let wait-armed ([n 100])
+         (cond
+           [(engine-file-catalog-live engine) (void)]
+           [(zero? n) (fail-check "the watcher never armed")]
+           [else (sleep 0.05) (wait-armed (sub1 n))]))
        (define live (engine-file-catalog-live engine))
        (check-true (and live (pair? (first live))))
        (define threads (map fs-watch-thread (first live)))
