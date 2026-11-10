@@ -28,6 +28,7 @@
          file-search/status
          file-search
          file-open!
+         file-reveal!
          windows-fixed-volume-roots)
 
 (struct file-search-result (hits status backend) #:transparent)
@@ -407,3 +408,13 @@
 ;; not run at all.
 (define (file-open! path)
   (spawn-command (opener-for-platform) (list (path->string (simple-form-path path)))))
+
+;; Open the containing folder — the "where is this file even" companion to
+;; file-open!. Opening the parent directory works on all three platforms
+;; with the same openers; selecting the file inside would need a different
+;; mechanism per platform (open -R, explorer /select; xdg-open has none).
+(define (file-reveal! path)
+  (define full (simple-form-path path))
+  (define parent (path-only full))
+  (spawn-command (opener-for-platform)
+                 (list (path->string (or parent (simple-form-path "."))))))

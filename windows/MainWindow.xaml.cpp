@@ -1072,7 +1072,9 @@ void MainWindow::FinishNativeSetup() {
                       }
                       // Second launch asks the existing process to reopen.
                       if (msg == fulcrum::windows::kSummonResidentMessage && self != nullptr) {
-                        self->ShowLauncher();
+                        // Summoning preserves the query and results: hide/show
+                        // cycles are navigation, not a new search. Esc clears.
+                        self->ShowLauncher(false);
                         return 0;
                       }
                       // Acceptance-only path through the same tray Quit logic.
@@ -1156,7 +1158,7 @@ void MainWindow::HandleTrayMessage(std::uint32_t message, std::int64_t lParam,
       if (AppWindow().IsVisible()) {
         HideLauncher();
       } else {
-        ShowLauncher();
+        ShowLauncher(false);
       }
       break;
     case WM_RBUTTONUP: {
@@ -1187,7 +1189,7 @@ void MainWindow::HandleTrayMessage(std::uint32_t message, std::int64_t lParam,
         // tray invocation is not swallowed after outside-click dismissal.
         ::PostMessageW(hwnd, WM_NULL, 0, 0);
         if (choice == kTrayMenuOpen) {
-          ShowLauncher();
+          ShowLauncher(false);
         } else if (choice == kTrayMenuSettings) {
           ShowSettings();
         } else if (choice == kTrayMenuUpdates) {
@@ -1195,7 +1197,7 @@ void MainWindow::HandleTrayMessage(std::uint32_t message, std::int64_t lParam,
           // launcher first: checking from the tray while the panel is
           // hidden wrote the result into an invisible window and the user
           // saw nothing at all.
-          ShowLauncher();
+          ShowLauncher(false);
           CheckForUpdates();
         } else if (choice == kTrayMenuAbout) {
           ShowAbout();
@@ -1218,7 +1220,9 @@ bool MainWindow::HandleHotkeyMessage(std::uint32_t, std::uint64_t wParam,
   if (this->AppWindow() && this->AppWindow().IsVisible()) {
     HideLauncher();
   } else {
-    ShowLauncher();
+    // Summoning preserves the query and results: hide/show cycles are
+    // navigation, not a new search. Esc clears the query explicitly.
+    ShowLauncher(false);
   }
   return true;
 }

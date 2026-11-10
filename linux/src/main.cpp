@@ -1804,21 +1804,28 @@ struct Launcher {
   }
 
   void show(guint32 user_time = GDK_CURRENT_TIME,
-            bool start_search = true) {
+            bool start_search = false) {
     if (!initial_results_ready) {
       summon_when_ready = true;
       return;
     }
     cancel_focus_loss();
     activated_since_show = false;
-    actions_mode = false;
-    if (navigation_hint != nullptr) {
-      gtk_label_set_text(navigation_hint, tr("navigationHint").c_str());
+    if (start_search) {
+      // Explicit fresh-search resets keep today's behavior: actions mode
+      // closes, panels dismiss, the query wipes to the default rows.
+      actions_mode = false;
+      if (navigation_hint != nullptr) {
+        gtk_label_set_text(navigation_hint, tr("navigationHint").c_str());
+      }
+      dismiss_ai_panel();
+      dismiss_detail_panel();
+      gtk_editable_set_text(GTK_EDITABLE(search), "");
+      run_search("");
     }
-    dismiss_ai_panel();
-    dismiss_detail_panel();
-    gtk_editable_set_text(GTK_EDITABLE(search), "");
-    if (start_search) run_search("");
+    // Plain summoning preserves the query and results: hide/show cycles
+    // are navigation, not a new search. Esc clears the query explicitly
+    // (clear first, hide when already empty).
     // Position before mapping to avoid showing the launcher on the wrong
     // monitor for a frame. Wayland compositor positioning remains unchanged.
     gtk_widget_realize(GTK_WIDGET(window));

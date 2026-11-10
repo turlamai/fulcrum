@@ -473,7 +473,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         centerOnActiveScreen(panel)
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        model?.beginSearch()
+        // Summoning preserves the query and results: hide/show cycles are
+        // navigation, not a new search. Esc (clearQuery) and typing re-run;
+        // only the backend-ready path starts a fresh search.
     }
 
     func hidePanel() {

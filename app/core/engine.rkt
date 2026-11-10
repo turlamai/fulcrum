@@ -978,7 +978,9 @@
       [(string=? id "link.open")
        (list (action-row "copy" "Copy URL" "Copy" arg))]
       [(string=? id "file.open")
-       (list (action-row "copy" "Copy path" "Copy" arg))]
+       (list (action-row "file.reveal" "Open containing folder" "Folder"
+                         arg)
+             (action-row "copy" "Copy path" "Copy" arg))]
       [(string=? id "web.open")
        (list (action-row "copy" "Copy URL" "Copy" arg))]
       [(string=? id "emoji.paste")
@@ -1268,6 +1270,11 @@
       (if (and (non-empty-string? arg) (file-open! arg))
           (cons "opened" '())
           (cons (format "failed to open: ~a" arg) '())))]
+    [(string=? id "file.reveal")
+     (finish
+      (if (and (non-empty-string? arg) (file-reveal! arg))
+          (cons "opened" '())
+          (cons (format "failed to reveal: ~a" arg) '())))]
     [(string-prefix? id "win.") (finish (cons "delegated" '()))]
     [(string=? id "sys.run") (finish (sys-run! engine arg))]
     [(string=? id "gallery.install")

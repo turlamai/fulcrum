@@ -554,3 +554,18 @@
                  #:run (lambda (program args #:timeout-ms t #:cancel-evt c)
                          'cancelled))
                 '()))
+
+(test-case "file rows reveal the containing folder as a secondary action"
+  ;; Enter opens the file; the ⌘K panel answers "where is this file
+  ;; even" with the containing folder, plus copy-path.
+  (define actions (engine-row-actions (make-engine #:clipboard-store #f
+                                                   #:snippet-store #f
+                                                   #:plugin-manager #f)
+                                      "file.open"
+                                      "/home/me/reports/fota_udp.xlsx"))
+  (check-equal? (length actions) 2)
+  (check-equal? (list-ref (car actions) 0) "file.reveal")
+  (check-equal? (list-ref (car actions) 1) "Open containing folder")
+  (check-equal? (list-ref (car actions) 4)
+                "/home/me/reports/fota_udp.xlsx")
+  (check-equal? (list-ref (cadr actions) 0) "copy"))

@@ -29,7 +29,7 @@ independently per platform packaging run.
   in the shipped build (verified on a clean Windows VM: catalog ready,
   new files in watched roots never land). Scanning behavior remains
   the proven once-per-process model; restart Fulcrum to pick up
-  filesystem changes. The investigation continues under #99.
+  filesystem changes. The investigation continues under #99 and #211.
 
 ### Fixed
 
