@@ -4,6 +4,41 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [0.18.0] - 2026-11-11
+
+### Added
+
+- **Windows: live file watching, run by the host process (issue #211
+  spike).** The v0.17.0 investigation showed the armed watchers
+  reconcile under plain racket.exe CI but never in the packaged build —
+  the embedded runtime's scheduler is the delta. This release sidesteps
+  that layer: each catalog root (user profile + fixed local volumes) is
+  watched in the host process with overlapped `ReadDirectoryChangesW`,
+  changed directories are batched and forwarded over the new
+  `fs-reconcile` RPC to the backend — the backend stays the single
+  owner of the catalog database, the host only names directories. A
+  successful reconcile bumps the nudge, so open queries repaint through
+  the existing path. Files created while Fulcrum runs now appear in
+  `find` results within seconds, on Windows, without a restart.
+- **Windows settings: a working update card in Sync & Updates.** Check
+  now, download with percent progress, quit-and-install — driven by the
+  update RPCs, with the tray's "Check for updates" entry opening this
+  window on the Sync & Updates tab and running the check (replacing the
+  old hidden-launcher status line, matching macOS behavior).
+- **macOS settings: a "Check for Updates Now" button** in the Updates
+  section, opening the native update panel.
+
+### Fixed
+
+- **All platforms: Enter re-runs the FINAL query.** Fast typing outran
+  the async result repaint, so Enter acted on the selected row of a
+  previous generation: `!g 豆包` searched `!g`, `!g vflash 刷写`
+  searched only `vflash` (user-reported). All three hosts now re-run
+  the final query on Enter and act on the freshest row.
+- **All platforms: summoning the launcher keeps the previous query**
+  instead of wiping it back to an empty box, so a mis-dismissed search
+  survives the next wake (user-reported).
+
 ## [0.17.0] - 2026-11-10
 
 ### Added
