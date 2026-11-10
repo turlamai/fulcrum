@@ -711,13 +711,20 @@ final class LauncherModel: ObservableObject {
         // mid-repaint would open the search for an earlier tail). Re-run the
         // final query first, then act on the freshest row for this
         // selection — same row id falls through to the new top row.
-        guard !query.isEmpty, !showingActions, let api else {
+        guard !query.isEmpty, !showingActions else {
             run(row)
             return
         }
-        Task { [weak self] in
+        // Capture the unwrapped API explicitly: inside the [weak self] task
+        // the bare identifier resolves to self.api (optional), which is what
+        // the compiler's "explicit use of self" error flags.
+        guard let searchAPI = api else {
+            run(row)
+            return
+        }
+        Task { [weak self, searchAPI] in
             var freshRow = row
-            if let fresh = try? await api.search(query) {
+            if let fresh = try? await searchAPI.search(query) {
                 let freshRows = fresh.compactMap { ResultRow.from($0) }
                 if let match = freshRows.first(where: { $0.rowId == row.rowId }) {
                     freshRow = match
