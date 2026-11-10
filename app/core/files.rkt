@@ -213,7 +213,8 @@
                             #:os [os (system-type 'os)]
                             #:resolve [resolver resolve-program]
                             #:run [runner run-command/cancellable]
-                            #:index-path [index-path #f])
+                            #:index-path [index-path #f]
+                            #:catalog-ready? [catalog-ready? #f])
   (define backend (file-search-backend os resolver))
   ;; Claim before touching the persistent index. Otherwise an older request
   ;; delayed in SQLite could claim after a newer request and cancel the wrong
@@ -225,7 +226,13 @@
   (define cached (if cache-result (file-index-query-hits cache-result) '()))
   (define cache-error?
     (and cache-result (eq? (file-index-query-status cache-result) 'error)))
-  (if (false? backend)
+  ;; The live catalog is the authoritative source on Windows once its scan
+  ;; completes: the watcher reconciles every mutation, so spawning
+  ;; powershell.exe per query adds seconds of latency for coverage the
+  ;; catalog already holds. A thin or still-scanning catalog keeps the
+  ;; platform stage to fill the gaps and seed the index.
+  (define skip-platform? (and catalog-ready? (pair? cached)))
+  (if (or (false? backend) skip-platform?)
       (if (null? cached)
           (file-search-result '()
                               (if cache-error? 'index-error 'unavailable)

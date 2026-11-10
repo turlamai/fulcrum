@@ -355,6 +355,60 @@
       (check-not-false (sync/timeout 1 (thread-dead-evt blocked-worker))))
     (lambda () (delete-directory/files dir))))
 
+(test-case "a ready live catalog answers find queries without spawning the platform tool"
+  ;; Once the catalog is fully scanned (the watcher keeps it live) it is
+  ;; the authoritative source on Windows: spawning powershell.exe per
+  ;; query added seconds of latency for coverage the catalog already
+  ;; holds — the Everything-level instant bar. A thin or still-scanning
+  ;; catalog keeps the platform stage.
+  (define dir (make-temporary-file "fulcrum-fast-path-~a" 'directory))
+  (define index-path (build-path dir "index.sqlite3"))
+  (dynamic-wind
+    void
+    (lambda ()
+      ;; Seed the catalog.
+      (file-search/status
+       "report" 8
+       #:os 'unix
+       #:resolve (lambda (_) "/usr/bin/locate")
+       #:run (lambda (_program _args #:timeout-ms [_timeout-ms 3000]
+                                     #:cancel-evt [_cancel-evt never-evt])
+               "/home/me/report.md\n")
+       #:index-path index-path)
+      (define platform-ran? #f)
+      (define instant
+        (file-search/status
+         "report" 8
+         #:os 'windows
+         #:resolve (lambda (program) (and (string=? program "powershell.exe") program))
+         #:run (lambda (_program _args #:timeout-ms [_timeout-ms 9000]
+                                       #:cancel-evt [_cancel-evt never-evt])
+                 (set! platform-ran? #t)
+                 "file:///C:/Users/me/platform-report.txt\n")
+         #:index-path index-path
+         #:catalog-ready? #t))
+      (check-false platform-ran? "the platform tool must not spawn on a ready catalog")
+      (check-equal? (file-search-result-status instant) 'ok)
+      (check-equal? (file-search-result-backend instant) 'fulcrum-index)
+      (check-equal? (file-search-result-hits instant)
+                    '(("report.md" . "/home/me/report.md")))
+      ;; A still-scanning catalog keeps the platform stage: the local
+      ;; answers are partial and the OS index fills the gaps.
+      (define scanning
+        (file-search/status
+         "report" 8
+         #:os 'windows
+         #:resolve (lambda (program) (and (string=? program "powershell.exe") program))
+         #:run (lambda (_program _args #:timeout-ms [_timeout-ms 9000]
+                                       #:cancel-evt [_cancel-evt never-evt])
+                 (set! platform-ran? #t)
+                 "file:///C:/Users/me/platform-report.txt\n")
+         #:index-path index-path
+         #:catalog-ready? #f))
+      (check-true platform-ran? "a scanning catalog keeps the platform stage")
+      (check-equal? (file-search-result-status scanning) 'ok))
+    (lambda () (delete-directory/files dir))))
+
 (test-case "platform results seed the persistent index and rescue a timeout"
   (define dir (make-temporary-file "fulcrum-search-index-~a" 'directory))
   (define index-path (build-path dir "index.sqlite3"))
