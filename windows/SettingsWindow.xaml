@@ -304,6 +304,25 @@
                                    Text="A folder a file sync service replicates (OneDrive, Dropbox, Syncthing); settings and snippets mirror there." />
                         <TextBlock Style="{StaticResource Hint}"
                                    Text="Fulcrum checks signed releases automatically. Use Check for Updates from the tray menu to check now." />
+                        <Grid Style="{StaticResource Row}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Check for updates" Style="{StaticResource RowLabel}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Grid.Column="1">
+                                <Button x:Name="UpdateCheckButton"
+                                        AutomationProperties.AutomationId="settings-update-check"
+                                        Click="UpdateCheck_Click" Content="Check now" />
+                                <Button x:Name="UpdateDownloadButton" Visibility="Collapsed"
+                                        Click="UpdateDownload_Click" Content="Download" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Hint}"
+                                   TextWrapping="Wrap" Visibility="Collapsed" />
+                        <ProgressBar x:Name="UpdateProgressBar" Visibility="Collapsed" />
+                        <Button x:Name="UpdateInstallButton" Content="Quit and install"
+                                Visibility="Collapsed" Click="UpdateInstall_Click" />
                     </StackPanel>
                 </Border>
 

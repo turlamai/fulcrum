@@ -585,6 +585,10 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("Updates") {
+                Button("Check for Updates Now") {
+                    UpdateController.shared?.checkForUpdates()
+                    AppDelegate.shared?.showUpdatePanel()
+                }
                 Text("Fulcrum checks signed releases automatically. You can also choose Check for Updates from the app menu.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

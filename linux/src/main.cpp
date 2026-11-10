@@ -1631,14 +1631,34 @@ struct Launcher {
     if (row.id == "settings.set") ++host_settings_generation;
     set_status("Running…");
     auto* api_raw = api.get();
-    std::thread([api_raw, row]() mutable {
+    // Fast typing outruns async result repaints: the displayed rows can be
+    // one generation behind the query box, so a `!g vflash 刷写` entered
+    // mid-repaint would open the search for an earlier tail. Re-run the
+    // final query first, then act on the freshest row for this selection —
+    // same id+title falls through to the new top row.
+    std::string const query_text = [] {
+      gchar const* text = gtk_editable_get_text(GTK_EDITABLE(search));
+      return text != nullptr ? std::string(text) : std::string();
+    }();
+    std::thread([api_raw, row, query_text]() mutable {
       auto* boxed = new RunOutcome;
-      boxed->action_id = row.id;
-      boxed->arg = row.arg;
+      auto run_row = row;
+      if (!query_text.empty()) {
+        auto fresh = api_raw->search(query_text).get();
+        for (auto const& cells : fresh) {
+          ResultRow const candidate = ResultRow::from(cells);
+          if (candidate.id == row.id && candidate.title == row.title) {
+            run_row = candidate;
+            break;
+          }
+        }
+      }
+      boxed->action_id = run_row.id;
+      boxed->arg = run_row.arg;
       try {
-        boxed->status = api_raw->run_action(row.id, row.arg).get();
+        boxed->status = api_raw->run_action(run_row.id, run_row.arg).get();
         if (boxed->status == "quit-and-install" &&
-            row.id == "update.install") {
+            run_row.id == "update.install") {
           // The signed manifest remains backend-owned. Never derive a
           // handoff digest from the downloaded file itself: an attacker
           // could change the file after its initial authenticated download.

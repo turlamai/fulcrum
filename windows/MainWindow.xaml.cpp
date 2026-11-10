@@ -1193,12 +1193,14 @@ void MainWindow::HandleTrayMessage(std::uint32_t message, std::int64_t lParam,
         } else if (choice == kTrayMenuSettings) {
           ShowSettings();
         } else if (choice == kTrayMenuUpdates) {
-          // The result lands on the launcher's status line, so summon the
-          // launcher first: checking from the tray while the panel is
-          // hidden wrote the result into an invisible window and the user
-          // saw nothing at all.
-          ShowLauncher(false);
-          CheckForUpdates();
+          // A visible window beats a hidden launcher's status line: open
+          // the settings app on Sync & Updates and run the check there.
+          ShowSettings();
+          if (settings_window_) {
+            winrt::get_self<winrt::RivetHost::implementation::SettingsWindow>(
+                settings_window_)
+                ->OpenUpdates();
+          }
         } else if (choice == kTrayMenuAbout) {
           ShowAbout();
         } else if (choice == kTrayMenuQuit) {
@@ -1817,13 +1819,32 @@ void MainWindow::RunSelected() {
   auto const weak = get_weak();
   auto api = api_;
 
+  // Fast typing outruns async result repaints: the displayed rows can be
+  // one generation behind the query box, so a `!g vflash 刷写` entered
+  // mid-repaint would open the search for an earlier tail. Re-run the
+  // final query first, then act on the freshest row for this selection —
+  // same id+title falls through to the new top row.
+  auto const query = to_utf8(std::wstring(QueryBox().Text()));
+
   // Side effects (app launch, plugin run) belong off the UI thread; the
   // backend Events that follow drive the actual clipboard/URL work.
-  std::thread([weak, api, dispatcher, row]() mutable {
+  std::thread([weak, api, dispatcher, row, query]() mutable {
     try {
-      auto const status = api->run_action(row.id, row.arg).get();
+      auto fresh_row = row;
+      if (!query.empty()) {
+        auto const fresh_rows = api->search(query).get();
+        for (auto const& cells : fresh_rows) {
+          rivet_app::ResultRow const candidate = rivet_app::ResultRow::from(cells);
+          if (candidate.id == row.id && candidate.title == row.title) {
+            fresh_row = candidate;
+            break;
+          }
+        }
+      }
+      auto const status = api->run_action(fresh_row.id, fresh_row.arg).get();
       std::optional<std::string> update_path;
-      if (status == "quit-and-install" && row.id == "update.install") {
+      auto const action_row = fresh_row;
+      if (status == "quit-and-install" && action_row.id == "update.install") {
         auto const state = api->update_state().get();
         if (state.downloaded_path && !state.downloaded_path->empty()) {
           update_path = *state.downloaded_path;
@@ -1855,8 +1876,8 @@ void MainWindow::RunSelected() {
             // TryEnqueue lambda would not otherwise see it).
             window->DismissDetailPanel();
             auto api2 = window->api_;
-            auto const row_id = row.id;   // rows are already UTF-8
-            auto const row_arg = row.arg;
+            auto const row_id = action_row.id;   // rows are already UTF-8
+            auto const row_arg = action_row.arg;
             std::thread([weak, dispatcher, api2, row_id, row_arg]() mutable {
               try {
                 auto view = api2->plugin_detail(row_id, row_arg).get();
@@ -1880,7 +1901,7 @@ void MainWindow::RunSelected() {
             window->HideLauncher();
             window->StartUpdateProgressPoll();
           } else if (status == "quit-and-install" &&
-                     row.id == "update.install") {
+                     action_row.id == "update.install") {
             try {
               if (!update_path) {
                 throw std::runtime_error("downloaded update path is missing");
@@ -1899,12 +1920,12 @@ void MainWindow::RunSelected() {
             // Host-native actions: window commands reach other apps'
             // windows; about.open and settings.open render this app's own
             // windows.
-            if (row.id == "about.open") {
+            if (action_row.id == "about.open") {
               window->ShowAbout();
-            } else if (row.id == "settings.open") {
+            } else if (action_row.id == "settings.open") {
               window->HideLauncher();
               window->ShowSettings();
-            } else if (fulcrum::RunWindowCommand(row.id)) {
+            } else if (fulcrum::RunWindowCommand(action_row.id)) {
               window->HideLauncher();
             } else {
               window->SetStatusError(L"No window found to manage.");

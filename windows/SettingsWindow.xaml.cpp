@@ -603,4 +603,144 @@ void SettingsWindow::SaveKey_Click(
   SaveKey();
 }
 
+void SettingsWindow::OpenUpdates() {
+  NavigateTo("sync");
+  RunUpdateCheck();
+}
+
+void SettingsWindow::UpdateCheck_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    mx::RoutedEventArgs const&) {
+  RunUpdateCheck();
+}
+
+void SettingsWindow::SetUpdateStatus(std::wstring const& message) {
+  UpdateStatusText().Text(message);
+  UpdateStatusText().Visibility(mx::Visibility::Visible);
+}
+
+void SettingsWindow::RunUpdateCheck() {
+  if (api_ == nullptr || update_polling_.exchange(true)) {
+    return;
+  }
+  UpdateCheckButton().IsEnabled(false);
+  UpdateDownloadButton().Visibility(mx::Visibility::Collapsed);
+  UpdateInstallButton().Visibility(mx::Visibility::Collapsed);
+  UpdateProgressBar().Visibility(mx::Visibility::Collapsed);
+  SetUpdateStatus(L"Checking for updates…");
+  auto const dispatcher = DispatcherQueue();
+  auto weak = get_weak();
+  auto api = api_;
+  std::thread([weak, api, dispatcher]() mutable {
+    std::wstring line;
+    try {
+      auto const check = api->update_check(true).get();
+      if (check.status == "available") {
+        auto const version = to_wide(check.available_version.value_or("?"));
+        auto const size_mb = check.size_bytes
+                                 ? std::to_wstring((*check.size_bytes + (1 << 20) - 1) >> 20) + L" MB"
+                                 : L"";
+        line = L"Fulcrum " + version + L" is available" +
+               (size_mb.empty() ? L"" : L" (" + size_mb + L")") +
+               L" — download it below.";
+        dispatcher.TryEnqueue([weak, dispatcher]() mutable {
+          if (auto window = weak.get()) {
+            window->UpdateDownloadButton().Visibility(mx::Visibility::Visible);
+          }
+        });
+      } else if (check.status == "up-to-date") {
+        line = L"Fulcrum " + to_wide(check.current_version) + L" is up to date.";
+      } else if (check.status == "throttled") {
+        line = L"Update check throttled — try again shortly.";
+      } else {
+        line = L"Update check failed: " +
+               to_wide(check.error.value_or("check failed"));
+      }
+    } catch (std::exception const& e) {
+      line = to_wide(std::string("Update check failed: ") + e.what());
+    } catch (...) {
+      line = L"Update check failed.";
+    }
+    dispatcher.TryEnqueue([weak, dispatcher, line]() mutable {
+      if (auto window = weak.get()) {
+        window->SetUpdateStatus(line);
+        window->UpdateCheckButton().IsEnabled(true);
+        window->update_polling_.store(false, std::memory_order_release);
+      }
+    });
+  }).detach();
+}
+
+void SettingsWindow::UpdateDownload_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    mx::RoutedEventArgs const&) {
+  if (api_ == nullptr || update_polling_.exchange(true)) {
+    return;
+  }
+  UpdateDownloadButton().IsEnabled(false);
+  UpdateProgressBar().Visibility(mx::Visibility::Visible);
+  SetUpdateStatus(L"Downloading…");
+  auto const dispatcher = DispatcherQueue();
+  update_timer_ = DispatcherQueue().CreateTimer();
+  update_timer_.Interval(std::chrono::milliseconds{700});
+  update_timer_.Tick({this, &SettingsWindow::UpdatePollTick});
+  update_timer_.Start();
+  auto weak = get_weak();
+  auto api = api_;
+  std::thread([weak, api]() mutable {
+    try {
+      api->update_download().get();
+    } catch (...) {
+    }
+  }).detach();
+}
+
+void SettingsWindow::UpdatePollTick(
+    winrt::Windows::Foundation::IInspectable const&,
+    winrt::Windows::Foundation::IInspectable const&) {
+  if (api_ == nullptr) {
+    return;
+  }
+  auto const state = api_->update_state().get();
+  if (state.phase == "downloading") {
+    auto const percent = state.percent < 0 ? 0 : (state.percent > 100 ? 100 : state.percent);
+    UpdateProgressBar().Value(static_cast<double>(percent));
+    SetUpdateStatus(L"Downloading… " + std::to_wstring(percent) + L"%");
+    return;
+  }
+  // Any other phase means the transfer left `downloading` (done, failed,
+  // or superseded): stop polling and re-read the truth.
+  update_timer_.Stop();
+  update_polling_.store(false, std::memory_order_release);
+  UpdateProgressBar().Visibility(mx::Visibility::Collapsed);
+  if (state.phase == "downloaded") {
+    SetUpdateStatus(L"Update downloaded — quit and install when ready.");
+    UpdateInstallButton().Visibility(mx::Visibility::Visible);
+    return;
+  }
+  if (state.phase == "error") {
+    SetUpdateStatus(state.message.value_or(L"Update download failed."));
+    UpdateDownloadButton().IsEnabled(true);
+    return;
+  }
+  SetUpdateStatus(L"");
+}
+
+void SettingsWindow::UpdateInstall_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    mx::RoutedEventArgs const&) {
+  if (api_ == nullptr) {
+    return;
+  }
+  UpdateInstallButton().IsEnabled(false);
+  auto api = api_;
+  std::thread([api]() mutable {
+    try {
+      (void)api->run_action("update.install", "").get();
+    } catch (...) {
+    }
+  }).detach();
+}
+
+}  // namespace winrt::RivetHost::implementation
 }  // namespace winrt::RivetHost::implementation

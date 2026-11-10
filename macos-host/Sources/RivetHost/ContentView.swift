@@ -706,7 +706,30 @@ final class LauncherModel: ObservableObject {
     func runSelected() {
         guard let selection,
               let row = rows.first(where: { $0.rowId == selection }) else { return }
-        run(row)
+        // Fast typing outruns async result repaints: the displayed rows can
+        // be one generation behind the query box (a `!g vflash 刷写` entered
+        // mid-repaint would open the search for an earlier tail). Re-run the
+        // final query first, then act on the freshest row for this
+        // selection — same row id falls through to the new top row.
+        let query = model.query
+        guard !query.isEmpty, !showingActions, let api = api else {
+            run(row)
+            return
+        }
+        Task { [weak self] in
+            var freshRow = row
+            if let fresh = try? await api.search(query: query) {
+                let freshRows = fresh.compactMap { ResultRow.from($0) }
+                if let match = freshRows.first(where: { $0.rowId == row.rowId }) {
+                    freshRow = match
+                } else if let top = freshRows.first {
+                    freshRow = top
+                }
+            }
+            await MainActor.run { [weak self] in
+                self?.run(freshRow)
+            }
+        }
     }
 
     func run(_ row: ResultRow) {

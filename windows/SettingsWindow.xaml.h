@@ -26,6 +26,10 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   // Hooked up by MainWindow once the backend is ready (and again on every
   // show, which reloads). The API outlives this window: MainWindow owns it.
   void Attach(std::shared_ptr<rivet_app::API> api);
+  // Opens the Sync & Updates tab and runs an update check — the tray
+  // "Check for updates" entry lands here so the result shows in a
+  // visible window instead of a hidden launcher's status line.
+  void OpenUpdates();
 
   // Native five-section settings IA. The same backend keys are used by
   // macOS, Windows and Linux; only the host controls differ.
@@ -51,6 +55,12 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
                    Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const&);
   void SaveKey_Click(winrt::Windows::Foundation::IInspectable const&,
                      Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void UpdateCheck_Click(winrt::Windows::Foundation::IInspectable const&,
+                         Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void UpdateDownload_Click(winrt::Windows::Foundation::IInspectable const&,
+                            Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void UpdateInstall_Click(winrt::Windows::Foundation::IInspectable const&,
+                           Microsoft::UI::Xaml::RoutedEventArgs const&);
 
  private:
   void Load();
@@ -68,12 +78,19 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   void CommitText(Microsoft::UI::Xaml::Controls::TextBox const& box);
   void ShowError(std::wstring const& message);
   void ClearError();
+  void SetUpdateStatus(std::wstring const& message);
+  void UpdatePollTick(winrt::Windows::Foundation::IInspectable const&,
+                      winrt::Windows::Foundation::IInspectable const&);
 
   std::shared_ptr<rivet_app::API> api_;
   // True while Apply pushes values into the controls, so their change
   // handlers do not write them straight back.
   bool loading_{false};
   std::map<std::string, std::string> values_;
+  // Update card state: a download poller while a download runs; the flag
+  // guards the poll against overlapping re-entries.
+  winrt::Microsoft::UI::Xaml::DispatcherQueueTimer update_timer_{nullptr};
+  std::atomic<bool> update_polling_{false};
 };
 
 }  // namespace winrt::RivetHost::implementation
