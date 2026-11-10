@@ -28,6 +28,7 @@
          "emoji.rkt"
          "file-catalog.rkt"
          "files.rkt"
+         "fs-watch.rkt"
          "fuzzy.rkt"
          "gallery.rkt"
          "paths.rkt"
@@ -60,7 +61,7 @@
   #:transparent)
 
 (struct engine
-  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge)
+  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop)
   #:mutable)
 
 ;; Prepared application rows: the fuzzy fields are immutable per rebuild,
@@ -562,6 +563,108 @@
                     path-string)))
   (and (path? base) (path->string base)))
 
+(define (engine-start-live-watcher! engine worker)
+  (define pending (make-hash)) ; dir-string -> #t
+  ;; Dirs to re-reconcile after delays (see the flusher): a Windows
+  ;; delete notification fires while the file may still sit in
+  ;; delete-pending state (another process — antivirus, an indexer —
+  ;; holds a handle), so the immediate reconcile sees it still listed
+  ;; and cannot prune; when the handle finally releases the file
+  ;; vanishes WITHOUT a second notification, and only these deferred
+  ;; re-checks catch the vanish. Several deadlines per dir (2/4/6/8 s)
+  ;; span the pending window; each fires one reconcile.
+  (define recheck (make-hash)) ; dir-string -> (listof due-ms)
+  (define flush-sem (make-semaphore 0))
+  (define stop-box (box #f))
+  (define watchers
+    (for/list ([root (in-list (engine-file-catalog-roots engine))])
+      (start-fs-watch! root
+                       (lambda (changed-paths)
+                         (for ([p (in-list changed-paths)])
+                           (define dir (parent-directory-of p))
+                           (when dir (hash-set! pending dir #t)))
+                         (semaphore-post flush-sem))
+                       (lambda (_root)
+                         ;; Kernel buffer overflow: slice 1 notes the miss
+                         ;; honestly; the next full scan (next app start)
+                         ;; heals it. #99 tracks the rescan fast-path.
+                         (void)))))
+  (cond
+    [(null? watchers) (void)]
+    [else
+     ;; Arm-reconcile: changes made between the scan's completion and
+     ;; the watcher's first pending read are invisible to the watcher —
+     ;; reconcile every root once so the armed watcher starts from the
+     ;; current disk state (closes the ready→armed race). Roots here
+     ;; are the long-name-normalized forms (see the worker startup).
+     (for ([root (in-list (engine-file-catalog-roots engine))])
+       (with-handlers ([exn:fail? (lambda (_) (void))])
+         (reconcile-directory-in-catalog! worker root)))
+     (define flusher
+       (thread
+        (lambda ()
+          (define (reconcile! d)
+            (with-handlers ([exn:fail? (lambda (_) (void))])
+              (reconcile-directory-in-catalog! worker d)))
+          (let loop ()
+            (sync/timeout 0.4 flush-sem)
+            (cond
+              [(unbox stop-box) (void)]
+              [else
+               ;; Due deferred re-checks first (delete-pending window,
+               ;; see `recheck` above). Future deadlines stay scheduled.
+               (define now (current-inexact-milliseconds))
+               (define due-rows
+                 (for/list ([(d deadlines) (in-hash recheck)])
+                   (let-values (((due future)
+                                 (partition (lambda (ms) (<= ms now))
+                                            deadlines)))
+                     (and (pair? due) (cons d due)))))
+               (define due
+                 (filter values due-rows))
+               (for ([row (in-list due)])
+                 (define d (car row))
+                 (if (null? (cdr row))
+                     (hash-remove! recheck d)
+                     (hash-set! recheck d (cdr row)))
+                 (reconcile! d))
+               (when (and (pair? due)
+                          (engine-file-catalog-nudge engine))
+                 ((engine-file-catalog-nudge engine)))
+               ;; Then the fresh batch.
+               (define dirs
+                 (for/list ([(d _) (in-hash pending)]) d))
+               (hash-clear! pending)
+               (for ([d (in-list dirs)])
+                 (reconcile! d)
+                 ;; Schedule the delete-pending re-checks: one reconcile
+                 ;; at 2/4/6/8 s, spanning a typical pending window.
+                 (define now (current-inexact-milliseconds))
+                 (hash-set! recheck d
+                            (for/list ((delay-ms (in-list '(2000 4000 6000 8000))))
+                              (+ now delay-ms))))
+               (when (and (pair? dirs)
+                          (engine-file-catalog-nudge engine))
+                 ((engine-file-catalog-nudge engine)))
+               (loop)])))))
+     (set-engine-file-catalog-live!
+      engine
+      (list watchers pending recheck flush-sem stop-box flusher))]))
+
+(define (engine-stop-live-watcher! engine)
+  (define live (engine-file-catalog-live engine))
+  (when live
+    (match-let ([(list watchers pending recheck flush-sem stop-box flusher)
+                 live])
+      (set-box! stop-box #t)
+      (for ([w (in-list watchers)])
+        (stop-fs-watch! w))
+      (semaphore-post flush-sem)
+      ;; The flusher exits within one 400 ms tick; joining here keeps
+      ;; engine-stop! deterministic without watching for races.
+      (sync/timeout 1 flusher)
+      (set-engine-file-catalog-live! engine #f))))
+
 (define (engine-start-file-catalog! engine)
   (when (and (engine-file-index-path engine)
              (pair? (engine-file-catalog-roots engine)))
@@ -569,11 +672,26 @@
      (engine-file-catalog-lock engine)
      (lambda ()
        (unless (engine-file-catalog-worker engine)
-         (set-engine-file-catalog-worker!
-          engine
-          (start-file-catalog! (engine-file-index-path engine)
-                               (engine-file-catalog-roots engine)
-                               #:on-progress (engine-file-catalog-nudge engine))))))))
+         (define worker
+           (start-file-catalog! (engine-file-index-path engine)
+                                (engine-file-catalog-roots engine)
+                                #:on-progress (engine-file-catalog-nudge engine)))
+         (set-engine-file-catalog-worker! engine worker)
+         (define arm-thread
+           (thread
+            (lambda ()
+              (file-catalog-wait worker 300)
+              ;; The worker posts the cancel semaphore on normal
+              ;; completion too, so the arm stop is a dedicated box:
+              ;; engine-stop! sets it, and arming (which opens the
+              ;; index DB) is skipped after a stop.
+              (define stopped? (unbox (engine-catalog-arm-stop engine)))
+              (define state
+                (file-catalog-status-state (engine-file-catalog-status engine)))
+              (when (and (not stopped?)
+                         (memq state '(ready partial)))
+                (engine-start-live-watcher! engine worker)))))
+         (set-engine-catalog-arm-thread! engine arm-thread))))))
 
 (define (engine-file-catalog-status engine)
   (define worker (engine-file-catalog-worker engine))
@@ -582,9 +700,32 @@
       (file-catalog-status 'idle 0 0
                            (length (engine-file-catalog-roots engine)) #f)))
 
+;; True once the catalog's scan has finished (the watcher keeps it live
+;; from there): find queries may answer from the catalog alone instead
+;; of spawning the platform search tool per keystroke.
+(define (engine-catalog-ready? engine)
+  (memq (file-catalog-status-state (engine-file-catalog-status engine))
+        '(ready partial)))
+
 (define (engine-stop! engine)
+  ;; Stop the worker first: its cancel semaphore doubles as the
+  ;; arming thread's stop signal — the arm thread then skips the
+  ;; armed reconcile (which would open the index DB after everything
+  ;; else stopped, and on Windows after the caller deleted the temp
+  ;; tree, recreating then leaking the file). Join it briefly, kill
+  ;; as a last resort, then stop the watcher and the worker finishes
+  ;; disconnecting.
   (define worker (engine-file-catalog-worker engine))
   (when worker (stop-file-catalog! worker))
+  (define arm (engine-catalog-arm-thread engine))
+  (when (and arm (not (thread-dead? arm)))
+    ;; Signal first: the arm thread skips arming after a stop, so it
+    ;; cannot open the index DB past this point.
+    (when (engine-catalog-arm-stop engine)
+      (set-box! (engine-catalog-arm-stop engine) #t))
+    (sync/timeout 2 (thread-dead-evt arm))
+    (when (not (thread-dead? arm)) (kill-thread arm)))
+  (engine-stop-live-watcher! engine)
   (void))
 
 (define (file-index-status-row engine)
@@ -606,7 +747,7 @@
    (case state
      [(idle) "run find <query> to build Desktop, Documents and Downloads in the background"]
      [(starting scanning) (format "~a of ~a search roots complete" completed total)]
-     [(ready) (format "~a search roots complete · platform search still covers broader locations" completed)]
+     [(ready) (format "~a search roots complete · the live catalog answers instantly; OS-managed trees stay on the OS index" completed)]
      [(partial) "some folders could not be read; existing entries were preserved and platform search fills the gaps"]
      [(cancelled) "the next app session can rebuild the local catalog"]
      [else "the platform search remains available; restart Fulcrum to retry the local catalog"])
@@ -648,7 +789,8 @@
                (let ([search (file-search/status
                               text
                               8
-                              #:index-path (engine-file-index-path engine))])
+                              #:index-path (engine-file-index-path engine)
+                              #:catalog-ready? (engine-catalog-ready? engine))])
                  (case (file-search-result-status search)
                    [(ok)
                     (let ([hits (file-search-result-hits search)])
@@ -900,7 +1042,10 @@
           file-catalog-roots
           #f
           (make-semaphore 1)
-          file-catalog-nudge))
+          file-catalog-nudge
+          #f
+          #f
+          (box #f)))
 
 (define (engine-rebuild-index! engine)
   (define apps (discover-applications))
