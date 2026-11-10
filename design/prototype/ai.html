@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fulcrum — 计算与 AI 流式</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .glyph { font-size: 14px; font-weight: 700; line-height: 1; }
+</style>
+</head>
+<body>
+  <!-- a：AI running —— 流式面板出现在 query 与列表之间；打字不清空答案 -->
+  <header class="cap">
+    <div class="t">a · AI running 态</div>
+    <div class="n">▍流式光标 + 转轮 · 下方结果列表保持可用 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" data-theme="appA" title="切换亮暗主题">◐</button>
+  </header>
+  <div class="panel w-s" id="appA">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">ai translate 简洁地解释这段 makefile<span class="caret"></span></div>
+    </div>
+    <div class="slot">
+      <div class="head">
+        <span class="glyph" style="font-size:12px">✦</span>
+        <span>AI is answering…</span>
+        <span class="sp"></span>
+        <span class="spin"></span>
+      </div>
+      <div class="body">这个 makefile 做三件事：① 用 `wildcard` 收集 `src/` 下全部 `.c` 文件；② 把每个文件编译为同名 `.o`（`-O2 -Wall`）；③ 链接成 `app`。`clean` 目标删除全部产物。 ▍</div>
+    </div>
+    <div class="list">
+      <div class="row selected">
+        <div class="tile"><span class="glyph">✦</span></div>
+        <div class="txt"><div class="ttl">translate — ai translate &lt;lang&gt;</div><div class="sub">AI · streams into the panel, copies when done</div></div>
+        <span class="badge">AI</span>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row">
+        <div class="tile"><span class="glyph">=</span></div>
+        <div class="txt"><div class="ttl">12 × 12 = 144</div><div class="sub">Calculator · exact arithmetic · ↵ copies</div></div>
+        <span class="badge">Calc</span>
+      </div>
+      <div class="row">
+        <div class="tile"><span class="glyph">✦</span></div>
+        <div class="txt"><div class="ttl">explain</div><div class="sub">AI · explain the selection or clipboard</div></div>
+        <span class="badge">AI</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">AI is answering…</span>
+    </div>
+  </div>
+
+  <!-- b：AI done —— 答案留在面板里供阅读，落点提示「已复制」；Esc 只关答案 -->
+  <header class="cap">
+    <div class="t">b · AI done 态</div>
+    <div class="n">答案已上剪贴板 · Esc 只收起答案面板 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" data-theme="appB" title="切换亮暗主题">◐</button>
+  </header>
+  <div class="panel w-s" id="appB">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">ai translate 简洁地解释这段 makefile</div>
+    </div>
+    <div class="slot">
+      <div class="head">
+        <span class="glyph" style="font-size:12px">✦</span>
+        <span>AI answer</span>
+      </div>
+      <div class="body">这个 makefile 做三件事：① 用 `wildcard` 收集 `src/` 下全部 `.c` 文件；② 把每个文件编译为同名 `.o`（`-O2 -Wall`）；③ 链接成 `app`。`clean` 目标删除全部产物。</div>
+      <div class="hint">Answer copied to the clipboard · esc dismisses</div>
+    </div>
+    <div class="list">
+      <div class="row">
+        <div class="tile"><span class="glyph">=</span></div>
+        <div class="txt"><div class="ttl">12 × 12 = 144</div><div class="sub">Calculator · exact arithmetic · ↵ copies</div></div>
+        <span class="badge">Calc</span>
+      </div>
+      <div class="row">
+        <div class="tile"><span class="glyph">✦</span></div>
+        <div class="txt"><div class="ttl">chat — continue the conversation</div><div class="sub">AI · ai chat &lt;message&gt;</div></div>
+        <span class="badge">AI</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">Answer copied to the clipboard</span>
+    </div>
+  </div>
+
+  <script>
+    document.querySelectorAll('.iconbtn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById(btn.dataset.theme).classList.toggle('dark');
+      });
+    });
+  </script>
+</body>
+</html>

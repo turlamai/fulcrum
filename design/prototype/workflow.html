@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fulcrum — Workflow Pro 编排概念（探索稿）</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* ==== 屏专属：Workflow Pro 形态探索 —— 规划中的付费层（PRICING 2026-10-v2），
+     未实现、非承诺；免费 launcher 能力不受影响。沿用玻璃面板家族语言。 ==== */
+  :root { --shell-w: 720px; }
+  .panel.win { width: 720px; height: 520px; }
+  .wfhead { flex: none; display: flex; align-items: center; gap: 10px; padding: 13px 18px; border-bottom: 1px solid var(--hairline); }
+  .wfhead .ttl { font-size: 15px; font-weight: 600; }
+  .wfhead .st { font-size: 11px; color: var(--mute); }
+  .wfbody { flex: 1; display: flex; min-height: 0; }
+  .canvas { flex: 1.25; padding: 16px 18px; overflow-y: auto; }
+  .step {
+    position: relative; display: flex; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 8px; background: transparent;
+  }
+  .step + .step { margin-top: 22px; }
+  .step + .step::before {
+    content: ""; position: absolute; left: 34px; top: -22px; height: 21px;
+    border-left: 2px solid var(--line);
+  }
+  .step.sel { border-color: var(--accent); background: var(--sel); }
+  .step .num {
+    flex: none; width: 22px; height: 22px; border-radius: 6px; background: var(--tile);
+    color: var(--accent); font-size: 11px; font-weight: 700; display: grid; place-items: center;
+  }
+  .step .stt { flex: 1; min-width: 0; }
+  .step .name { font-size: 13px; font-weight: 600; }
+  .step .prm { font-size: 11.5px; color: var(--mute); margin-top: 2px; }
+  .step .cond { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: var(--accent); }
+  .step .add { color: var(--faint); font-size: 12px; padding: 8px 0 0 32px; }
+  .trace { flex: 1; border-left: 1px solid var(--hairline); padding: 16px 18px; overflow-y: auto; }
+  .trace h2 { font-size: 11px; font-weight: 600; letter-spacing: .6px; color: var(--faint); margin-bottom: 10px; }
+  .tr {
+    display: flex; gap: 8px; align-items: flex-start; padding: 7px 0;
+    border-bottom: 1px solid var(--hairline); font-size: 11.5px;
+  }
+  .tr .mark { flex: none; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; margin-top: 1px; }
+  .tr.ok .mark { background: rgba(48,153,88,.15); color: #2f9e58; }
+  .tr.fail .mark { background: rgba(208,47,38,.12); color: var(--danger); }
+  .tr.run .mark { background: var(--badge); color: var(--accent); }
+  .tr .tt { color: var(--ink); }
+  .tr .td { color: var(--mute); margin-top: 1px; }
+  .trace .hint { margin-top: 10px; font-size: 10.5px; color: var(--faint); }
+</style>
+</head>
+<body>
+  <header class="cap">
+    <div class="t">Fulcrum — Workflow Pro（探索稿）</div>
+    <div class="n">规划中的付费层 · 未实现非承诺 · 免费能力不受影响 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" id="themeBtn" title="切换亮暗主题">◐</button>
+  </header>
+
+  <div class="panel win" id="app">
+    <div class="wfhead">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="color:var(--accent)"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/></svg>
+      <div>
+        <div class="ttl">Morning brief — draft</div>
+        <div class="st">Multi-step workflow · runs from the same query box · ⌘K to debug</div>
+      </div>
+      <span style="flex:1"></span>
+      <span class="badge">Draft</span>
+    </div>
+    <div class="wfbody">
+      <div class="canvas">
+        <div class="step">
+          <div class="num">1</div>
+          <div class="stt">
+            <div class="name">Trigger — summoned text</div>
+            <div class="prm">runs when you type “wf morning” and press ↵</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <div class="stt">
+            <div class="name">Clipboard — take last 5 entries</div>
+            <div class="prm">source: clipboard history · filter: text only</div>
+          </div>
+        </div>
+        <div class="step sel">
+          <div class="num">3</div>
+          <div class="stt">
+            <div class="cond">IF</div>
+            <div class="name">Entry looks like a URL</div>
+            <div class="prm">then summarize · else keep verbatim · failure → stop and show why</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">4</div>
+          <div class="stt">
+            <div class="name">AI — summarize each URL</div>
+            <div class="prm">provider: BYOK key on this device · streams into the panel</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">5</div>
+          <div class="stt">
+            <div class="name">Paste to frontmost app</div>
+            <div class="prm">joined digest · falls back to Copy on permission error</div>
+          </div>
+        </div>
+        <div class="add">+ add step</div>
+      </div>
+      <aside class="trace">
+        <h2>RUN TRACE · 12:04</h2>
+        <div class="tr ok"><span class="mark">✓</span><div><div class="tt">Step 1 · Trigger</div><div class="td">“wf morning” matched</div></div></div>
+        <div class="tr ok"><span class="mark">✓</span><div><div class="tt">Step 2 · Clipboard</div><div class="td">5 entries · 2 URLs</div></div></div>
+        <div class="tr run"><span class="mark">…</span><div><div class="tt">Step 3 · Condition</div><div class="td">evaluating entry 3 of 5</div></div></div>
+        <div class="tr"><span class="mark">·</span><div><div class="tt">Step 4 · AI</div><div class="td">waiting</div></div></div>
+        <div class="tr fail"><span class="mark">!</span><div><div class="tt">Step 5 · Paste</div><div class="td">last run: no Accessibility permission — fell back to Copy</div></div></div>
+        <div class="hint">调试同一面板：↵ 单步运行 · ⌘K 打开 trace · Esc 逐层返回。失败原因永远可读，不静默。</div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      document.getElementById('app').classList.toggle('dark');
+    });
+  </script>
+</body>
+</html>

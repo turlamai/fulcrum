@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fulcrum — 关键状态三联</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .tile.app-figma { background: linear-gradient(135deg,#a259ff,#f24e1e); color:#fff; font-weight:700; }
+  .tile.app-term  { background: linear-gradient(135deg,#3a3a3c,#1c1c1e); color:#fff; font-weight:700; }
+  .glyph { font-size: 14px; font-weight: 700; line-height: 1; }
+</style>
+</head>
+<body>
+  <!-- A：召唤后的默认态。search("") 返回加权混排：常驻设置行 + 应用 -->
+  <header class="cap">
+    <div class="t">A · 默认 ready 态</div>
+    <div class="n">query 为空 · 加权默认行 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" data-theme="appA" title="切换亮暗主题">◐</button>
+  </header>
+  <div class="panel w-s" id="appA">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q"><span class="ph">Search apps, clipboard, snippets, the web…</span></div>
+    </div>
+    <div class="list">
+      <div class="row selected">
+        <div class="tile app-figma"><span class="glyph">F</span></div>
+        <div class="txt"><div class="ttl">Figma</div><div class="sub">/Applications/Figma.app</div></div>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row">
+        <div class="tile app-term"><span class="glyph">>_</span></div>
+        <div class="txt"><div class="ttl">Terminal</div><div class="sub">/System/Applications/Utilities/Terminal.app</div></div>
+      </div>
+      <div class="row">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="var(--glass)"/><circle cx="15" cy="17" r="2" fill="var(--glass)"/></svg></div>
+        <div class="txt"><div class="ttl">Settings</div><div class="sub">Open the settings window</div></div>
+        <span class="badge">Set</span>
+      </div>
+      <div class="row">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <div class="txt"><div class="ttl">gallery — browse first-party plugins</div><div class="sub">26 plugins · install from the launcher</div></div>
+        <span class="badge">Gal</span>
+      </div>
+      <div class="row">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+        <div class="txt"><div class="ttl">Lock Screen</div><div class="sub">System command</div></div>
+        <span class="badge">Sys</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">Ready — press Option+Space anywhere</span>
+    </div>
+  </div>
+
+  <!-- B：无本地结果。web search 行兜底；关掉 web search 时列表为空，hint 不变 -->
+  <header class="cap">
+    <div class="t">B · 搜索无结果态</div>
+    <div class="n">query「figglewump」· !g 兜底行 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" data-theme="appB" title="切换亮暗主题">◐</button>
+  </header>
+  <div class="panel w-s" id="appB">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">figglewump<span class="caret"></span></div>
+    </div>
+    <div class="list">
+      <div class="row selected">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
+        <div class="txt"><div class="ttl">figglewump</div><div class="sub">Search the web with Google</div></div>
+        <span class="badge">!g</span>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row">
+        <div class="tile"><span class="glyph">✦</span></div>
+        <div class="txt"><div class="ttl">ai figglewump</div><div class="sub">AI · ask the configured provider</div></div>
+        <span class="badge">AI</span>
+      </div>
+      <div class="row">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+        <div class="txt"><div class="ttl">figglewump — try other engines</div><div class="sub">!gh · !so · !w · !yt · !m · !d · !t</div></div>
+        <span class="badge">Bang</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">Ready — press Option+Space anywhere</span>
+    </div>
+  </div>
+
+  <!-- C：启动中。后端健康检查未过：居中 ⌘ + startingStatus，列表不出现 -->
+  <header class="cap">
+    <div class="t">C · 启动中态</div>
+    <div class="n">embedded Racket CS 健康检查未完成 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" data-theme="appC" title="切换亮暗主题">◐</button>
+  </header>
+  <div class="panel w-s" id="appC">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q"><span class="ph">Search apps, clipboard, snippets, the web…</span></div>
+    </div>
+    <div class="center">
+      <div class="glyph">⌘</div>
+      <div class="msg">Starting embedded Racket CS…</div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">Starting embedded Racket CS…</span>
+    </div>
+  </div>
+
+  <script>
+    document.querySelectorAll('.iconbtn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById(btn.dataset.theme).classList.toggle('dark');
+      });
+    });
+  </script>
+</body>
+</html>
