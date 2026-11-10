@@ -240,6 +240,22 @@
        (check-true (and live (pair? (first live))))
        (define threads (map fs-watch-thread (first live)))
        (engine-stop! engine)
+       ;; A watcher thread parked inside its overlapped read leaves the
+       ;; foreign call only when the read completes. CancelIoEx normally
+       ;; wakes it; if the wake misses, any real change in the root
+       ;; completes the pending read and the loop then honors the stop
+       ;; box. Kick the root once and give the threads a generous,
+       ;; bounded window before asserting — CI runners stall this for
+       ;; minutes under load.
+       (define kick (build-path root "stop-kick.txt"))
+       (with-output-to-file kick (lambda () (display "kick")) #:exists 'truncate)
+       (delete-file kick)
        (for ([t (in-list threads)])
-         (check-true (thread-dead? t) "watch thread must exit on engine-stop!"))
+         (let wait-dead ([n 100])
+           (cond
+             [(thread-dead? t) (void)]
+             [(zero? n)
+              (check-true (thread-dead? t)
+                          "watch thread must exit after engine-stop! + change")]
+             [else (sleep 0.1) (wait-dead (sub1 n))])))
        (check-false (engine-file-catalog-live engine))))))
