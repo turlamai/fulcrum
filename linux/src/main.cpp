@@ -1636,17 +1636,17 @@ struct Launcher {
     // mid-repaint would open the search for an earlier tail. Re-run the
     // final query first, then act on the freshest row for this selection —
     // same id+title falls through to the new top row.
-    std::string const query_text = [] {
-      gchar const* text = gtk_editable_get_text(GTK_EDITABLE(search));
-      return text != nullptr ? std::string(text) : std::string();
-    }();
+    gchar const* query_chars =
+        gtk_editable_get_text(GTK_EDITABLE(search));
+    std::string const query_text =
+        query_chars != nullptr ? std::string(query_chars) : std::string();
     std::thread([api_raw, row, query_text]() mutable {
       auto* boxed = new RunOutcome;
       auto run_row = row;
       if (!query_text.empty()) {
         auto fresh = api_raw->search(query_text).get();
         for (auto const& cells : fresh) {
-          ResultRow const candidate = ResultRow::from(cells);
+          ResultRow const candidate = parse_row(cells);
           if (candidate.id == row.id && candidate.title == row.title) {
             run_row = candidate;
             break;

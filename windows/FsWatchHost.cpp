@@ -1,3 +1,4 @@
+#include "pch.h"
 #include "FsWatchHost.h"
 
 #include <windows.h>

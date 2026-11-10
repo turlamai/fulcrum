@@ -89,8 +89,10 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   std::map<std::string, std::string> values_;
   // Update card state: a download poller while a download runs; the flag
   // guards the poll against overlapping re-entries.
-  winrt::Microsoft::UI::Xaml::DispatcherQueueTimer update_timer_{nullptr};
+  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer update_timer_{nullptr};
   std::atomic<bool> update_polling_{false};
+
+  void RunUpdateCheck();
 };
 
 }  // namespace winrt::RivetHost::implementation
