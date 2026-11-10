@@ -727,8 +727,8 @@ final class LauncherModel: ObservableObject {
         let currentQuery = query
         Task { [weak self, searchAPI] in
             var freshRow = row
-            if let fresh = try? await searchAPI.search(currentQuery) {
-                let freshRows = fresh.compactMap { ResultRow.from($0) }
+            // FulcrumAPI.search already returns decoded [ResultRow].
+            if let freshRows = try? await searchAPI.search(currentQuery) {
                 if let match = freshRows.first(where: { $0.rowId == row.rowId }) {
                     freshRow = match
                 } else if let top = freshRows.first {
