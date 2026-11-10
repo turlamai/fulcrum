@@ -711,14 +711,13 @@ final class LauncherModel: ObservableObject {
         // mid-repaint would open the search for an earlier tail). Re-run the
         // final query first, then act on the freshest row for this
         // selection — same row id falls through to the new top row.
-        let query = model.query
-        guard !query.isEmpty, !showingActions, let api = api else {
+        guard !query.isEmpty, !showingActions, let api else {
             run(row)
             return
         }
         Task { [weak self] in
             var freshRow = row
-            if let fresh = try? await api.search(query: query) {
+            if let fresh = try? await api.search(query) {
                 let freshRows = fresh.compactMap { ResultRow.from($0) }
                 if let match = freshRows.first(where: { $0.rowId == row.rowId }) {
                     freshRow = match
