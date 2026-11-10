@@ -48,6 +48,7 @@
          engine-start-file-catalog!
          engine-stop!
          engine-file-catalog-status
+         engine-reconcile-directory!
          engine-rebuild-index!
          engine-app-count
          engine-record-use!
@@ -695,6 +696,27 @@
       (file-catalog-current-status worker)
       (file-catalog-status 'idle 0 0
                            (length (engine-file-catalog-roots engine)) #f)))
+
+;; The Windows host runs the filesystem watchers natively (its own threads,
+;; outside the embedded runtime — see the packaged-runtime investigation,
+;; issue #211) and forwards changed directories here over RVT1. Reconciles
+;; the directory into the persistent catalog and nudges open queries.
+;; Returns "reconciled", "outside" (not under any scanned root), or
+;; "no-catalog" (the catalog has not been started yet). Errors degrade to
+;; "error"; the catalog write itself is idempotent.
+(define (engine-reconcile-directory! engine directory)
+  (define worker (engine-file-catalog-worker engine))
+  (cond
+    [(not worker) "no-catalog"]
+    [else
+     (define outcome
+       (with-handlers ([exn:fail? (lambda (_) "error")])
+         (if (reconcile-directory-in-catalog! worker directory)
+             "reconciled"
+             "outside")))
+     (when (string=? outcome "reconciled")
+       (engine-file-catalog-nudge engine))
+     outcome]))
 
 ;; True once the catalog's scan has finished (the watcher keeps it live
 ;; from there): find queries may answer from the catalog alone instead

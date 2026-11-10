@@ -6,6 +6,7 @@
 #endif
 #include "GeneratedBackend.hpp"
 #include "GeneratedI18n.hpp"
+#include "FsWatchHost.h"
 #include "SettingsWindow.xaml.h"
 #include "WindowCommands.h"
 #include "WindowsInstance.h"
@@ -937,6 +938,7 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
         window->StartSilentUpdateCheck();
         window->PullHostSettings();
         window->RefreshExpansionData();
+        window->StartFsWatch();
       } else {
         // Never destroy the last Backend reference on its own reader thread.
         std::thread([backend = std::move(backend)]() mutable {
@@ -978,6 +980,26 @@ LRESULT CALLBACK expansion_hook_proc(int code, WPARAM wParam, LPARAM lParam) {
     g_expansion_window->OnExpansionKey(info->vkCode);
   }
   return ::CallNextHookEx(nullptr, code, wParam, lParam);
+}
+
+// Starts the native filesystem watchers over the catalog roots (profile +
+// fixed local volumes — the same roots the catalog scans). Events flow to
+// the backend's fs-reconcile RPC; the backend stays the catalog's owner.
+void MainWindow::StartFsWatch() {
+  std::vector<std::wstring> roots;
+  if (wchar_t const* profile = ::_wgetenv(L"USERPROFILE"); profile != nullptr) {
+    roots.push_back(std::wstring(profile));
+  }
+  DWORD const drives = ::GetLogicalDrives();
+  for (int i = 0; i < 26; ++i) {
+    if (!(drives & (1u << i))) continue;
+    std::wstring const letter(1, static_cast<wchar_t>(L'A' + i));
+    std::wstring const root = letter + L":\\";
+    if (::GetDriveTypeW(root.c_str()) == DRIVE_FIXED) {
+      roots.push_back(root);
+    }
+  }
+  fs_watch_.Start(api_, roots);
 }
 
 void MainWindow::FinishNativeSetup() {
@@ -1307,6 +1329,7 @@ void MainWindow::QuitApplication() {
       ::RemoveClipboardFormatListener(hwnd);
     }
   }
+  fs_watch_.Stop();
   tray_icon_.reset();
 
   // RVT1 Shutdown can join Racket worker threads: never block WinUI's

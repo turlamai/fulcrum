@@ -1250,6 +1250,17 @@
   (define store (engine-clipboard (engine!)))
   (if store (clipboard-clear! store) 0))
 
+;; ---- live filesystem reconcile (Windows host watchers) ------------------
+;;
+;; The Windows host runs the directory watchers natively — outside the
+;; embedded runtime, whose scheduler starves watcher threads in the
+;; packaged build (issue #211) — and forwards changed directories here.
+;; The backend stays the single owner of the catalog database; the host
+;; never touches the file. The nudge rides engine-reconcile-directory!,
+;; so open queries repaint through the existing search-revision path.
+(define-rpc (fs-reconcile [dir String] : String)
+  (engine-reconcile-directory! (engine!) dir))
+
 ;; ---- snippets -----------------------------------------------------------
 
 (define-rpc (snippet-list : (List (List String)))

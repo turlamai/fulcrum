@@ -98,6 +98,7 @@
     <ClInclude Include="MainWindow.xaml.h"><DependentUpon>MainWindow.xaml</DependentUpon></ClInclude>
     <ClInclude Include="WindowsInstance.h" />
     <ClInclude Include="SettingsWindow.xaml.h"><DependentUpon>SettingsWindow.xaml</DependentUpon></ClInclude>
+    <ClInclude Include="FsWatchHost.h" />
     <ClInclude Include="GeneratedBackend.hpp" />
     <ClInclude Include="WindowCommands.h" />
     <ClInclude Include="$(RIVET_ROOT)\platform\windows\runtime\backend.hpp" />
@@ -110,6 +111,7 @@
     <ClCompile Include="App.xaml.cpp"><DependentUpon>App.xaml</DependentUpon></ClCompile>
     <ClCompile Include="MainWindow.xaml.cpp"><DependentUpon>MainWindow.xaml</DependentUpon></ClCompile>
     <ClCompile Include="SettingsWindow.xaml.cpp"><DependentUpon>SettingsWindow.xaml</DependentUpon></ClCompile>
+    <ClCompile Include="FsWatchHost.cpp" />
     <ClCompile Include="WindowCommands.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader></ClCompile>
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
   </ItemGroup>

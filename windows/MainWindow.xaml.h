@@ -144,6 +144,11 @@ struct MainWindow : MainWindowT<MainWindow> {
   // instance, reloaded on every show so launcher-row edits are reflected.
   void ShowSettings();
   winrt::RivetHost::SettingsWindow settings_window_{nullptr};
+  // Native filesystem watchers over the catalog roots; changed directories
+  // flow to the backend's fs-reconcile RPC (issue #211 — the watcher lives
+  // in the host process, outside the embedded runtime).
+  void StartFsWatch();
+  fulcrum::windows::FsWatchHost fs_watch_;
 
   std::shared_ptr<rivet::windows::Backend> backend_;
   // Each in-flight RPC captures a shared API handle. Its deleter retains
