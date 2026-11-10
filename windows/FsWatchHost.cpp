@@ -42,6 +42,22 @@ void CollectDirectories(std::byte const* buffer, DWORD bytes,
   }
 }
 
+// The RVT1 wire is UTF-8; directory names come from ReadDirectoryChangesW
+// as UTF-16. Same conversion the other host files use (each TU keeps its
+// own copy — the shared ones live in the windows' anonymous namespaces).
+std::string Utf8FromWide(std::wstring const& wide) {
+  if (wide.empty()) return {};
+  auto const size = ::WideCharToMultiByte(CP_UTF8, 0, wide.data(),
+                                          static_cast<int>(wide.size()),
+                                          nullptr, 0, nullptr, nullptr);
+  std::string result(static_cast<std::size_t>(size > 0 ? size : 0), '\0');
+  if (size > 0) {
+    ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
+                          result.data(), size, nullptr, nullptr);
+  }
+  return result;
+}
+
 }  // namespace
 
 FsWatchHost::~FsWatchHost() {
@@ -198,7 +214,7 @@ void FsWatchHost::ReconcileLoop() {
         continue;
       }
       try {
-        (void)api_->fs_reconcile(directory).get();
+        (void)api_->fs_reconcile(Utf8FromWide(directory)).get();
       } catch (...) {
         // A reconcile failure (backend busy, transient SQLite lock) is
         // healed by the next change in that directory; never surface it.

@@ -987,8 +987,14 @@ LRESULT CALLBACK expansion_hook_proc(int code, WPARAM wParam, LPARAM lParam) {
 // the backend's fs-reconcile RPC; the backend stays the catalog's owner.
 void MainWindow::StartFsWatch() {
   std::vector<std::wstring> roots;
-  if (wchar_t const* profile = ::_wgetenv(L"USERPROFILE"); profile != nullptr) {
-    roots.push_back(std::wstring(profile));
+  // GetEnvironmentVariableW, not _wgetenv: under /sdl the CRT deprecation
+  // is an error. First call returns the size including the null terminator.
+  DWORD const profile_len = ::GetEnvironmentVariableW(L"USERPROFILE", nullptr, 0);
+  if (profile_len > 0) {
+    std::wstring profile(profile_len, L'\0');
+    profile.resize(::GetEnvironmentVariableW(L"USERPROFILE", profile.data(),
+                                             profile_len));
+    roots.push_back(std::move(profile));
   }
   DWORD const drives = ::GetLogicalDrives();
   for (int i = 0; i < 26; ++i) {
@@ -1873,7 +1879,7 @@ void MainWindow::RunSelected() {
           update_path = *state.downloaded_path;
         }
       }
-      dispatcher.TryEnqueue([weak, dispatcher, status, row,
+      dispatcher.TryEnqueue([weak, dispatcher, status, row, action_row,
                              update_path = std::move(update_path)]() mutable {
         if (auto window = weak.get()) {
           if (status == "ok" || status == "launched" || status == "copied" ||

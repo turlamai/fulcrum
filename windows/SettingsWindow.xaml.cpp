@@ -719,7 +719,7 @@ void SettingsWindow::UpdatePollTick(
     return;
   }
   if (state.phase == "error") {
-    SetUpdateStatus(state.message.value_or(L"Update download failed."));
+    SetUpdateStatus(to_wide(state.message.value_or("Update download failed.")));
     UpdateDownloadButton().IsEnabled(true);
     return;
   }

@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "MainWindow.g.h"
 #include "GeneratedBackend.hpp"
+#include "FsWatchHost.h"
 #include "winui_window.hpp"
 
 #include <memory>

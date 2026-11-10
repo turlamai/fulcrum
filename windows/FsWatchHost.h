@@ -47,10 +47,9 @@ public:
     std::wstring root;
   };
 
-  void WatchRootLoop(std::wstring const& root);
+  void WatchRootLoop(WatchRoot* watch);
   void EnqueueDirectory(std::wstring const& directory);
   void ReconcileLoop();
-  static DWORD WINAPI WatchRootTrampoline(LPVOID self);
 
   std::shared_ptr<rivet_app::API> api_;
   std::vector<std::unique_ptr<WatchRoot>> watches_;
