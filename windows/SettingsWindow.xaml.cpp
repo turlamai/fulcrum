@@ -711,8 +711,7 @@ void SettingsWindow::RunUpdateCheck() {
           }
         });
       } else if (check.status == "up-to-date") {
-        line = frame(up_to_date_frame,
-                     to_wide(check.current_version.value_or("?")));
+        line = frame(up_to_date_frame, to_wide(check.current_version));
       } else if (check.status == "throttled") {
         line = throttled_text;
       } else {
@@ -773,10 +772,11 @@ void SettingsWindow::UpdatePollTick(
     auto const frame = update_progress_.empty()
                            ? std::wstring(L"Downloading… {0}%")
                            : update_progress_;
-    auto const at = frame.find(L"{0}");
+    auto text = frame;
+    auto const at = text.find(L"{0}");
     SetUpdateStatus(at == std::wstring::npos
-                        ? frame
-                        : frame.replace(at, 3, std::to_wstring(percent)));
+                        ? text
+                        : text.replace(at, 3, std::to_wstring(percent)));
     return;
   }
   // Any other phase means the transfer left `downloading` (done, failed,
