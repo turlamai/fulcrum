@@ -350,13 +350,15 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case general, features, ai, commands, sync
 
     var id: Self { self }
-    var title: String {
+    // The i18n key backing the sidebar title; rendered through the view's
+    // `t` so a language switch re-renders immediately.
+    var titleKey: String {
         switch self {
-        case .general: return "General"
-        case .features: return "Features"
-        case .ai: return "AI"
-        case .commands: return "Commands"
-        case .sync: return "Sync & Updates"
+        case .general: return "settings.nav.general"
+        case .features: return "settings.nav.features"
+        case .ai: return "settings.nav.ai"
+        case .commands: return "settings.nav.commands"
+        case .sync: return "settings.nav.sync"
         }
     }
     var icon: String {
@@ -393,7 +395,7 @@ struct SettingsView: View {
                     Button {
                         selection = section
                     } label: {
-                        Label(section.title, systemImage: section.icon)
+                        Label(t(section.titleKey), systemImage: section.icon)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }
@@ -577,19 +579,19 @@ struct SettingsView: View {
 
     private var syncTab: some View {
         Form {
-            Section("Sync (beta)") {
-                SettingField(title: "Sync folder", key: "sync-root",
+            Section(t("settings.nav.sync")) {
+                SettingField(title: t("settings.sync-folder"), key: "sync-root",
                              placeholder: "empty = off", model: model)
-                Text("A folder a file sync service replicates (iCloud Drive, Dropbox, Syncthing); settings and snippets mirror there.")
+                Text(t("settings.sync-folder.description"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
-            Section("Updates") {
-                Button("Check for Updates Now") {
+            Section(t("settings.updates")) {
+                Button(t("settings.check-updates-now.mac")) {
                     UpdateController.shared?.checkForUpdates()
                     AppDelegate.shared?.showUpdatePanel()
                 }
-                Text("Fulcrum checks signed releases automatically. You can also choose Check for Updates from the app menu.")
+                Text(t("settings.updates-note.mac"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }

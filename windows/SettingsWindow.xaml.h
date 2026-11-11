@@ -87,6 +87,17 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   // handlers do not write them straight back.
   bool loading_{false};
   std::map<std::string, std::string> values_;
+  // Update-card strings, refreshed by ApplyLocalization so the async
+  // status lines read the active language at paint time.
+  std::wstring update_checking_;
+  std::wstring update_available_;
+  std::wstring update_up_to_date_;
+  std::wstring update_throttled_;
+  std::wstring update_check_failed_;
+  std::wstring update_downloaded_;
+  std::wstring update_download_failed_;
+  std::wstring update_progress_;
+  std::wstring update_install_failed_;
   // Update card state: a download poller while a download runs; the flag
   // guards the poll against overlapping re-entries.
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer update_timer_{nullptr};

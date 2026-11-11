@@ -307,6 +307,57 @@ void SettingsWindow::ApplyLocalization(std::string const& language) {
   ExpansionLabel().Text(translated_setting(language, "setting.expansion-enabled"));
   PluginsLabel().Text(translated_setting(language, "setting.plugins-enabled"));
   ProviderLabel().Text(translated_setting(language, "setting.ai-provider"));
+  // Navigation and section titles (the v0.18 five-section IA shipped with
+  // hardcoded English; these follow the active language like every label).
+  NavGeneral().Content(winrt::box_value(
+      translated_setting(language, "settings.nav.general")));
+  NavFeatures().Content(winrt::box_value(
+      translated_setting(language, "settings.nav.features")));
+  NavAi().Content(winrt::box_value(
+      translated_setting(language, "settings.nav.ai")));
+  NavCommands().Content(winrt::box_value(
+      translated_setting(language, "settings.nav.commands")));
+  NavSync().Content(winrt::box_value(
+      translated_setting(language, "settings.nav.sync")));
+  GeneralTitle().Text(translated_setting(language, "settings.nav.general"));
+  FeaturesTitle().Text(translated_setting(language, "settings.nav.features"));
+  AiTitle().Text(translated_setting(language, "settings.nav.ai"));
+  CommandsTitle().Text(translated_setting(language, "settings.nav.commands"));
+  SyncTitle().Text(translated_setting(language, "settings.nav.sync"));
+  // Sync & Updates card.
+  SyncFolderLabel().Text(translated_setting(language, "settings.sync-folder"));
+  SyncFolderHint().Text(
+      translated_setting(language, "settings.sync-folder.description"));
+  UpdatesNoteHint().Text(
+      translated_setting(language, "settings.updates-note.win"));
+  CheckUpdatesLabel().Text(
+      translated_setting(language, "settings.check-updates"));
+  UpdateCheckButton().Content(
+      winrt::box_value(translated_setting(language, "settings.check-now")));
+  UpdateDownloadButton().Content(
+      winrt::box_value(translated_setting(language, "settings.download")));
+  UpdateInstallButton().Content(winrt::box_value(
+      translated_setting(language, "settings.quit-and-install")));
+  // Localized placeholder used by the update-card status lines that were
+  // painted before this window existed (see UpdatePollTick / RunUpdateCheck).
+  update_checking_ =
+      translated_setting(language, "update.checking");
+  update_available_ =
+      translated_setting(language, "update.available");
+  update_up_to_date_ =
+      translated_setting(language, "update.up-to-date");
+  update_throttled_ =
+      translated_setting(language, "update.check-throttled");
+  update_check_failed_ =
+      translated_setting(language, "update.check-failed");
+  update_downloaded_ =
+      translated_setting(language, "update.downloaded");
+  update_download_failed_ =
+      translated_setting(language, "update.download-failed");
+  update_progress_ =
+      translated_setting(language, "update.download-progress");
+  update_install_failed_ =
+      translated_setting(language, "update.install-failed");
 }
 
 void SettingsWindow::RefreshAiStatus() {
@@ -627,39 +678,51 @@ void SettingsWindow::RunUpdateCheck() {
   UpdateDownloadButton().Visibility(mx::Visibility::Collapsed);
   UpdateInstallButton().Visibility(mx::Visibility::Collapsed);
   UpdateProgressBar().Visibility(mx::Visibility::Collapsed);
-  SetUpdateStatus(L"Checking for updates…");
+  SetUpdateStatus(update_checking_);
   auto const dispatcher = DispatcherQueue();
   auto weak = get_weak();
   auto api = api_;
-  std::thread([weak, api, dispatcher]() mutable {
+  // The localized frames are copied before the thread starts: the members
+  // are written on the UI thread (ApplyLocalization) and must not be read
+  // concurrently from this worker.
+  std::wstring const available_frame = update_available_;
+  std::wstring const up_to_date_frame = update_up_to_date_;
+  std::wstring const throttled_text = update_throttled_;
+  std::wstring const check_failed_frame = update_check_failed_;
+  std::thread([weak, api, dispatcher, available_frame, up_to_date_frame,
+               throttled_text, check_failed_frame]() mutable {
     std::wstring line;
+    auto frame = [](std::wstring text, std::wstring const& value) {
+      auto const at = text.find(L"{0}");
+      if (at == std::wstring::npos) return text;
+      return text.replace(at, 3, value);
+    };
     try {
       auto const check = api->update_check(true).get();
       if (check.status == "available") {
         auto const version = to_wide(check.available_version.value_or("?"));
         auto const size_mb = check.size_bytes
                                  ? std::to_wstring((*check.size_bytes + (1 << 20) - 1) >> 20) + L" MB"
-                                 : L"";
-        line = L"Fulcrum " + version + L" is available" +
-               (size_mb.empty() ? L"" : L" (" + size_mb + L")") +
-               L" — download it below.";
+                                 : L"?";
+        line = frame(frame(available_frame, version), size_mb);
         dispatcher.TryEnqueue([weak, dispatcher]() mutable {
           if (auto window = weak.get()) {
             window->UpdateDownloadButton().Visibility(mx::Visibility::Visible);
           }
         });
       } else if (check.status == "up-to-date") {
-        line = L"Fulcrum " + to_wide(check.current_version) + L" is up to date.";
+        line = frame(up_to_date_frame,
+                     to_wide(check.current_version.value_or("?")));
       } else if (check.status == "throttled") {
-        line = L"Update check throttled — try again shortly.";
+        line = throttled_text;
       } else {
-        line = L"Update check failed: " +
-               to_wide(check.error.value_or("check failed"));
+        line = frame(check_failed_frame,
+                     to_wide(check.error.value_or("check failed")));
       }
     } catch (std::exception const& e) {
-      line = to_wide(std::string("Update check failed: ") + e.what());
+      line = frame(check_failed_frame, to_wide(e.what()));
     } catch (...) {
-      line = L"Update check failed.";
+      line = frame(check_failed_frame, L"unknown reason");
     }
     dispatcher.TryEnqueue([weak, dispatcher, line]() mutable {
       if (auto window = weak.get()) {
@@ -679,7 +742,9 @@ void SettingsWindow::UpdateDownload_Click(
   }
   UpdateDownloadButton().IsEnabled(false);
   UpdateProgressBar().Visibility(mx::Visibility::Visible);
-  SetUpdateStatus(L"Downloading…");
+  SetUpdateStatus(update_progress_.empty()
+                      ? L"Downloading…"
+                      : update_progress_.substr(0, update_progress_.find(L"{0}")));
   auto const dispatcher = DispatcherQueue();
   update_timer_ = DispatcherQueue().CreateTimer();
   update_timer_.Interval(std::chrono::milliseconds{700});
@@ -705,7 +770,13 @@ void SettingsWindow::UpdatePollTick(
   if (state.phase == "downloading") {
     auto const percent = state.percent < 0 ? 0 : (state.percent > 100 ? 100 : state.percent);
     UpdateProgressBar().Value(static_cast<double>(percent));
-    SetUpdateStatus(L"Downloading… " + std::to_wstring(percent) + L"%");
+    auto const frame = update_progress_.empty()
+                           ? std::wstring(L"Downloading… {0}%")
+                           : update_progress_;
+    auto const at = frame.find(L"{0}");
+    SetUpdateStatus(at == std::wstring::npos
+                        ? frame
+                        : frame.replace(at, 3, std::to_wstring(percent)));
     return;
   }
   // Any other phase means the transfer left `downloading` (done, failed,
@@ -714,12 +785,13 @@ void SettingsWindow::UpdatePollTick(
   update_polling_.store(false, std::memory_order_release);
   UpdateProgressBar().Visibility(mx::Visibility::Collapsed);
   if (state.phase == "downloaded") {
-    SetUpdateStatus(L"Update downloaded — quit and install when ready.");
+    SetUpdateStatus(update_downloaded_);
     UpdateInstallButton().Visibility(mx::Visibility::Visible);
     return;
   }
   if (state.phase == "error") {
-    SetUpdateStatus(to_wide(state.message.value_or("Update download failed.")));
+    auto const detail = state.message.value_or("");
+    SetUpdateStatus(detail.empty() ? update_download_failed_ : to_wide(detail));
     UpdateDownloadButton().IsEnabled(true);
     return;
   }

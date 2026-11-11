@@ -7,8 +7,8 @@ public enum RivetGeneratedConfig {
     public static let moduleName = "backend"
     public static let entryName = "start"
     public static let displayName = "Fulcrum"
-    public static let version = "0.18.0"
-    public static let build: Int64 = 33
+    public static let version = "0.18.1"
+    public static let build: Int64 = 34
     public static let identifier = "site.jrtx.fulcrum"
     public static let releaseChannel = "stable"
 }

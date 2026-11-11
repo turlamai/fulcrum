@@ -38,17 +38,17 @@
                         IsSettingsVisible="False" IsPaneOpen="True"
                         SelectionChanged="Navigation_SelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="General" Tag="general" AutomationProperties.AutomationId="settings-sidebar-general" />
-                <NavigationViewItem Content="Features" Tag="features" AutomationProperties.AutomationId="settings-sidebar-features" />
-                <NavigationViewItem Content="AI" Tag="ai" AutomationProperties.AutomationId="settings-sidebar-ai" />
-                <NavigationViewItem Content="Commands" Tag="commands" AutomationProperties.AutomationId="settings-sidebar-commands" />
-                <NavigationViewItem Content="Sync &amp; Updates" Tag="sync" AutomationProperties.AutomationId="settings-sidebar-sync" />
+                <NavigationViewItem x:Name="NavGeneral" Content="General" Tag="general" AutomationProperties.AutomationId="settings-sidebar-general" />
+                <NavigationViewItem x:Name="NavFeatures" Content="Features" Tag="features" AutomationProperties.AutomationId="settings-sidebar-features" />
+                <NavigationViewItem x:Name="NavAi" Content="AI" Tag="ai" AutomationProperties.AutomationId="settings-sidebar-ai" />
+                <NavigationViewItem x:Name="NavCommands" Content="Commands" Tag="commands" AutomationProperties.AutomationId="settings-sidebar-commands" />
+                <NavigationViewItem x:Name="NavSync" Content="Sync &amp; Updates" Tag="sync" AutomationProperties.AutomationId="settings-sidebar-sync" />
             </NavigationView.MenuItems>
             <ScrollViewer>
                 <StackPanel Margin="24,4,24,24" HorizontalAlignment="Stretch">
 
                 <StackPanel x:Name="GeneralSection" Visibility="Visible" AutomationProperties.AutomationId="settings-general-content">
-                <TextBlock Text="General" Style="{StaticResource SectionTitle}" />
+                <TextBlock x:Name="GeneralTitle" Text="General" Style="{StaticResource SectionTitle}" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <Grid Style="{StaticResource Row}">
@@ -119,7 +119,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="FeaturesSection" Visibility="Collapsed">
-                <TextBlock Text="Features" Style="{StaticResource SectionTitle}" />
+                <TextBlock x:Name="FeaturesTitle" Text="Features" Style="{StaticResource SectionTitle}" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <Grid Style="{StaticResource Row}">
@@ -206,7 +206,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="AiSection" Visibility="Collapsed">
-                <TextBlock Text="AI" Style="{StaticResource SectionTitle}" />
+                <TextBlock x:Name="AiTitle" Text="AI" Style="{StaticResource SectionTitle}" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <Grid Style="{StaticResource Row}">
@@ -287,7 +287,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="SyncSection" Visibility="Collapsed">
-                <TextBlock Text="Sync &amp; Updates" Style="{StaticResource SectionTitle}" />
+                <TextBlock x:Name="SyncTitle" Text="Sync &amp; Updates" Style="{StaticResource SectionTitle}" />
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <Grid Style="{StaticResource Row}">
@@ -295,21 +295,21 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Sync folder (beta)" Style="{StaticResource RowLabel}" />
+                            <TextBlock x:Name="SyncFolderLabel" Text="Sync folder (beta)" Style="{StaticResource RowLabel}" />
                             <TextBox x:Name="SyncRootBox" Grid.Column="1" Tag="sync-root" MinWidth="280"
                                      VerticalAlignment="Center" PlaceholderText="empty = off"
                                      LostFocus="Text_LostFocus" KeyDown="Text_KeyDown" />
                         </Grid>
-                        <TextBlock Style="{StaticResource Hint}"
+                        <TextBlock x:Name="SyncFolderHint" Style="{StaticResource Hint}"
                                    Text="A folder a file sync service replicates (OneDrive, Dropbox, Syncthing); settings and snippets mirror there." />
-                        <TextBlock Style="{StaticResource Hint}"
+                        <TextBlock x:Name="UpdatesNoteHint" Style="{StaticResource Hint}"
                                    Text="Fulcrum checks signed releases automatically. Use Check for Updates from the tray menu to check now." />
                         <Grid Style="{StaticResource Row}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Check for updates" Style="{StaticResource RowLabel}" />
+                            <TextBlock x:Name="CheckUpdatesLabel" Text="Check for updates" Style="{StaticResource RowLabel}" />
                             <StackPanel Orientation="Horizontal" Spacing="8" Grid.Column="1">
                                 <Button x:Name="UpdateCheckButton"
                                         AutomationProperties.AutomationId="settings-update-check"

@@ -75,7 +75,7 @@
 ;; update check: drift here means every install believes it is outdated
 ;; (0.2.0 shipped believing it was 0.1.0).
 (define app-version
-  (with-handlers ([exn:fail? (lambda (_) "0.18.0")])
+  (with-handlers ([exn:fail? (lambda (_) "0.18.1")])
     (string-append (rivet-info:app-version))))
 
 ;; The updater learns the running version from here (the packaged app reads
@@ -219,7 +219,7 @@
   (list "settings.open"
         "Settings…"
         "Theme, hotkey, AI provider and key, sync, updates — in a window"
-        "Setting" "" "setting" "" "Open"))
+        "Setting" "" "setting" "" (update-text "打开" "Open")))
 
 (define (settings-quick-rows)
   (cons
@@ -1071,7 +1071,7 @@
          (list (list "plugins.install"
                      "Install plugin from folder"
                      (format "↵ copies ~a into Fulcrum's plugins directory" path)
-                     "Plugin" path "plugin" "" "Install"))
+                     "Plugin" path "plugin" "" (update-text "安装" "Install")))
          '())]
     [(and (or (string-prefix? lowered "plugins ")
               (string-prefix? lowered "plugin "))
@@ -1548,6 +1548,11 @@
 (define (update-row id title subtitle arg badge)
   (list id title subtitle "Update" arg "update" "" badge))
 
+;; Update rows and notifications follow the UI language — the settings
+;; row for `language` promises "update dialogs follow it".
+(define (update-text zh en)
+  (if (equal? (state-ref language) "en") en zh))
+
 (define (update-rows query)
   (define trimmed (string-trim query))
   (define lowered (string-downcase trimmed))
@@ -1567,48 +1572,48 @@
         [(downloading)
          (list (update-row
                 "update.progress"
-                (format "Downloading Fulcrum v~a…" (or version "?"))
-                "the download continues in the background; reopen this list for fresh progress"
+                (update-text (format "正在下载 Fulcrum v~a…" (or version "?")) (format "Downloading Fulcrum v~a…" (or version "?")))
+                (update-text "下载在后台继续；重新打开此列表查看最新进度" "the download continues in the background; reopen this list for fresh progress")
                 "" (format "~a%" (hash-ref state 'percent 0)))
-               (update-row "update.check" "Check for updates again"
+               (update-row "update.check" (update-text "再次检查更新" "Check for updates again")
                            "re-fetch the signed channel manifest now" "" ""))]
         [(downloaded)
          (if (package-managed-linux?)
              (list (update-row
                     "update.hint"
-                    "Upgrade Fulcrum through your Linux package manager"
-                    "Use your distribution's apt/dnf upgrade or install the official DEB/RPM with dpkg/rpm; never overwrite /opt or /usr with a tarball"
+                    (update-text "通过 Linux 包管理器升级 Fulcrum" "Upgrade Fulcrum through your Linux package manager")
+                    (update-text "使用发行版的 apt/dnf 升级，或用 dpkg/rpm 安装官方 DEB/RPM；切勿用 tar.gz 覆盖 /opt 或 /usr" "Use your distribution's apt/dnf upgrade or install the official DEB/RPM with dpkg/rpm; never overwrite /opt or /usr with a tarball")
                     "" ""))
              (append
               (if (or (memq (system-type 'os) '(macosx windows))
                       (appimage-self-update?))
               (list (update-row
                      "update.install"
-                     (format "Quit and install Fulcrum v~a" (or version "?"))
+                     (update-text (format "退出并安装 Fulcrum v~a" (or version "?")) (format "Quit and install Fulcrum v~a" (or version "?")))
                      (case (system-type 'os)
                        [(windows)
-                        "runs the verified MSI, upgrades in place, and relaunches"]
+                        (update-text "运行已验证的 MSI，就地升级并重新启动" "runs the verified MSI, upgrades in place, and relaunches")]
                        [(unix)
-                        "atomically replaces the verified AppImage, relaunches, and restores on failure"]
+                        (update-text "原子替换已验证的 AppImage，重新启动，失败时自动还原" "atomically replaces the verified AppImage, relaunches, and restores on failure")]
                        [else
-                        "swaps the downloaded bundle in place and relaunches"])
+                        (update-text "把下载的包就地换入并重新启动" "swaps the downloaded bundle in place and relaunches")])
                      "" "Install"))
               '())
           (list (update-row
                  "update.reveal"
-                 "Open the updates folder"
+                 (update-text "打开更新文件夹" "Open the updates folder")
                  (or (hash-ref state 'downloadedPath #f) "")
                  "" "Open")
                 (update-row
                  "update.hint"
-                 "Install manually"
+                 (update-text "手动安装" "Install manually")
                  (case (system-type 'os)
                    [(windows)
-                    "double-click the downloaded .msi and follow the installer; Fulcrum can be running during the upgrade"]
+                    (update-text "双击下载的 .msi 按安装器指引操作；升级时 Fulcrum 可以保持运行" "double-click the downloaded .msi and follow the installer; Fulcrum can be running during the upgrade")]
                    [else
                     (if (appimage-self-update?)
-                        "fallback: exit Fulcrum and replace the current .AppImage with this verified AppImage"
-                        "extract the .tar.gz and replace the current Fulcrum folder, then relaunch")])
+                        (update-text "后备方案：退出 Fulcrum，用这份已验证的 AppImage 替换当前版本" "fallback: exit Fulcrum and replace the current .AppImage with this verified AppImage")
+                        (update-text "解压 .tar.gz 替换当前 Fulcrum 文件夹后重新启动" "extract the .tar.gz and replace the current Fulcrum folder, then relaunch"))])
                  "" ""))))]
         [else
          (append
@@ -1616,24 +1621,21 @@
               (if (package-managed-linux?)
                   (list (update-row
                          "update.hint"
-                         (format "Fulcrum v~a available via package manager" version)
-                         "Upgrade with your distro's apt/dnf workflow; use signed DEB/RPM packages, never extract tar.gz over /opt or /usr"
+                         (update-text (format "Fulcrum v~a 可通过包管理器升级" version) (format "Fulcrum v~a available via package manager" version))
+                         (update-text "使用发行版的 apt/dnf 工作流升级；只用签名的 DEB/RPM 包，切勿把 tar.gz 解压到 /opt 或 /usr" "Upgrade with your distro's apt/dnf workflow; use signed DEB/RPM packages, never extract tar.gz over /opt or /usr")
                          "" ""))
                   (list (update-row
                          "update.download"
-                         (format "Download Fulcrum v~a" version)
-                         (format "~a · ↵ downloads in the background"
-                                 (format-bytes
-                                  (or (update-candidate-size) 0)))
-                         "" "Download")))
+                         (update-text (format "下载 Fulcrum v~a" version) (format "Download Fulcrum v~a" version))
+                         (update-text (format "~a · 回车在后台下载" (format-bytes (or (update-candidate-size) 0))) (format "~a · ↵ downloads in the background" (format-bytes (or (update-candidate-size) 0))))
+                         "" (update-text "下载" "Download"))))
               '())
           (list (update-row
                  "update.check"
                  (if version
                      "Check for updates again"
-                     "Check for updates now")
-                 (format "current: Fulcrum v~a · fetches the signed channel manifest"
-                         app-version)
+                     (update-text "立即检查更新" "Check for updates now"))
+                 (update-text (format "当前：Fulcrum v~a · 拉取签名频道清单" app-version) (format "current: Fulcrum v~a · fetches the signed channel manifest" app-version))
                  "" "")))]
       ) '()))
 
@@ -1658,18 +1660,12 @@
        [(and (string? status) (string=? status "available"))
         (cons "stay"
               (list (cons 'notify
-                          (format "Update available: Fulcrum v~a (~a)"
-                                  (record-ref record 'available-version)
-                                  (format-bytes
-                                   (or (record-ref record 'size-bytes) 0))))))]
+                          (update-text (format "发现更新：Fulcrum v~a（~a）" (record-ref record 'available-version) (format-bytes (or (record-ref record 'size-bytes) 0))) (format "Update available: Fulcrum v~a (~a)" (record-ref record 'available-version) (format-bytes (or (record-ref record 'size-bytes) 0)))))))]
        [(and (string? status) (string=? status "up-to-date"))
         (cons "stay"
               (list (cons 'notify
-                          (format "Fulcrum v~a is up to date" app-version))))]
-       [else (cons (format "update check failed: ~a"
-                           (if (and (string? err) (non-empty-string? err))
-                               err
-                               "unknown reason"))
+                          (update-text (format "Fulcrum v~a 已是最新" app-version) (format "Fulcrum v~a is up to date" app-version)))))]
+       [else (cons (update-text (format "更新检查失败：~a" (if (and (string? err) (non-empty-string? err)) err "原因未知")) (format "update check failed: ~a" (if (and (string? err) (non-empty-string? err)) err "unknown reason")))
                    '())])]
     [(update.download)
      (when (package-managed-linux?)
@@ -1681,7 +1677,7 @@
                        (cons (exn-message e) '()))])
        (start-download! (data-dir))
        (cons "downloading"
-             (list (cons 'notify "Update download started"))))]
+             (list (cons 'notify (update-text "更新下载已开始" "Update download started")))))]
     [(update.install)
      ;; A native handoff is allowed only after the candidate was verified.
      ;; Linux AppImages use the pinned Rivet external atomic transaction;
@@ -1692,7 +1688,7 @@
                   (and (appimage-self-update?)
                        (string=? (hash-ref verified 'installer "") "appimage"))))
          (cons "quit-and-install" '())
-         (cons "no verified installable update for this installation; check again or open the updates folder" '()))]
+         (cons (update-text "此安装没有已验证的可安装更新；请重新检查，或打开更新文件夹" "no verified installable update for this installation; check again or open the updates folder") '()))]
     [(update.reveal)
      (cons "ok" (list (cons 'open-url (updates-folder-uri))))]
     [(update.hint) (cons "ok" '())]

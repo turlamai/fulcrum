@@ -4,6 +4,32 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [0.18.1] - 2026-11-11
+
+### Fixed
+
+- **Windows: the tray's "Check for updates" now actually opens the
+  settings window.** The menu handler called `Activate()` on the
+  settings window while the tray menu itself held the foreground right,
+  so Windows demoted the activation to a taskbar flash — the launcher
+  hid and no window appeared (the About window needed the same fix
+  earlier). `ShowSettings` now claims the foreground explicitly for the
+  settings HWND, matching macOS, where the tray item opens a visible
+  update panel.
+- **All platforms: the update surface speaks the UI language.** The
+  launcher's update rows (check/download/progress/install/manual-hint),
+  their status notifications, the Windows settings window's navigation
+  and Sync & Updates card, and the macOS settings' Updates section now
+  read from the shared bilingual string table — a Chinese system shows
+  Chinese, matching the "language follows the system" promise the
+  settings row makes.
+- **Windows: update housekeeping no longer lets one failure swallow the
+  other.** Startup's stale-attempt sweep and failure-marker consumption
+  each run in their own try: a throw in the sweep (a hostile
+  environment leaving the update root unreadable) previously skipped
+  marker consumption, re-reporting the same stale failure on every
+  launch.
+
 ## [0.18.0] - 2026-11-11
 
 ### Added

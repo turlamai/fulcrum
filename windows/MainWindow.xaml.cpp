@@ -925,14 +925,22 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
             });
         window->SetStatusOk(t("readyStatus"));
         window->FinishNativeSetup();
+        // Updater housekeeping must never prevent the launcher from starting,
+        // and one failing step must not swallow the other: CleanupStaleAttempts
+        // and ConsumeFailure each get their own try (a throw in the stale
+        // sweep, e.g. a hostile LOCALAPPDATA, once left a stale failure marker
+        // unconsumed and re-reported on every launch).
         try {
           rivet::update::MsiHandoff::CleanupStaleAttempts(L"site.jrtx.fulcrum");
+        } catch (...) {
+        }
+        try {
           if (auto failure =
                   rivet::update::MsiHandoff::ConsumeFailure(L"site.jrtx.fulcrum")) {
-            window->SetStatusError(L"Update install failed: " + failure->message);
+            window->SetStatusError(
+                t_format("update.install-failed", {failure->message}));
           }
         } catch (...) {
-          // Updater housekeeping must never prevent the launcher from starting.
         }
         window->SearchAsync(L"");
         window->StartSilentUpdateCheck();
@@ -1943,7 +1951,7 @@ void MainWindow::RunSelected() {
               window->QuitApplication();
             } catch (std::exception const& e) {
               window->SetStatusError(
-                  L"Update install failed: " + to_wide(e.what()));
+                  t_format("update.install-failed", {to_wide(e.what())}));
             }
           } else if (status == "delegated") {
             // Host-native actions: window commands reach other apps'
@@ -2078,6 +2086,12 @@ void MainWindow::ShowSettings() {
   }
   winrt::get_self<SettingsWindow>(settings_window_)->Attach(api_);
   settings_window_.Activate();
+  // The tray menu holds the foreground right (TrackPopupMenu's owner), so
+  // Activate() alone degrades to a taskbar flash — the same fix ShowAbout
+  // needed: claim the foreground explicitly for the settings window.
+  if (HWND hwnd = rivet::system::NativeWindowHandle(settings_window_)) {
+    ::SetForegroundWindow(hwnd);
+  }
 }
 
 // ---- snippet auto-expansion ----------------------------------------------
