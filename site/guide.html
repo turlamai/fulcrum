@@ -51,7 +51,7 @@
         <div class="nav-wrapper">
             <a href="index.html" class="nav-brand">
                 <svg class="nav-logo" width="28" height="28" viewBox="0 0 512 512" fill="none">
-                    <rect width="512" height="512" rx="115" fill="#c15f3c"/>
+                    <rect width="512" height="512" rx="115" fill="#D97757"/>
                     <path d="M108 404 L404 404" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
                     <path d="M256 236 L344 388 L168 388 Z" fill="#FFFFFF"/>
                     <path d="M132 282 L380 176" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/>
@@ -169,7 +169,7 @@
                 <p data-i18n="m.search-quick">建立自己的 URL 模板：<code>add link yt https://youtube.com/search?q={query}</code>。之后 <code>yt lofi</code> 就打开 YouTube 搜索，<code>{query}</code> 被替换成关键词后面的内容。输入 <code>quicklinks</code> 查看和删除。</p>
 
                 <h3 class="manual-h3" data-i18n="m.search-file-h">找文件与表情</h3>
-                <p data-i18n="m.search-file"><code>find 发票</code> 通过 Spotlight 搜文件名（macOS）。输入表情英文名的两个以上字母——<code>grin</code>、<code>fire</code>、<code>heart</code>——匹配的表情内联出现，回车直接粘贴。</p>
+                <p data-i18n="m.search-file"><code>find 发票</code> 搜文件名：macOS 走 Spotlight，Windows 用 Windows Search（索引未开启时回退到有界慢扫描），Linux 用 <code>plocate</code> / <code>locate</code>。输入表情英文名的两个以上字母——<code>grin</code>、<code>fire</code>、<code>heart</code>——匹配的表情内联出现，回车直接粘贴。</p>
             </section>
 
             <!-- =================== Clipboard =================== -->
@@ -321,7 +321,7 @@
                 <p data-i18n="m.faq-account">已有启动、剪贴板、插件、BYOK 与自有文件夹同步保持免费，无需商业账号。新工作流 Pro 尚未开售；外部模型用量另计。</p>
 
                 <h3 class="manual-h3" data-i18n="m.faq-platform-h">支持哪些系统？各平台有差异吗？</h3>
-                <p data-i18n="m.faq-platform">macOS 14+（Apple silicon 与 Intel）、Windows 10（19041+）/ 11、Linux（GTK4；.deb / .rpm / .AppImage / tar.gz）。诚实清单：文件搜索仅限 macOS；片段自动展开不支持 Linux；剪贴板只收文本。其余功能三平台一致、键位一致。</p>
+                <p data-i18n="m.faq-platform">macOS 14+（Apple silicon 与 Intel）、Windows 10（19041+）/ 11、Linux（GTK4；.deb / .rpm / .AppImage / tar.gz）。诚实清单：文件搜索依赖各平台索引（macOS Spotlight、Windows Search、Linux plocate/locate），覆盖深度因索引而异；片段自动展开不支持 Linux；剪贴板只收文本。其余功能三平台一致、键位一致。</p>
 
                 <h3 class="manual-h3" data-i18n="m.faq-lang-h">怎么换语言和主题？</h3>
                 <p data-i18n="m.faq-lang">面板内：<code>settings</code> → <code>language</code>（zh / en）、<code>theme</code>（system / light / dark，即时生效）。切换后可立即查看面板主题变化。</p>
@@ -343,7 +343,7 @@
         <div class="footer-content">
             <div class="footer-brand">
                 <svg width="22" height="22" viewBox="0 0 512 512" fill="none">
-                    <rect width="512" height="512" rx="115" fill="#c15f3c"/>
+                    <rect width="512" height="512" rx="115" fill="#D97757"/>
                     <path d="M108 404 L404 404" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
                     <path d="M256 236 L344 388 L168 388 Z" fill="#FFFFFF"/>
                     <path d="M132 282 L380 176" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/>
@@ -399,7 +399,7 @@
                 "m.search-quick-h": "快捷链接",
                 "m.search-quick": "建立自己的 URL 模板：<code>add link yt https://youtube.com/search?q={query}</code>。之后 <code>yt lofi</code> 就打开 YouTube 搜索，<code>{query}</code> 被替换成关键词后面的内容。输入 <code>quicklinks</code> 查看和删除。",
                 "m.search-file-h": "找文件与表情",
-                "m.search-file": "<code>find 发票</code> 通过 Spotlight 搜文件名（macOS）。输入表情英文名的两个以上字母——<code>grin</code>、<code>fire</code>、<code>heart</code>——匹配的表情内联出现，回车直接粘贴。",
+                "m.search-file": "<code>find 发票</code> 搜文件名：macOS 走 Spotlight，Windows 用 Windows Search（索引未开启时回退到有界慢扫描），Linux 用 <code>plocate</code> / <code>locate</code>。输入表情英文名的两个以上字母——<code>grin</code>、<code>fire</code>、<code>heart</code>——匹配的表情内联出现，回车直接粘贴。",
                 "m.clip-title": "剪贴板历史",
                 "m.clip-lead": "你复制的每段文字都会被记住——在本机、可搜索、可固定。",
                 "m.clip-1": "<strong>粘贴。</strong>输入 <code>clip</code> 或历史内容里的任意词，回车——粘贴进你刚才在用的应用。",
@@ -464,7 +464,7 @@
                 "m.faq-account-h": "要注册账号吗？收费吗？",
                 "m.faq-account": "已有启动、剪贴板、插件、BYOK 与自有文件夹同步保持免费，无需商业账号。新工作流 Pro 尚未开售；外部模型用量另计。",
                 "m.faq-platform-h": "支持哪些系统？各平台有差异吗？",
-                "m.faq-platform": "macOS 14+（Apple silicon 与 Intel）、Windows 10（19041+）/ 11、Linux（GTK4；.deb / .rpm / .AppImage / tar.gz）。诚实清单：文件搜索仅限 macOS；片段自动展开不支持 Linux；剪贴板只收文本。其余功能三平台一致、键位一致。",
+                "m.faq-platform": "macOS 14+（Apple silicon 与 Intel）、Windows 10（19041+）/ 11、Linux（GTK4；.deb / .rpm / .AppImage / tar.gz）。诚实清单：文件搜索依赖各平台索引（macOS Spotlight、Windows Search、Linux plocate/locate），覆盖深度因索引而异；片段自动展开不支持 Linux；剪贴板只收文本。其余功能三平台一致、键位一致。",
                 "m.faq-lang-h": "怎么换语言和主题？",
                 "m.faq-lang": "面板内：<code>settings</code> → <code>language</code>（zh / en）、<code>theme</code>（system / light / dark，即时生效）。切换后可立即查看面板主题变化。",
                 "m.faq-lang-hint": "预期结果：切换 system、light 或 dark 后面板立即使用相应主题；网站右上角的 ◐ 仅控制本站主题。",
@@ -505,7 +505,7 @@
                 "m.search-quick-h": "Quicklinks",
                 "m.search-quick": "Create your own URL template: <code>add link yt https://youtube.com/search?q={query}</code>. Then <code>yt lofi</code> opens a YouTube search — <code>{query}</code> is replaced by whatever follows the keyword. Type <code>quicklinks</code> to review and delete.",
                 "m.search-file-h": "Files & emoji",
-                "m.search-file": "<code>find invoice</code> searches file names via Spotlight (macOS). Type two or more letters of an emoji's English name — <code>grin</code>, <code>fire</code>, <code>heart</code> — and matching emoji appear inline; Enter pastes them.",
+                "m.search-file": "<code>find invoice</code> searches file names: Spotlight on macOS, Windows Search on Windows (a bounded slow scan when indexing is off), <code>plocate</code> / <code>locate</code> on Linux. Type two or more letters of an emoji's English name — <code>grin</code>, <code>fire</code>, <code>heart</code> — and matching emoji appear inline; Enter pastes them.",
                 "m.clip-title": "Clipboard history",
                 "m.clip-lead": "Every piece of text you copy is remembered — on-device, searchable, pinnable.",
                 "m.clip-1": "<strong>Paste.</strong> Type <code>clip</code> or any word from the entry, press Enter — it pastes into the app you came from.",
@@ -570,7 +570,7 @@
                 "m.faq-account-h": "Is there an account? Does it cost anything?",
                 "m.faq-account": "Existing launch, clipboard, plugins, BYOK and BYO-folder sync stay free without a commercial account. New workflow Pro is not on sale; external model usage is billed separately.",
                 "m.faq-platform-h": "Which systems are supported? Any differences?",
-                "m.faq-platform": "macOS 14+ (Apple silicon and Intel), Windows 10 (19041+) / 11, Linux (GTK4; .deb / .rpm / .AppImage / tar.gz). The honest list: file search is macOS-only; snippet expansion is unavailable on Linux; the clipboard records text only. Everything else matches across platforms, keys included.",
+                "m.faq-platform": "macOS 14+ (Apple silicon and Intel), Windows 10 (19041+) / 11, Linux (GTK4; .deb / .rpm / .AppImage / tar.gz). The honest list: file search rides each platform's index (Spotlight, Windows Search, plocate/locate), so coverage varies with the index; snippet expansion is unavailable on Linux; the clipboard records text only. Everything else matches across platforms, keys included.",
                 "m.faq-lang-h": "How do I change language and theme?",
                 "m.faq-lang": "In the panel: <code>settings</code> → <code>language</code> (zh / en) and <code>theme</code> (system / light / dark, applied instantly). Check that the panel theme changes immediately.",
                 "m.faq-lang-hint": "Expected result: system, light, or dark applies to the launcher immediately. The ◐ control on this site changes the website theme only.",
