@@ -59,3 +59,19 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 3. Esc 阶梯固定：actions → detail → AI → 清 query → 隐藏；HintBar 实时反映当前层（actions 层为「esc back」）。
 4. 玻璃可模糊，结果不可牺牲：无 blur 平台 ≥98% 不透明；亮暗成对设计，两态都过对比度自检。
 5. 设置与文案单源 `shared/i18n`，键值/描述/可用性三宿主一致；OS 专属项（如 Start at login）留在原生设置、永不进同步 schema；BYOK key 永不镜像同步。
+
+
+## 平台映射与差异声明（预钉 · 宿主实现时升级为落点表）
+
+统一层（三平台必须一致，`design/prototype/` 原型已锁定）：信息架构、核心流程、快捷键语义、
+语义色与层级词汇。因地制宜层（按平台惯例落地，不预画像素）：
+
+| 维度 | macOS | Windows | Linux |
+|---|---|---|---|
+| 修饰键 | ⌘ | Ctrl | Ctrl |
+| 命令入口 | 原生菜单栏 | 菜单栏/命令行内 | 菜单栏 |
+| 字体 | 系统栈 + PingFang SC | 系统栈 + Microsoft YaHei | 系统栈 + Noto Sans CJK |
+| 原生控件 | SwiftUI 控件 | WinUI 3 控件 | GTK4 控件 |
+
+差异声明纪律：宿主特例必须先写进本节才能实现；未声明的宿主差异按违约处理
+（案例：taskly 漂移台账 D8）。
