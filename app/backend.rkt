@@ -17,6 +17,7 @@
          racket/file
          racket/format
          racket/list
+         racket/base
          racket/string
          (prefix-in rivet-info: rivet/app-info)
          rivet/backend
@@ -1551,7 +1552,15 @@
 ;; Update rows and notifications follow the UI language — the settings
 ;; row for `language` promises "update dialogs follow it".
 (define (update-text zh en)
-  (if (equal? (state-ref language) "en") en zh))
+  (define lang (state-ref language))
+  (cond
+    [(equal? lang "en") en]
+    [(equal? lang "zh") zh]
+    ;; "system" (the fresh-install default) follows the OS locale — the
+    ;; same resolution the hosts apply to their own string tables.
+    [else
+     (define locale (or (system-language+country) "en"))
+     (if (string-prefix? (string-downcase locale) "zh") zh en)]))
 
 (define (update-rows query)
   (define trimmed (string-trim query))
