@@ -949,6 +949,7 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
           // must match this window's own strings even where the region
           // format disagrees with the display language. The settings
           // store keeps "system" — only the state mirror is refined.
+          auto api = window->api_;
           auto const setting_rows = api->settings_list().get();
           for (auto const& row : setting_rows) {
             if (row.size() >= 2 && row[0] == "language" &&
