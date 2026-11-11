@@ -22,13 +22,21 @@ require 'python3 scripts/check_release_public_assets.py "$version" public'
 require 'cp release/update-manifest.json release/manifest.json public/'
 require '(cd public && sha256sum -c SHA256SUMS)'
 require 'Validate independent platform signing modes'
-require 'scripts/check-release-signing-modes.sh "$MACOS_SIGNING_MODE" "$WINDOWS_SIGNING_MODE"'
-require "if: matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id'"
+require 'scripts/check-release-signing-modes.sh "$WINDOWS_SIGNING_MODE"'
+# macOS production signing is secrets-driven (family contract,
+# turlamai/taskly#122): five account-level credentials, ASC_NOTARY notary
+# profile, ad-hoc limited to non-tag builds, tags fail closed without them.
+require "if: matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED == 'true'"
 require "if: matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE == 'authenticode'"
-require "matrix.platform == 'linux' || (matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id')"
+require "matrix.platform == 'linux' || (matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED == 'true') || (matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE == 'authenticode')"
 require "matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE == 'authenticode'"
-require "matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE != 'developer-id'"
+require "(matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED != 'true' && env.IS_TAG_RELEASE != 'true') || (matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE != 'authenticode')"
 require "matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE != 'authenticode'"
+require "matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED != 'true' && env.IS_TAG_RELEASE == 'true'"
+require 'Release requires signing credentials'
+require 'DEVELOPER_ID_P12_B64, DEVELOPER_ID_P12_PASSWORD, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_B64'
+require 'RIVET_MACOS_SIGN_IDENTITY'
+require 'RIVET_MACOS_NOTARY_PROFILE=ASC_NOTARY'
 require 'raco rivet release --development'
 require 'raco rivet release'
 require 'raco rivet verify --production'
