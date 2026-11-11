@@ -6,27 +6,35 @@ builds still require successful CI and Product Acceptance on the tagged
 commit, and stable promotion requires
 `FULCRUM_STABLE_RELEASE_APPROVED=true`.
 
+macOS production signing is credential-driven (family contract,
+turlamai/taskly#122 template): when the five account-level secrets
+(`DEVELOPER_ID_P12_B64`, `DEVELOPER_ID_P12_PASSWORD`, `ASC_KEY_ID`,
+`ASC_ISSUER_ID`, `ASC_KEY_P8_B64`) are present, every macOS packaging run
+Developer ID-signs, notarizes through the fixed `ASC_NOTARY` keychain
+profile, and staples. Without them, manual dispatch builds stay ad-hoc and
+**tag pushes fail closed** — a release never ships ad-hoc. There is no
+macOS repository-variable mode switch.
+
 | Repository variable | Default when unset | Opt-in signed value |
 | --- | --- | --- |
-| `FULCRUM_MACOS_SIGNING_MODE` | `adhoc` | `developer-id` |
 | `FULCRUM_WINDOWS_SIGNING_MODE` | `unsigned` | `authenticode` |
 
-Both variables are validated before packaging. Unknown values fail the
+The Windows variable is validated before packaging. Unknown values fail the
 workflow. **Windows signing is not a prerequisite for Apple signing.**
 
-- **macOS:** the default app has an ad-hoc code signature for integrity,
-  **not** a trusted Developer ID signature or Apple notarization. Gatekeeper
-  may warn. After enrolling in the Apple Developer Program and provisioning
-  secrets, explicitly select `developer-id`. The trusted release path
-  requires a Developer ID identity, hardened runtime, notarization, stapling,
-  and Gatekeeper checks. Missing or invalid credentials fail closed, never
-  silently fall back to ad-hoc. Do not claim notarization until a real
-  certificate-backed release job verifies it.
+- **macOS:** builds without credentials keep an ad-hoc code signature for
+  integrity, **not** a trusted Developer ID signature or Apple notarization;
+  Gatekeeper may warn. That state exists only for manual dispatch smoke
+  builds, never for releases. With the five secrets present, the trusted
+  release path (Developer ID identity, hardened runtime, notarization,
+  stapling, Gatekeeper checks) applies automatically. Missing or invalid
+  credentials on a tag push fail closed, never silently fall back to
+  ad-hoc. Do not claim notarization until a real certificate-backed release
+  job verifies it.
 - **Windows:** unsigned MSI and portable ZIP are normal distribution
   formats. SmartScreen warnings must be disclosed. A paid Windows signing
   certificate is not required. Later, `authenticode` mode requires the PFX,
-  password, timestamp URL and production verification. It can be enabled
-  without changing the macOS signing mode.
+  password, timestamp URL and production verification.
 - **Linux:** the existing portable/native formats require no paid
   developer account. Linux detached Ed25519 artifact signatures and
   checksums remain mandatory in the release workflow.
