@@ -942,6 +942,26 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
           }
         } catch (...) {
         }
+        try {
+          // When the language setting is "system" (the fresh-install
+          // default), publish the RESOLVED UI language into the backend
+          // state: the launcher's update rows are backend-rendered and
+          // must match this window's own strings even where the region
+          // format disagrees with the display language. The settings
+          // store keeps "system" — only the state mirror is refined.
+          auto const setting_rows = api_->settings_list().get();
+          for (auto const& row : setting_rows) {
+            if (row.size() >= 2 && row[0] == "language" &&
+                row[1] == "system") {
+              (void)api_->set_language(
+                  ((::GetUserDefaultUILanguage() & 0x3FF) == 0x0004) ? "zh"
+                                                                     : "en")
+                  .get();
+              break;
+            }
+          }
+        } catch (...) {
+        }
         window->SearchAsync(L"");
         window->StartSilentUpdateCheck();
         window->PullHostSettings();
