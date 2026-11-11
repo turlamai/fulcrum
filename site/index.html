@@ -13,9 +13,12 @@
     <meta property="og:title" content="Fulcrum — One keystroke. Everything within reach.">
     <meta property="og:description" content="Fulcrum is a keyboard-first launcher for macOS, Windows and Linux. One global hotkey opens a floating command palette: fuzzy-search apps and files, clipboard history, snippets, calculation, web-search bangs and plugins — local tools with optional online integrations.">
     <meta property="og:url" content="https://fulcrum.jrtx.site/">
-    <meta name="twitter:card" content="summary">
+    <meta property="og:image" content="https://fulcrum.jrtx.site/img/fulcrum-main-light.png">
+    <meta property="og:image:alt" content="The Fulcrum launcher panel on macOS: search field, app results and the keyboard hint bar.">
+    <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Fulcrum — One keystroke. Everything within reach.">
     <meta name="twitter:description" content="Fulcrum is a keyboard-first launcher for macOS, Windows and Linux — local tools with optional online integrations.">
+    <meta name="twitter:image" content="https://fulcrum.jrtx.site/img/fulcrum-main-light.png">
 
     <!-- Theme pre-paint: no flash before the stylesheet paints. -->
     <script>
@@ -146,6 +149,7 @@
                         <div class="launcher-footer">
                             <span class="launcher-hint"><span class="launcher-kbd">↑↓</span><span data-i18n="launcher.hint-navigate">选择</span></span>
                             <span class="launcher-hint"><span class="launcher-kbd">↵</span><span data-i18n="launcher.hint-open">打开</span></span>
+                            <span class="launcher-hint"><span class="launcher-kbd">⌘K</span><span data-i18n="launcher.hint-actions">操作</span></span>
                             <span class="launcher-hint launcher-hint-right"><span class="launcher-kbd">esc</span><span data-i18n="launcher.hint-dismiss">关闭</span></span>
                         </div>
                     </div>
@@ -158,9 +162,9 @@
         <section class="kit-section kit-section--alt" id="visual-showcase" aria-label="Product workflow illustration">
             <div class="vs-wrap">
                 <div class="vs-intro">
-                    <span class="vs-label">PRODUCT IN CONTEXT · 产品如何工作</span>
+                    <span class="vs-label" data-i18n="wf.label">产品如何工作</span>
                     <h2 data-i18n="wf.title">一个热键，把想法变成动作。</h2>
-                    <p class="vs-lead" data-i18n="wf.lead">主页已有交互模型；补充一张可理解的工作流程图，但不将旧版本图片冒充现有界面。</p>
+                    <p class="vs-lead" data-i18n="wf.lead">一个全局热键唤出面板，输入即搜，回车执行——一条路径把想法变成动作，全程手不离键盘。</p>
                 </div>
                 <div class="vs-frame">
                     <div class="vs-wide">
@@ -193,48 +197,48 @@
                 <div class="kit-grid kit-grid--3" style="margin-top: 44px;">
                     <div class="kit-card">
                         <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
-                        <h3 data-i18n="features.f1-title">疾速模糊搜索</h3>
-                        <p data-i18n="features.f1-body">敲几个字母，结果随输入即时出现——跨应用、文件与操作的亚秒级模糊匹配。</p>
-                    </div>
-                    <div class="kit-card">
-                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
-                        <h3 data-i18n="features.f2-title">所有应用</h3>
-                        <p data-i18n="features.f2-body">每个已安装的应用，一次查询直达。启动、切换、完成——不必再在菜单和 Dock 里翻找。</p>
+                        <h3 data-i18n="features.search-title">一框即一切</h3>
+                        <p data-i18n="features.search-body">应用、文件、网页与操作，同一个查询框全部接住——敲几个字母，候选随输入即时刷新，↵ 直接启动，不必再翻菜单和 Dock。</p>
                     </div>
                     <div class="kit-card">
                         <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></span>
-                        <h3 data-i18n="features.f3-title">剪贴板历史</h3>
-                        <p data-i18n="features.f3-body">复制过的一切都保存在本机、随时可搜。上周的链接，像昨天的随取随贴。</p>
-                    </div>
-                    <div class="kit-card">
-                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
-                        <h3 data-i18n="features.f4-title">文本片段</h3>
-                        <p data-i18n="features.f4-body">把反复输入的回复、模板和代码片段存起来——按名字随处展开。</p>
+                        <h3 data-i18n="features.memory-title">剪贴板历史与片段</h3>
+                        <p data-i18n="features.memory-body">复制过的每段文字都留在本机、可搜可置顶，回车直接粘回你刚才在用的应用；反复输入的回复与模板存成片段，按关键词原地展开（macOS 与 Windows）。</p>
                     </div>
                     <div class="kit-card">
                         <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="12" x2="9.01" y2="12"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="9" y1="16" x2="9.01" y2="16"/><line x1="15" y1="16" x2="15.01" y2="16"/></svg></span>
-                        <h3 data-i18n="features.f5-title">计算器：函数与常量</h3>
-                        <p data-i18n="features.f5-body">边输入边计算——支持 sqrt、sin、log 与 π、e 等常量，无需切换应用。</p>
+                        <h3 data-i18n="features.calc-title">内联计算</h3>
+                        <p data-i18n="features.calc-body">边输入边算：精确算术、sqrt、sin、log 与 π、e 等常量；答案就在结果最上面，↵ 复制，不用切换应用。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"/></svg></span>
+                        <h3 data-i18n="features.ai-title">BYOK AI，流式回答</h3>
+                        <p data-i18n="features.ai-body">接入自己的 OpenAI / Anthropic / Ollama 密钥——只存本机，绝不参与同步。答案流式打进面板，模型还在生成就能开始读，完成后自动进剪贴板；以 ？ 结尾的问句自动出现 AI 行。</p>
                     </div>
                     <div class="kit-card">
                         <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
-                        <h3 data-i18n="features.f6-title">网络搜索 bang</h3>
-                        <p data-i18n="features.f6-body">!g 谷歌、!gh GitHub、!w 维基百科、!so Stack Overflow——一个 bang 直达对应的搜索框。</p>
+                        <h3 data-i18n="features.bangs-title">网页搜索 bang</h3>
+                        <p data-i18n="features.bangs-body">!g 谷歌、!gh GitHub、!w 维基百科、!so Stack Overflow——一个 bang 直达对应的搜索框；没被别处匹配的普通文字，也会兜底成一条通用搜索行（默认 !g，可在设置里换）。</p>
                     </div>
                     <div class="kit-card">
-                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></span>
-                        <h3 data-i18n="features.f7-title">系统命令</h3>
-                        <p data-i18n="features.f7-body">锁屏、睡眠、静音——系统操作也在同一块面板里，不必翻菜单。</p>
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg></span>
+                        <h3 data-i18n="features.actions-title">⌘K 次级操作</h3>
+                        <p data-i18n="features.actions-body">选中剪贴板行，⌘K（Windows / Linux 是 Ctrl+K）调出这一行的动作：复制、粘贴回前台、固定、删除。Esc 逐层退回，底部的快捷键提示实时跟着换。</p>
+                    </div>
+                    <div class="kit-card">
+                        <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span>
+                        <h3 data-i18n="features.window-title">窗口与系统命令</h3>
+                        <p data-i18n="features.window-body">左半屏、右半屏、最大化、居中、还原——窗口排布与锁屏、睡眠同在这块面板；只列出当前平台真实存在的命令，不给点了没反应的假条目。</p>
                     </div>
                     <div class="kit-card">
                         <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
-                        <h3 data-i18n="features.f8-title">插件生态</h3>
-                        <p data-i18n="features.f8-body">语言无关的插件协议：JSON over stdio。用什么语言写插件都行，Fulcrum 负责运行。</p>
+                        <h3 data-i18n="features.plugins-title">插件生态</h3>
+                        <p data-i18n="features.plugins-body">语言无关的插件协议：JSON over stdio。用什么语言写插件都行，Fulcrum 负责运行。</p>
                     </div>
                     <div class="kit-card">
                         <span class="kit-card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-                        <h3 data-i18n="features.f9-title">本地工具与可选在线集成，默认私有</h3>
-                        <p data-i18n="features.f9-body">搜索索引、剪贴板历史与片段保存在本地。插件、AI 与文件夹同步可将选定数据发送至外部服务。核心功能无需注册账号。</p>
+                        <h3 data-i18n="features.privacy-title">本地工具与可选在线集成，默认私有</h3>
+                        <p data-i18n="features.privacy-body">搜索索引、剪贴板历史与片段保存在本地。插件、AI 与文件夹同步可将选定数据发送至外部服务。核心功能无需注册账号。</p>
                     </div>
                 </div>
             </div>
@@ -349,12 +353,16 @@
             </div>
             <div class="kit-footer-bottom">
                 <span>© 2026 TuringLambda AI</span>
-                <span class="kit-mono">site-kit v1.0.1</span>
+                <span class="kit-mono">site-kit v1.0.3</span>
             </div>
         </div>
     </footer>
 
     <script type="application/json" id="kit-i18n">{
+  "__meta__": {
+    "zh": { "title": "Fulcrum 支点 — 一次按键，直达一切。", "description": "Fulcrum（支点）是 macOS、Windows 与 Linux 上的键盘优先启动器：一个全局热键唤出浮动命令面板——模糊搜索应用与文件、剪贴板历史、片段、计算、网络搜索 bang 与插件，本地工具与可选在线集成。" },
+    "en": { "title": "Fulcrum — One keystroke. Everything within reach.", "description": "Fulcrum is a keyboard-first launcher for macOS, Windows and Linux. One global hotkey opens a floating command palette: fuzzy-search apps and files, clipboard history, snippets, calculation, web-search bangs and plugins — local tools with optional online integrations." }
+  },
   "zh": {
     "nav.compare": "设计",
     "nav.features": "功能",
@@ -374,6 +382,7 @@
     "dl.mac": "macOS 版",
     "dl.note": "当前平台请前往 Releases 页面选取对应安装包。",
     "dl.win": "Windows 版",
+    "launcher.hint-actions": "操作",
     "launcher.hint-dismiss": "关闭",
     "launcher.hint-navigate": "选择",
     "launcher.hint-open": "打开",
@@ -384,7 +393,8 @@
     "launcher.row4-kind": "网络搜索",
     "wf.caption": "概念工作流示意，非当前软件截图；以安装版本和用户手册为准。",
     "wf.hotkey-desc": "呼出启动器",
-    "wf.lead": "主页已有交互模型；补充一张可理解的工作流程图，但不将旧版本图片冒充现有界面。",
+    "wf.label": "产品如何工作",
+    "wf.lead": "一个全局热键唤出面板，输入即搜，回车执行——一条路径把想法变成动作，全程手不离键盘。",
     "wf.s1b": "从当前桌面进入命令面板",
     "wf.s1t": "唤出",
     "wf.s2b": "筛选已有的本地结果",
@@ -395,24 +405,24 @@
     "wf.search-run": "选择并执行",
     "wf.title": "一个热键，把想法变成动作。",
     "features.eyebrow": "为什么是 Fulcrum",
-    "features.f1-body": "敲几个字母，结果随输入即时出现——跨应用、文件与操作的亚秒级模糊匹配。",
-    "features.f1-title": "疾速模糊搜索",
-    "features.f2-body": "每个已安装的应用，一次查询直达。启动、切换、完成——不必再在菜单和 Dock 里翻找。",
-    "features.f2-title": "所有应用",
-    "features.f3-body": "复制过的一切都保存在本机、随时可搜。上周的链接，像昨天的随取随贴。",
-    "features.f3-title": "剪贴板历史",
-    "features.f4-body": "把反复输入的回复、模板和代码片段存起来——按名字随处展开。",
-    "features.f4-title": "文本片段",
-    "features.f5-body": "边输入边计算——支持 sqrt、sin、log 与 π、e 等常量，无需切换应用。",
-    "features.f5-title": "计算器：函数与常量",
-    "features.f6-body": "!g 谷歌、!gh GitHub、!w 维基百科、!so Stack Overflow——一个 bang 直达对应的搜索框。",
-    "features.f6-title": "网络搜索 bang",
-    "features.f7-body": "锁屏、睡眠、静音——系统操作也在同一块面板里，不必翻菜单。",
-    "features.f7-title": "系统命令",
-    "features.f8-body": "语言无关的插件协议：JSON over stdio。用什么语言写插件都行，Fulcrum 负责运行。",
-    "features.f8-title": "插件生态",
-    "features.f9-body": "搜索索引、剪贴板历史与片段保存在本地。插件、AI 与文件夹同步可将选定数据发送至外部服务。核心功能无需注册账号。",
-    "features.f9-title": "本地工具与可选在线集成，默认私有",
+    "features.actions-body": "选中剪贴板行，⌘K（Windows / Linux 是 Ctrl+K）调出这一行的动作：复制、粘贴回前台、固定、删除。Esc 逐层退回，底部的快捷键提示实时跟着换。",
+    "features.actions-title": "⌘K 次级操作",
+    "features.ai-body": "接入自己的 OpenAI / Anthropic / Ollama 密钥——只存本机，绝不参与同步。答案流式打进面板，模型还在生成就能开始读，完成后自动进剪贴板；以 ？ 结尾的问句自动出现 AI 行。",
+    "features.ai-title": "BYOK AI，流式回答",
+    "features.bangs-body": "!g 谷歌、!gh GitHub、!w 维基百科、!so Stack Overflow——一个 bang 直达对应的搜索框；没被别处匹配的普通文字，也会兜底成一条通用搜索行（默认 !g，可在设置里换）。",
+    "features.bangs-title": "网页搜索 bang",
+    "features.calc-body": "边输入边算：精确算术、sqrt、sin、log 与 π、e 等常量；答案就在结果最上面，↵ 复制，不用切换应用。",
+    "features.calc-title": "内联计算",
+    "features.memory-body": "复制过的每段文字都留在本机、可搜可置顶，回车直接粘回你刚才在用的应用；反复输入的回复与模板存成片段，按关键词原地展开（macOS 与 Windows）。",
+    "features.memory-title": "剪贴板历史与片段",
+    "features.plugins-body": "语言无关的插件协议：JSON over stdio。用什么语言写插件都行，Fulcrum 负责运行。",
+    "features.plugins-title": "插件生态",
+    "features.privacy-body": "搜索索引、剪贴板历史与片段保存在本地。插件、AI 与文件夹同步可将选定数据发送至外部服务。核心功能无需注册账号。",
+    "features.privacy-title": "本地工具与可选在线集成，默认私有",
+    "features.search-body": "应用、文件、网页与操作，同一个查询框全部接住——敲几个字母，候选随输入即时刷新，↵ 直接启动，不必再翻菜单和 Dock。",
+    "features.search-title": "一框即一切",
+    "features.window-body": "左半屏、右半屏、最大化、居中、还原——窗口排布与锁屏、睡眠同在这块面板；只列出当前平台真实存在的命令，不给点了没反应的假条目。",
+    "features.window-title": "窗口与系统命令",
     "features.lead": "Fulcrum 平时隐于幕后，一个热键唤出——此后应用、文件、剪贴、计算与命令，都只差几个字母。",
     "features.title-a": "你伸手可及的一切，",
     "features.title-b": "只差一次按键。",
@@ -462,6 +472,7 @@
     "dl.mac": "For macOS",
     "dl.note": "Pick the right package from the Releases page for your platform.",
     "dl.win": "For Windows",
+    "launcher.hint-actions": "actions",
     "launcher.hint-dismiss": "dismiss",
     "launcher.hint-navigate": "navigate",
     "launcher.hint-open": "open",
@@ -472,7 +483,8 @@
     "launcher.row4-kind": "Web Search",
     "wf.caption": "Conceptual workflow, not a current app screenshot. Refer to the installed version and user guide.",
     "wf.hotkey-desc": "Invoke the launcher",
-    "wf.lead": "A workflow illustration alongside the existing HTML concept model — not an old image passed off as the current interface.",
+    "wf.label": "The product in context",
+    "wf.lead": "One hotkey summons the palette, typing searches, Enter runs — one path from thought to action, hands never leaving the keyboard.",
     "wf.s1b": "Open the command palette",
     "wf.s1t": "Invoke",
     "wf.s2b": "Filter local results",
@@ -483,24 +495,24 @@
     "wf.search-run": "Select and run",
     "wf.title": "One shortcut from thought to action.",
     "features.eyebrow": "Why Fulcrum",
-    "features.f1-body": "Type a few letters and results appear as you type — sub-second fuzzy matching across apps, files and actions.",
-    "features.f1-title": "Blazing fuzzy search",
-    "features.f2-body": "Every installed application, one query away. Launch it, switch to it, done — no digging through menus or docks.",
-    "features.f2-title": "All your apps",
-    "features.f3-body": "Everything you copy is kept and searchable on-device. Paste last week's link like it was yesterday's.",
-    "features.f3-title": "Clipboard history",
-    "features.f4-body": "Save the replies, templates and code fragments you keep retyping — expand them anywhere by name.",
-    "features.f4-title": "Snippets",
-    "features.f5-body": "Inline math as you type — sqrt, sin, log and constants like π and e, without switching apps.",
-    "features.f5-title": "Calculator with functions & constants",
-    "features.f6-body": "!g Google, !gh GitHub, !w Wikipedia, !so Stack Overflow — a bang jumps straight into the right search box.",
-    "features.f6-title": "Web-search bangs",
-    "features.f7-body": "Lock the screen, sleep, mute — system actions live in the same palette, no menu digging required.",
-    "features.f7-title": "System commands",
-    "features.f8-body": "A language-agnostic plugin protocol: JSON over stdio. Write plugins in any language; Fulcrum runs them.",
-    "features.f8-title": "Plugin ecosystem",
-    "features.f9-body": "Search indexes, clipboard history and snippets are stored locally. Plugins, AI and folder sync can send selected data to external services. The core needs no account.",
-    "features.f9-title": "local tools with optional online integrations, private by default",
+    "features.actions-body": "Select a clipboard row and press ⌘K (Ctrl+K on Windows and Linux) for that row's actions: copy, paste to the frontmost app, pin, delete. Esc unwinds one layer at a time while the hint bar keeps up.",
+    "features.actions-title": "Secondary actions on ⌘K",
+    "features.ai-body": "Bring your own OpenAI / Anthropic / Ollama key — stored locally, never synced. Answers stream into the panel: you read while the model writes, and the finished answer lands on your clipboard. A question ending in ? raises the AI row on its own.",
+    "features.ai-title": "BYOK AI, streamed",
+    "features.bangs-body": "!g Google, !gh GitHub, !w Wikipedia, !so Stack Overflow — a bang jumps straight into the right search box. Plain text that matches nothing else still falls back to a generic search row (default !g, changeable in settings).",
+    "features.bangs-title": "Web-search bangs",
+    "features.calc-body": "Math as you type: exact arithmetic, sqrt, sin, log and constants like π and e. The answer sits at the top of the list — ↵ copies it, no app switching.",
+    "features.calc-title": "Inline calculation",
+    "features.memory-body": "Everything you copy stays on-device, searchable and pinnable — Enter pastes it straight back into the app you came from. Replies and templates you keep retyping become snippets that expand by keyword (macOS and Windows).",
+    "features.memory-title": "Clipboard history & snippets",
+    "features.plugins-body": "A language-agnostic plugin protocol: JSON over stdio. Write plugins in any language; Fulcrum runs them.",
+    "features.plugins-title": "Plugin ecosystem",
+    "features.privacy-body": "Search indexes, clipboard history and snippets are stored locally. Plugins, AI and folder sync can send selected data to external services. The core needs no account.",
+    "features.privacy-title": "Local tools with optional online integrations, private by default",
+    "features.search-body": "Apps, files, the web and actions all land in the same query — type a few letters, candidates refresh as you type, ↵ launches. No digging through menus or docks.",
+    "features.search-title": "One box for everything",
+    "features.window-body": "Left half, right half, maximize, center, restore — window layout lives beside lock and sleep in the same palette. Only commands that truly exist on your platform are listed.",
+    "features.window-title": "Window & system commands",
     "features.lead": "Fulcrum stays out of the way until one hotkey calls it — then apps, files, clips, calculations and commands are a few letters away.",
     "features.title-a": "Everything you reach for,",
     "features.title-b": "one keystroke away.",
