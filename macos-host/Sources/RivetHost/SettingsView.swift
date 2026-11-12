@@ -478,7 +478,7 @@ struct SettingsView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Stepper("\(t("setting.max-results")): \(model.number("max-results", default: 12).wrappedValue)",
-                        value: model.number("max-results", default: 12), in: 5...25)
+                        value: model.number("max-results", default: 12), in: 5...12)
             }
         }
         .formStyle(.grouped)

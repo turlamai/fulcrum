@@ -437,6 +437,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onHide = { [weak self] in self?.hidePanel() }
     }
 
+    /// Design v2 panel sizing: 680 wide, height grows with the result
+    /// count — 240 empty, capped at 12 visible rows / 640 points — and
+    /// grows further while the AI stream, the plugin detail panel or the
+    /// actions mode bar are up. The top edge stays anchored (drop-down
+    /// convention); only the bottom edge moves.
+    func updatePanelHeight(rowCount: Int, modebar: Bool, ai: Bool, detail: Bool) {
+        guard let panel else { return }
+        let rows = max(0, min(rowCount, 12))
+        var height: CGFloat = 49 + CGFloat(rows) * 46 + 16 + 31 + 4
+        if modebar { height += 30 }
+        if ai { height += 175 }
+        if detail { height += 185 }
+        height = min(640, max(240, height))
+        var frame = panel.frame
+        let content = panel.contentRect(forFrameRect: frame)
+        let newContent = NSRect(x: content.minX, y: content.minY,
+                                width: 680, height: height)
+        let newFrame = panel.frameRect(forContentRect: newContent)
+        frame.origin.y += frame.height - newFrame.height
+        frame.size = newFrame.size
+        panel.setFrame(frame, display: true)
+    }
+
     private func centerOnActiveScreen(_ panel: NSPanel) {
         // Follow the pointer's monitor on each summon, including displays
         // with negative global origins. NSScreen.main can still describe the
@@ -646,6 +669,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                   let panel = self.panel,
                   panel.isVisible,
                   event.window === panel else { return event }
+            // IME composition guard (docs/cross-platform-interaction.md):
+            // while the query field editor holds marked (preedit) text,
+            // Enter, the arrows, Tab, Esc and ⌘K belong to the input
+            // method — no execution, no selection move, no layer change.
+            // The first Esc only cancels the composition. Pass the event
+            // through so the field editor and the IME handle it.
+            if [36, 40, 48, 53, 125, 126].contains(Int(event.keyCode)),
+               let editor = panel.firstResponder as? NSTextView,
+               editor.hasMarkedText() {
+                return event
+            }
             switch event.keyCode {
             case 53:                              // esc
               // In the ⌘K panel: back to the search rows.
@@ -667,10 +701,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                   self.model?.clearQuery()
               }
             case 48:
-                  self.model?.completeFromSelection()     // tab autocomplete
-                  return nil
+                // Tab: complete when a row offers it, else move focus to
+                // the results list (second tab stop). Shift+Tab returns to
+                // the query. Strictly reversed, never skipping layers.
+                if event.modifierFlags.contains(.shift) {
+                    self.model?.queryFocusRequest += 1
+                } else if self.model?.completeFromSelection() == true {
+                    // tab autocomplete consumed
+                } else {
+                    self.model?.listFocusRequest += 1
+                }
+                return nil
             case 40 where event.modifierFlags.contains(.command):
                   self.model?.openActionsForSelection()   // ⌘K
+            case 16 where event.modifierFlags.contains(.command):
+                  self.model?.revealSensitiveSelection()  // ⌘Y reveal
             case 125: self.model?.moveSelection(1)   // down
             case 126: self.model?.moveSelection(-1)  // up
             default:  return event

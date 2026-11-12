@@ -18,6 +18,19 @@
   (check-true (exact-integer? (fuzzy-score "ful" "Fulcrum")))
   (check-true (exact-integer? (fuzzy-score "FUL" "Fulcrum")) "case-insensitive"))
 
+(test-case "match offsets"
+  ;; Offsets share the scoring alignment: prefix hits land at the head,
+  ;; subsequence hits walk the text, no match is #f.
+  (check-equal? (fuzzy-match-offsets "ful" "Fulcrum") '(0 1 2))
+  ;; Greedy alignment: fxf fails (the greedy walk consumes the x before
+  ;; the second f can match) — the same answer subsequence-score gives.
+  (check-false (fuzzy-match-offsets "fxf" "Firefox"))
+  (check-equal? (fuzzy-match-offsets "ffx" "Firefox") '(0 4 6))
+  (check-false (fuzzy-match-offsets "xyz" "Fulcrum"))
+  (check-false (fuzzy-match-offsets "" "Fulcrum"))
+  ;; CJK matches code-point-wise like any other text.
+  (check-equal? (fuzzy-match-offsets "剪贴" "剪贴板历史") '(0 1)))
+
 (test-case "prefix beats subsequence"
   (check->= (fuzzy-score "ful" "Fulcrum")
             (fuzzy-score "ful" "MyFulcrumTool")))

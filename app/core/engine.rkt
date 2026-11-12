@@ -8,10 +8,17 @@
 ;; returns the top K rows. All ranking lives here so the native UIs render a
 ;; single, consistent list.
 ;;
-;; Wire rows are positional string lists of exactly 8 columns:
-;;   (id title subtitle kind arg icon hint badge)
+;; Wire rows are positional string lists of 8 columns plus an OPTIONAL 9th:
+;;   (id title subtitle kind arg icon hint badge [meta])
 ;; `id` is a global action id, `arg` the provider-specific payload. The
 ;; engine-run contract routes (id arg) pairs back to the owning provider.
+;; `meta` (design v2) carries hit-highlight ranges and the sensitive flag:
+;;   t:<start>-<len>,…  matched runs in the title
+;;   s:<start>-<len>,…  matched runs in the subtitle
+;;   x:sensitive        masked credential row (reveal via clipboard-reveal)
+;; separated by `;`. Ranges are Unicode code-point (start . length) pairs
+;; over the field's text. Rows without highlights or flags carry no meta —
+;; hosts must accept both 8- and 9-column rows.
 
 (require racket/bool
          racket/contract
@@ -103,6 +110,60 @@
 (define (result->row r)
   (list (result-id r) (result-title r) (result-subtitle r) (result-kind r)
         (result-arg r) (result-icon r) (result-hint r) (result-badge r)))
+
+;; ---- hit highlighting + sensitive rows (design v2 invariants 6, 9) -------
+;;
+;; Providers decide inclusion with their own weighted fields (keywords,
+;; paths, pinyin), so a re-run of the same greedy matcher over the row's
+;; own title/subtitle marks the field the query visibly matched. Rows that
+;; matched only via keywords/path appear unhighlighted — a hit that is not
+;; visible beats a wrong highlight.
+
+(define (indices->ranges idxs)
+  ;; Merge consecutive indices into (start . length) runs.
+  (let loop ([xs (sort idxs <)] [acc '()])
+    (if (null? xs)
+        (reverse acc)
+        (let ([start (car xs)])
+          (let run ([rest (cdr xs)] [last start])
+            (cond
+              [(and (pair? rest) (= (car rest) (add1 last)))
+               (run (cdr rest) (car rest))]
+              [else (loop rest (cons (cons start (add1 (- last start))) acc))]))))))
+
+(define (ranges->meta ranges)
+  (string-join (for/list ([r (in-list ranges)])
+                 (format "~a-~a" (car r) (cdr r)))
+               ","))
+
+(define (field-offsets query text)
+  (define trimmed (string-trim query))
+  (if (zero? (string-length trimmed))
+      '()
+      (let loop ([terms (string-split trimmed)] [acc '()])
+        (if (null? terms)
+            acc
+            (let ([m (fuzzy-match-offsets (car terms) text)])
+              (loop (cdr terms) (if m (append acc m) acc)))))))
+
+(define (row-meta engine query r)
+  (define parts '())
+  (define title-ranges (indices->ranges (field-offsets query (result-title r))))
+  (define subtitle-ranges
+    (indices->ranges (field-offsets query (result-subtitle r))))
+  (when (pair? title-ranges)
+    (set! parts (cons (string-append "t:" (ranges->meta title-ranges)) parts)))
+  (when (pair? subtitle-ranges)
+    (set! parts (cons (string-append "s:" (ranges->meta subtitle-ranges)) parts)))
+  (when (and (string=? (result-kind r) "Clipboard")
+             (engine-clipboard engine)
+             (let ([item (clipboard-item-ref (engine-clipboard engine)
+                                             (result-arg r))])
+               (and item (clipboard-item-sensitive? item))))
+    (set! parts (cons "x:sensitive" parts)))
+  (if (null? parts)
+      ""
+      (string-join (reverse parts) ";")))
 
 ;; ---- recents ------------------------------------------------------------
 
@@ -276,11 +337,17 @@
                   "copy some text, then type clip again"
                   "Empty"))
            (for/list ([item (in-list items)])
+             ;; Sensitive rows travel masked: the raw text stays in the
+             ;; store, reaches the UI only through clipboard-reveal, and is
+             ;; never logged or synced (design v2 invariant 9).
              (define preview
                (let ([text (string-replace (clipboard-item-text item) "\n" " ")])
-                 (if (> (string-length text) 120)
-                     (string-append (substring text 0 120) "…")
-                     text)))
+                 (cond
+                   [(clipboard-item-sensitive? item)
+                    (mask-sensitive-preview text)]
+                   [(> (string-length text) 120)
+                    (string-append (substring text 0 120) "…")]
+                   [else text])))
              (result "clip.paste" preview
                      (format "~a · pinned: ~a"
                              (clipboard-item-id item)
@@ -1127,7 +1194,11 @@
   (define top
     (take ordered
           (min (engine-max-results engine) (length ordered))))
-  (map result->row (map cdr top)))
+  (for/list ([r (in-list (map cdr top))])
+    (define meta (row-meta engine q r))
+    (if (string=? meta "")
+        (result->row r)
+        (append (result->row r) (list meta)))))
 
 ;; ---- actions ------------------------------------------------------------
 

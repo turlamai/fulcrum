@@ -96,5 +96,11 @@
   "updateReadyBody": "The new version is ready. Fulcrum will quit to finish the install.",
   "updateRetry": "Retry",
   "updateUnknownError": "unknown error",
-  "updateUpToDate": "Fulcrum is up to date"
+  "updateUpToDate": "Fulcrum is up to date",
+  "actionsLabel": "Actions for",
+  "sensitiveBadge": "Sensitive",
+  "sensitiveReveal": "Ctrl+Y reveal",
+  "sensitiveRevealMac": "⌘Y reveal",
+  "offlineStatus": "Offline — local results only",
+  "aiRateLimited": "Rate limited — retry in {0}s"
 }

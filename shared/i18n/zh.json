@@ -96,5 +96,11 @@
   "updateReadyBody": "新版本已就绪，将退出 Fulcrum 并完成安装。",
   "updateRetry": "重试",
   "updateUnknownError": "未知错误",
-  "updateUpToDate": "已是最新版本"
+  "updateUpToDate": "已是最新版本",
+  "actionsLabel": "操作 ·",
+  "sensitiveBadge": "敏感",
+  "sensitiveReveal": "Ctrl+Y 揭示",
+  "sensitiveRevealMac": "⌘Y 揭示",
+  "offlineStatus": "离线 · 本地结果可用",
+  "aiRateLimited": "已限流 · {0} 秒后可重试"
 }

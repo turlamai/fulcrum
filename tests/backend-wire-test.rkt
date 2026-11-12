@@ -380,13 +380,15 @@
         #t)
 ;; The row contract is positional: a column too many silently drops the
 ;; row on hosts that check the width (the quick settings rows once had 9).
-(check! "every empty-query row has exactly 8 cells"
-        (for/and ([row (in-list erows)]) (= (length row) 8)) #t)
+;; Design v2 adds an OPTIONAL 9th meta column (hit-highlight ranges +
+;; sensitive flag) — hosts accept 8 or 9, never more, never fewer.
+(check! "every empty-query row has 8 or 9 cells"
+        (for/and ([row (in-list erows)]) (<= 8 (length row) 9)) #t)
 (define-values (srows _sre _srev) (call-rpc 56 (list "search" "settings")))
 (check! "settings query leads with the window row"
         (and (pair? srows) (string=? (list-ref (car srows) 0) "settings.open")) #t)
-(check! "every settings-query row has exactly 8 cells"
-        (for/and ([row (in-list srows)]) (= (length row) 8)) #t)
+(check! "every settings-query row has 8 or 9 cells"
+        (for/and ([row (in-list srows)]) (<= 8 (length row) 9)) #t)
 (define-values (as1 ase _asev) (call-rpc 57 (list "ai-status")))
 (check! "ai-status no error" ase #f)
 (check! "ai-status without a provider" as1 "no provider configured")
