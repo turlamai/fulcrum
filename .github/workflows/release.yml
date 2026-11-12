@@ -30,8 +30,8 @@ env:
   # branded-DMG signature preservation, macOS update rollback safety, and
   # the unprivileged RPM packaging fixes (#431/#433): rpm 6 stopped
   # globbing quoted %files entries, which broke the linux-x64 rpm leg of
-  # v0.16.0's first packaging run (rivet#432).
-  RIVET_PIN: v0.16.0
+  # 7f34eee832418c3ad3bd73981e7a318d78d3be24's first packaging run (rivet#432).
+  RIVET_PIN: 7f34eee832418c3ad3bd73981e7a318d78d3be24
 permissions:
   contents: write
   actions: read
@@ -161,7 +161,7 @@ jobs:
             rpm desktop-file-utils
       - name: Set up embeddable Racket CS (Linux)
         if: matrix.platform == 'linux'
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@v0.16.0
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@7f34eee832418c3ad3bd73981e7a318d78d3be24
       # Installed after the embeddable runtime so Rivet's catalog closure and
       # Fulcrum's SQLite dependency (db-lib) resolve against the minimal build.
       - name: Install Rivet (catalog)
