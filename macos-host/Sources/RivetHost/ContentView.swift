@@ -40,6 +40,11 @@ struct ResultRow: Equatable {
     let icon: String
     let hint: String
     let badge: String
+    /// Optional 9th wire column (design v2): semicolon-separated
+    /// key:value pairs — `t:`/`s:` carry hit-highlight runs as
+    /// comma-separated start-len code-point ranges, `x:sensitive` marks
+    /// a masked credential row revealed only via clipboard-reveal.
+    var meta: String = ""
 
     /// Column 0 (`id`) is the *action* id and repeats across rows of the
     /// same provider ("app.launch" for every app). SwiftUI identity needs a
@@ -54,11 +59,69 @@ struct ResultRow: Equatable {
     }
 
     static func from(_ cells: [String]) -> ResultRow? {
-        guard cells.count == 8 else { return nil }
+        // 8 columns is the base row; the optional 9th carries the meta
+        // column (hit-highlight ranges / sensitive flag).
+        guard cells.count == 8 || cells.count == 9 else { return nil }
         return ResultRow(id: cells[0], title: cells[1], subtitle: cells[2],
                          kind: cells[3], arg: cells[4], icon: cells[5],
-                         hint: cells[6], badge: cells[7])
+                         hint: cells[6], badge: cells[7],
+                         meta: cells.count == 9 ? cells[8] : "")
     }
+
+    // ---- meta column (design v2) -------------------------------------
+
+    /// `true` when the row is a masked credential; the raw text reaches
+    /// the UI only through the local-only clipboard-reveal RPC.
+    var isSensitive: Bool {
+        meta.split(separator: ";").contains { $0.hasPrefix("x:sensitive") }
+    }
+
+    /// Hit runs over a field's text, as (start, length) code-point pairs.
+    func hitRanges(field: String) -> [(Int, Int)] {
+        guard let part = meta.split(separator: ";").first(where: {
+            $0.hasPrefix("\(field):")
+        }) else { return [] }
+        return part.dropFirst(field.count + 1).split(separator: ",").compactMap { piece in
+            let bounds = piece.split(separator: "-").compactMap { Int($0) }
+            guard bounds.count == 2 else { return nil }
+            return (bounds[0], bounds[1])
+        }
+    }
+
+    var titleHitRanges: [(Int, Int)] { hitRanges(field: "t") }
+    var subtitleHitRanges: [(Int, Int)] { hitRanges(field: "s") }
+}
+
+/// Builds the highlighted Text for a field: matched runs render in the
+/// readable amber at semibold — color + weight double cue, never a
+/// background fill (design v2 invariant 6). Ranges are Unicode code-point
+/// offsets over the field text. Returns nil when nothing is highlighted.
+func hitHighlighted(_ text: String, ranges: [(Int, Int)],
+                    scheme: ColorScheme) -> Text? {
+    guard !ranges.isEmpty else { return nil }
+    let scalars = Array(text.unicodeScalars)
+    func scalarString(_ bounds: Range<Int>) -> String {
+        String(String.UnicodeScalarView(scalars[bounds]))
+    }
+    var runs: [Text] = []
+    var cursor = 0
+    let total = scalars.count
+    for (start, length) in ranges.sorted(by: { $0.0 < $1.0 }) {
+        let begin = min(start, total)
+        let end = min(start + length, total)
+        guard begin >= cursor else { continue }
+        if begin > cursor {
+            runs.append(Text(scalarString(cursor..<begin)))
+        }
+        runs.append(Text(scalarString(begin..<end))
+            .fontWeight(.semibold)
+            .foregroundColor(FulcrumTheme.accentText(scheme)))
+        cursor = end
+    }
+    if cursor < total {
+        runs.append(Text(scalarString(cursor..<total)))
+    }
+    return runs.reduce(Text(""), +)
 }
 
 /// Icon provider. Application rows point at real .app bundles, so render
@@ -176,22 +239,44 @@ struct ResultRowView: View {
     let isSelected: Bool
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
+    @EnvironmentObject private var model: LauncherModel
+
+    /// The row's display title: the raw text after a local-only reveal
+    /// (design v2 invariant 9), otherwise the wire title (already masked
+    /// by the engine for sensitive rows).
+    private var displayTitle: String {
+        model.revealedRaw[row.rowId] ?? row.title
+    }
 
     var body: some View {
         HStack(spacing: 12) {
             RowIcon.view(for: row)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title)
+                (hitHighlighted(displayTitle, ranges: row.titleHitRanges,
+                                scheme: scheme)
+                 ?? Text(displayTitle))
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(row.displaySubtitle)
+                (hitHighlighted(row.displaySubtitle, ranges: row.subtitleHitRanges,
+                                scheme: scheme)
+                 ?? Text(row.displaySubtitle))
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             Spacer(minLength: 8)
+            if row.isSensitive {
+                Text(model.t("sensitiveBadge"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(FulcrumTheme.accent.opacity(0.14)))
+                    .foregroundStyle(FulcrumTheme.accentText(scheme))
+                    .accessibilityIdentifier("FulcrumSensitiveBadge")
+            }
             if !row.badge.isEmpty {
                 Text(row.badge)
                     .font(.system(size: 10, weight: .semibold))
@@ -614,6 +699,11 @@ struct FulcrumAPI {
     func clipboardRecord(_ text: String) async throws -> String {
         try await generated.clipboard_record(text: text)
     }
+    /// Local-only reveal for a masked clipboard row (design v2): the raw
+    /// text of one item, on this device, never logged or synced.
+    func clipboardReveal(id: String) async throws -> String {
+        try await generated.clipboard_reveal(id: id)
+    }
     func rowActions(id: String, arg: String) async throws -> [ResultRow] {
         (try await generated.row_actions(id: id, arg: arg)).compactMap { ResultRow.from($0) }
     }
@@ -663,6 +753,10 @@ final class LauncherModel: ObservableObject {
     /// between the two tab stops, query field and results list.
     @Published var listFocusRequest = 0
     @Published var queryFocusRequest = 0
+    /// Locally revealed raw texts for masked clipboard rows (rowId →
+    /// raw). Host memory only: nothing here is logged or synced, and a
+    /// fresh result list drops the reveal.
+    @Published var revealedRaw: [String: String] = [:]
     /// Live AI answer (nil = nothing to show); survives typing so the user
     /// can keep reading while the model finishes.
     @Published var aiStream: AiStreamState?
@@ -840,6 +934,31 @@ final class LauncherModel: ObservableObject {
         }
     }
 
+    /// ⌘Y on a masked clipboard row: fetch the raw text through the
+    /// local-only reveal RPC and swap it into the row on screen. Reveal
+    /// lives in host memory until the next result rebuild.
+    func revealSensitiveSelection() {
+        guard !showingActions, let api,
+              let row = rows.first(where: { $0.rowId == selection }),
+              row.isSensitive else { return }
+        let rowId = row.rowId
+        Task { [weak self] in
+            do {
+                let raw = try await api.clipboardReveal(id: row.arg)
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    let trimmed = raw.replacingOccurrences(of: "\n", with: " ")
+                    self.revealedRaw[rowId] = trimmed.count > 120
+                        ? String(trimmed.prefix(120)) + "…" : trimmed
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.status = "Reveal error: \(error)"
+                }
+            }
+        }
+    }
+
     /// Esc inside the action panel: back to the live search results, with
     /// the originating row restored by item id — never the first row.
     func closeActions() {
@@ -992,6 +1111,8 @@ final class LauncherModel: ObservableObject {
                 await MainActor.run { [weak self] in
                     guard let self, generation == self.searchGeneration else { return }
                     self.rows = result
+                    // A fresh result list invalidates in-memory reveals.
+                    self.revealedRaw = [:]
                     // Esc-from-actions restore wins over "select the first
                     // row"; a filtered-away row falls back to the primary
                     // action instead of leaving focus on a dead node.

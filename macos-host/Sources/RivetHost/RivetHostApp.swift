@@ -691,6 +691,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return nil
             case 40 where event.modifierFlags.contains(.command):
                   self.model?.openActionsForSelection()   // ⌘K
+            case 16 where event.modifierFlags.contains(.command):
+                  self.model?.revealSensitiveSelection()  // ⌘Y reveal
             case 125: self.model?.moveSelection(1)   // down
             case 126: self.model?.moveSelection(-1)  // up
             default:  return event
