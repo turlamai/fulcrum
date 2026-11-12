@@ -3488,18 +3488,12 @@ void on_row_activated(GtkListBox*, GtkListBoxRow*, gpointer) {
   Launcher::instance().run_selected();
 }
 
-// IME composition guard signal: the query IM context reports preedit
-// changes; a non-empty preedit means the input method owns the keys.
-static void on_query_preedit_changed(GtkIMContext* context, gpointer) {
-  char* preedit = nullptr;
-  PangoAttrList* attrs = nullptr;
-  int cursor = 0;
-  gtk_im_context_get_preedit_string(context, &preedit, &attrs, &cursor);
+// IME composition guard signal: GTK4 keeps the IM context inside the
+// entry's internal GtkText and exposes no accessor, so preedit tracking
+// hooks the GtkText::preedit-changed signal (found by walking the search
+// entry's children). A non-empty preedit means the IM owns the keys.
+static void on_query_preedit_changed(GtkText*, gchar* preedit, gpointer) {
   Launcher::instance().query_composing = preedit != nullptr && *preedit != '\0';
-  g_free(preedit);
-  if (attrs != nullptr) {
-    pango_attr_list_unref(attrs);
-  }
 }
 
 static void on_actions_back_clicked(GtkButton*, gpointer) {
@@ -3855,11 +3849,16 @@ void on_activate(GtkApplication* app, gpointer) {
   launcher.actions_mode_title = GTK_LABEL(mode_title);
   launcher.actions_mode_badge = GTK_LABEL(mode_badge);
 
-  // IME composition guard source: the query entry's IM context reports
-  // preedit changes (docs/cross-platform-interaction.md).
-  if (GtkIMContext* im_context = gtk_entry_get_im_context(GTK_ENTRY(search))) {
-    g_signal_connect(im_context, "preedit-changed",
-                     G_CALLBACK(on_query_preedit_changed), nullptr);
+  // IME composition guard source: the entry's internal GtkText reports
+  // preedit changes (docs/cross-platform-interaction.md). GTK4 exposes no
+  // accessor for the IM context itself; the GtkText child is the hook.
+  for (GtkWidget* child = gtk_widget_get_first_child(search);
+       child != nullptr; child = gtk_widget_get_next_sibling(child)) {
+    if (GTK_IS_TEXT(child)) {
+      g_signal_connect(child, "preedit-changed",
+                       G_CALLBACK(on_query_preedit_changed), nullptr);
+      break;
+    }
   }
 
   gtk_box_append(GTK_BOX(root), search_row);
