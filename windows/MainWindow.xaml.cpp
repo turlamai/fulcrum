@@ -1901,15 +1901,18 @@ void MainWindow::RunSelected() {
       }
       auto const status = api->run_action(fresh_row.id, fresh_row.arg).get();
       std::optional<std::string> update_path;
+      std::optional<std::string> update_version;
       auto const action_row = fresh_row;
       if (status == "quit-and-install" && action_row.id == "update.install") {
         auto const state = api->update_state().get();
         if (state.downloaded_path && !state.downloaded_path->empty()) {
           update_path = *state.downloaded_path;
+          update_version = state.available_version;
         }
       }
       dispatcher.TryEnqueue([weak, dispatcher, status, row, action_row,
-                             update_path = std::move(update_path)]() mutable {
+                             update_path = std::move(update_path),
+                             update_version = std::move(update_version)]() mutable {
         if (auto window = weak.get()) {
           if (status == "ok" || status == "launched" || status == "copied" ||
               status == "opened") {
@@ -1964,9 +1967,18 @@ void MainWindow::RunSelected() {
               if (!update_path) {
                 throw std::runtime_error("downloaded update path is missing");
               }
+              // The handoff records the manifest version next to the queued
+              // MSI so a stale queue is refused at the next launch; the
+              // launcher rejects an empty version, so a download without one
+              // is an updater state bug and surfaces here.
+              if (!update_version || update_version->empty()) {
+                throw std::runtime_error(
+                    "downloaded update version is missing");
+              }
               auto const msi = std::filesystem::path(to_wide(*update_path));
               rivet::update::MsiHandoff::LaunchVerifiedInstaller(
-                  L"site.jrtx.fulcrum", msi, executable_path());
+                  L"site.jrtx.fulcrum", msi, to_wide(*update_version),
+                  executable_path());
               // The MSI handoff waits for this PID; share the tray's orderly
               // backend shutdown and WinUI application exit.
               window->QuitApplication();
