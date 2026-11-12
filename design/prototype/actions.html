@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fulcrum — ⌘K 次级操作</title>
 <link rel="stylesheet" href="shared.css">
-<style>
-  .glyph { font-size: 14px; font-weight: 700; line-height: 1; }
-</style>
 </head>
 <body>
   <!-- 前：结果态，剪贴板行被选中（Tab 补全 / ↵ 直接粘贴到来源应用） -->
@@ -15,7 +12,7 @@
     <div class="t">前 · 结果态</div>
     <div class="n">query「tokens」· 剪贴板行选中 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" data-theme="appA" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appA" title="切换亮暗主题">◐</button>
   </header>
   <div class="panel w-s" id="appA">
     <div class="query">
@@ -23,28 +20,28 @@
       <div class="q">tokens<span class="caret"></span></div>
     </div>
     <div class="list">
-      <div class="row selected">
+      <div class="row selected" tabindex="0" aria-current="true">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
         <div class="txt">
           <div class="ttl">--accent-soft: #faeee5; --line: #e7e3da;</div>
-          <div class="sub">Clipboard · copied 2m ago · from Figma</div>
+          <div class="sub">Clipboard · copied from <mark class="qhit">tokens</mark>.css</div>
         </div>
         <span class="badge">2m</span>
         <span class="chip">↵</span>
       </div>
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
-        <div class="txt"><div class="ttl">tokens.css</div><div class="sub">~/Projects/hackdigest/site</div></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">tokens</mark>.css</div><div class="sub">~/Projects/hackdigest/site</div></div>
         <span class="badge">File</span>
       </div>
-      <div class="row">
-        <div class="tile"><span class="glyph">❝</span></div>
-        <div class="txt"><div class="ttl">tokens-cheatsheet</div><div class="sub">Snippet · “var(--accent) for selection…”</div></div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 7H7.5A3.5 3.5 0 0 0 4 10.5v.5A3.5 3.5 0 0 0 7.5 14.5H9a1.5 1.5 0 0 1-1.5 1.5H6"/><path d="M19 7h-2.5A3.5 3.5 0 0 0 13 10.5v.5a3.5 3.5 0 0 0 3.5 3.5H18a1.5 1.5 0 0 1-1.5 1.5H15"/></svg></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">tokens</mark>-cheatsheet</div><div class="sub">Snippet · “var(--accent) for selection…”</div></div>
         <span class="badge">Snip</span>
       </div>
     </div>
     <div class="foot">
-      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
       <span class="sp"></span>
       <span class="status">Ready — press Option+Space anywhere</span>
     </div>
@@ -55,30 +52,38 @@
     <div class="t">后 · ⌘K 次级操作态</div>
     <div class="n">列表 = 该行 actions · hint 换为 esc back · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" data-theme="appB" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appB" title="切换亮暗主题">◐</button>
   </header>
-  <div class="panel w-s" id="appB">
+  <div class="panel w-s mode-actions" id="appB">
     <div class="query">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
-      <div class="q">tokens<span class="caret"></span></div>
+      <div class="q">tokens</div>
+    </div>
+    <div class="modebar">
+      <button class="back" type="button" aria-label="Back to results">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        esc
+      </button>
+      <div class="mt">Actions for <b>--accent-soft: #faeee5; --line: #e7e3da;</b></div>
+      <span class="badge">Clipboard</span>
     </div>
     <div class="list">
-      <div class="row selected">
+      <div class="row selected" tabindex="0" aria-current="true">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div>
         <div class="txt"><div class="ttl">Copy</div><div class="sub">Put the clipboard text back on the pasteboard</div></div>
         <span class="chip">↵</span>
       </div>
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
         <div class="txt"><div class="ttl">Paste to frontmost app</div><div class="sub">Needs the Accessibility permission on macOS</div></div>
         <span class="badge">⌘V</span>
       </div>
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 17v5M9 3h6l1 7 3 2-2 2h-9l-2-2 3-2z"/></svg></div>
         <div class="txt"><div class="ttl">Pin</div><div class="sub">Keep at the top of clipboard history</div></div>
         <span class="badge">Pin</span>
       </div>
-      <div class="row danger">
+      <div class="row danger" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></div>
         <div class="txt"><div class="ttl">Delete from history</div><div class="sub">Removes this entry — history cannot be restored</div></div>
         <span class="badge">Del</span>
@@ -87,7 +92,7 @@
     <div class="foot">
       <span>↑↓ navigate · ↵ run · esc back</span>
       <span class="sp"></span>
-      <span class="status">Ready — press Option+Space anywhere</span>
+      <span class="status">Actions — esc returns to results</span>
     </div>
   </div>
 

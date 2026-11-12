@@ -5,19 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fulcrum — Panel 原型（英雄屏）</title>
 <link rel="stylesheet" href="shared.css">
-<style>
-  /* ==== 屏专属：真实应用图标用渐变 letter tile 代表（实现端取 dock 图标） ==== */
-  .tile.app-figma { background: linear-gradient(135deg,#a259ff,#f24e1e); color:#fff; font-weight:700; }
-  .tile.app-term  { background: linear-gradient(135deg,#3a3a3c,#1c1c1e); color:#fff; font-weight:700; }
-  .row .glyph { font-size: 14px; font-weight: 700; line-height: 1; }
-</style>
 </head>
 <body>
   <header class="cap">
     <div class="t">Fulcrum — 主面板</div>
     <div class="n">英雄屏 · query「fig」混合结果 · 680×460 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" id="themeBtn" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" id="themeBtn" title="切换亮暗主题">◐</button>
   </header>
 
   <div class="panel w-s" id="app">
@@ -27,65 +21,65 @@
     </div>
 
     <div class="list">
-      <!-- Application：真实图标（原型以 letter tile 示意），选中行才有 ↵ chip -->
-      <div class="row selected">
-        <div class="tile app-figma"><span class="glyph">F</span></div>
+      <!-- Application：原型用中性 app 类别字形，实现端换成真实 dock 图标 -->
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M6.5 6.5h.01M9.5 6.5h.01"/></svg></div>
         <div class="txt">
-          <div class="ttl">Figma</div>
+          <div class="ttl"><mark class="qhit">Fig</mark>ma</div>
           <div class="sub">/Applications/Figma.app</div>
         </div>
         <span class="chip">↵</span>
       </div>
       <!-- File：find 命中本地文件名索引 -->
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
         <div class="txt">
-          <div class="ttl">figma-tokens.json</div>
+          <div class="ttl"><mark class="qhit">fig</mark>ma-tokens.json</div>
           <div class="sub">~/Projects/fulcrum/design</div>
         </div>
         <span class="badge">File</span>
       </div>
       <!-- Clipboard：历史命中，badge 标时间 -->
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
         <div class="txt">
-          <div class="ttl">Figma frame 240×240 — hero card</div>
-          <div class="sub">Clipboard · copied 2m ago</div>
+          <div class="ttl"><mark class="qhit">Fig</mark>ma frame 240×240 — hero card</div>
+          <div class="sub">Clipboard · from Figma</div>
         </div>
         <span class="badge">2m</span>
       </div>
       <!-- Snippet：命名文本扩展 -->
-      <div class="row">
-        <div class="tile"><span class="glyph">❝</span></div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 7H7.5A3.5 3.5 0 0 0 4 10.5v.5A3.5 3.5 0 0 0 7.5 14.5H9a1.5 1.5 0 0 1-1.5 1.5H6"/><path d="M19 7h-2.5A3.5 3.5 0 0 0 13 10.5v.5a3.5 3.5 0 0 0 3.5 3.5H18a1.5 1.5 0 0 1-1.5 1.5H15"/></svg></div>
         <div class="txt">
-          <div class="ttl">figma-export</div>
+          <div class="ttl"><mark class="qhit">fig</mark>ma-export</div>
           <div class="sub">Snippet · “export @2x png to ~/Shots”</div>
         </div>
         <span class="badge">Snip</span>
       </div>
       <!-- Quicklink：keyword 认领的 URL 模板 -->
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
         <div class="txt">
-          <div class="ttl">Figma team templates</div>
+          <div class="ttl"><mark class="qhit">Fig</mark>ma team templates</div>
           <div class="sub">Quicklink · figma.com/files/team</div>
         </div>
         <span class="badge">Link</span>
       </div>
       <!-- Web search：!g 兜底行 -->
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
         <div class="txt">
-          <div class="ttl">fig</div>
+          <div class="ttl"><mark class="qhit">fig</mark></div>
           <div class="sub">Search the web with Google</div>
         </div>
         <span class="badge">!g</span>
       </div>
       <!-- Gallery：第一方插件可安装 -->
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
         <div class="txt">
-          <div class="ttl">figlet — Gallery plugin</div>
+          <div class="ttl"><mark class="qhit">fig</mark>let — Gallery plugin</div>
           <div class="sub">Plugin · ASCII banner generator · not installed</div>
         </div>
         <span class="badge">Gallery</span>
@@ -93,7 +87,7 @@
     </div>
 
     <div class="foot">
-      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
       <span class="sp"></span>
       <span class="status">Ready — press Option+Space anywhere</span>
     </div>

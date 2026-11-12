@@ -27,12 +27,12 @@
   .step.sel { border-color: var(--accent); background: var(--sel); }
   .step .num {
     flex: none; width: 22px; height: 22px; border-radius: 6px; background: var(--tile);
-    color: var(--accent); font-size: 11px; font-weight: 700; display: grid; place-items: center;
+    color: var(--accent-text); font-size: 11px; font-weight: 700; display: grid; place-items: center;
   }
   .step .stt { flex: 1; min-width: 0; }
   .step .name { font-size: 13px; font-weight: 600; }
   .step .prm { font-size: 11.5px; color: var(--mute); margin-top: 2px; }
-  .step .cond { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: var(--accent); }
+  .step .cond { font-size: 10px; font-weight: 700; letter-spacing: .4px; color: var(--accent-text); }
   .step .add { color: var(--faint); font-size: 12px; padding: 8px 0 0 32px; }
   .trace { flex: 1; border-left: 1px solid var(--hairline); padding: 16px 18px; overflow-y: auto; }
   .trace h2 { font-size: 11px; font-weight: 600; letter-spacing: .6px; color: var(--faint); margin-bottom: 10px; }
@@ -41,9 +41,10 @@
     border-bottom: 1px solid var(--hairline); font-size: 11.5px;
   }
   .tr .mark { flex: none; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 700; margin-top: 1px; }
-  .tr.ok .mark { background: rgba(48,153,88,.15); color: #2f9e58; }
+  .tr.ok .mark { background: rgba(48,153,88,.15); color: #1f7a44; }
+  .dark .tr.ok .mark { background: rgba(76,196,122,.16); color: #6bd493; }
   .tr.fail .mark { background: rgba(208,47,38,.12); color: var(--danger); }
-  .tr.run .mark { background: var(--badge); color: var(--accent); }
+  .tr.run .mark { background: var(--badge); color: var(--accent-text); }
   .tr .tt { color: var(--ink); }
   .tr .td { color: var(--mute); margin-top: 1px; }
   .trace .hint { margin-top: 10px; font-size: 10.5px; color: var(--faint); }
@@ -54,12 +55,12 @@
     <div class="t">Fulcrum — Workflow Pro（探索稿）</div>
     <div class="n">规划中的付费层 · 未实现非承诺 · 免费能力不受影响 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" id="themeBtn" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" id="themeBtn" title="切换亮暗主题">◐</button>
   </header>
 
   <div class="panel win" id="app">
     <div class="wfhead">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="color:var(--accent)"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/></svg>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" style="color:var(--accent-text)" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg>
       <div>
         <div class="ttl">Morning brief — draft</div>
         <div class="st">Multi-step workflow · runs from the same query box · ⌘K to debug</div>

@@ -5,11 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fulcrum — 关键状态三联</title>
 <link rel="stylesheet" href="shared.css">
-<style>
-  .tile.app-figma { background: linear-gradient(135deg,#a259ff,#f24e1e); color:#fff; font-weight:700; }
-  .tile.app-term  { background: linear-gradient(135deg,#3a3a3c,#1c1c1e); color:#fff; font-weight:700; }
-  .glyph { font-size: 14px; font-weight: 700; line-height: 1; }
-</style>
 </head>
 <body>
   <!-- A：召唤后的默认态。search("") 返回加权混排：常驻设置行 + 应用 -->
@@ -17,7 +12,7 @@
     <div class="t">A · 默认 ready 态</div>
     <div class="n">query 为空 · 加权默认行 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" data-theme="appA" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appA" title="切换亮暗主题">◐</button>
   </header>
   <div class="panel w-s" id="appA">
     <div class="query">
@@ -25,44 +20,59 @@
       <div class="q"><span class="ph">Search apps, clipboard, snippets, the web…</span></div>
     </div>
     <div class="list">
-      <div class="row selected">
-        <div class="tile app-figma"><span class="glyph">F</span></div>
-        <div class="txt"><div class="ttl">Figma</div><div class="sub">/Applications/Figma.app</div></div>
+      <div class="glabel">Suggestions</div>
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
+        <div class="txt"><div class="ttl">--accent-soft: #faeee5; --line: #e7e3da;</div><div class="sub">Clipboard · from Figma</div></div>
+        <span class="badge">2m</span>
         <span class="chip">↵</span>
       </div>
-      <div class="row">
-        <div class="tile app-term"><span class="glyph">>_</span></div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg></div>
+        <div class="txt"><div class="ttl">ai summarize the clipboard</div><div class="sub">AI · streams into the panel · BYOK</div></div>
+        <span class="badge">AI</span>
+      </div>
+
+      <div class="glabel">Applications</div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M6.5 6.5h.01M9.5 6.5h.01"/></svg></div>
+        <div class="txt"><div class="ttl">Figma</div><div class="sub">/Applications/Figma.app</div></div>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7 4 4-4 4"/><path d="M12 15h7"/></svg></div>
         <div class="txt"><div class="ttl">Terminal</div><div class="sub">/System/Applications/Utilities/Terminal.app</div></div>
       </div>
-      <div class="row">
+
+      <div class="glabel">Commands</div>
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="var(--glass)"/><circle cx="15" cy="17" r="2" fill="var(--glass)"/></svg></div>
         <div class="txt"><div class="ttl">Settings</div><div class="sub">Open the settings window</div></div>
         <span class="badge">Set</span>
       </div>
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
         <div class="txt"><div class="ttl">gallery — browse first-party plugins</div><div class="sub">26 plugins · install from the launcher</div></div>
         <span class="badge">Gal</span>
       </div>
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
         <div class="txt"><div class="ttl">Lock Screen</div><div class="sub">System command</div></div>
         <span class="badge">Sys</span>
       </div>
     </div>
     <div class="foot">
-      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
       <span class="sp"></span>
       <span class="status">Ready — press Option+Space anywhere</span>
     </div>
   </div>
 
-  <!-- B：无本地结果。web search 行兜底；关掉 web search 时列表为空，hint 不变 -->
+  <!-- B：无本地结果、web search 开启 → !g 兜底行可执行；关闭时见 D 空态 -->
   <header class="cap">
     <div class="t">B · 搜索无结果态</div>
     <div class="n">query「figglewump」· !g 兜底行 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" data-theme="appB" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appB" title="切换亮暗主题">◐</button>
   </header>
   <div class="panel w-s" id="appB">
     <div class="query">
@@ -70,25 +80,25 @@
       <div class="q">figglewump<span class="caret"></span></div>
     </div>
     <div class="list">
-      <div class="row selected">
+      <div class="row selected" tabindex="0" aria-current="true">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
-        <div class="txt"><div class="ttl">figglewump</div><div class="sub">Search the web with Google</div></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">figglewump</mark></div><div class="sub">Search the web with Google</div></div>
         <span class="badge">!g</span>
         <span class="chip">↵</span>
       </div>
-      <div class="row">
-        <div class="tile"><span class="glyph">✦</span></div>
-        <div class="txt"><div class="ttl">ai figglewump</div><div class="sub">AI · ask the configured provider</div></div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg></div>
+        <div class="txt"><div class="ttl">ai <mark class="qhit">figglewump</mark></div><div class="sub">AI · ask the configured provider</div></div>
         <span class="badge">AI</span>
       </div>
-      <div class="row">
+      <div class="row" tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
-        <div class="txt"><div class="ttl">figglewump — try other engines</div><div class="sub">!gh · !so · !w · !yt · !m · !d · !t</div></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">figglewump</mark> — try other engines</div><div class="sub">!gh · !so · !w · !yt · !m · !d · !t</div></div>
         <span class="badge">Bang</span>
       </div>
     </div>
     <div class="foot">
-      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
       <span class="sp"></span>
       <span class="status">Ready — press Option+Space anywhere</span>
     </div>
@@ -99,21 +109,58 @@
     <div class="t">C · 启动中态</div>
     <div class="n">embedded Racket CS 健康检查未完成 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" data-theme="appC" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appC" title="切换亮暗主题">◐</button>
   </header>
   <div class="panel w-s" id="appC">
-    <div class="query">
+    <div class="query" aria-busy="true">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q"><span class="ph">Search apps, clipboard, snippets, the web…</span></div>
+      <span class="badge">Starting</span>
     </div>
     <div class="center">
       <div class="glyph">⌘</div>
       <div class="msg">Starting embedded Racket CS…</div>
+      <div class="recover">
+        <span>Taking longer than 10s?</span>
+        <kbd>⌘R</kbd><span>restart the backend</span>
+        <span>·</span>
+        <kbd>⌘,</kbd><span>open logs</span>
+      </div>
     </div>
     <div class="foot">
-      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
       <span class="sp"></span>
-      <span class="status">Starting embedded Racket CS…</span>
+      <span class="status">Starting embedded Racket CS… — ⌘R restarts, ⌘, opens logs</span>
+    </div>
+  </div>
+
+  <!-- D：无本地结果 + web search 关闭 → 诚实空态，给出下一步而不是死胡同 -->
+  <header class="cap">
+    <div class="t">D · 无结果（web search 关闭）</div>
+    <div class="n">query「figglewump」· 0 results · 空态给出 AI / 设置两条出路 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appD" title="切换亮暗主题">◐</button>
+  </header>
+  <div class="panel w-s" id="appD">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">figglewump<span class="caret"></span></div>
+    </div>
+    <div class="empty">
+      <div class="eico">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/><path d="m4 4 16 16"/></svg>
+      </div>
+      <div class="et">No results for “figglewump”</div>
+      <div class="eb">Nothing in apps, files, clipboard, snippets or commands matches. Web search is turned off, so the !g fallback is unavailable.</div>
+      <div class="ea">
+        <button class="eact" type="button">ai figglewump — ask your provider</button>
+        <button class="eact neutral" type="button">Turn on web search in Settings · ⌘,</button>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">0 results — web search is off</span>
     </div>
   </div>
 

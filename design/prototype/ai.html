@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fulcrum — 计算与 AI 流式</title>
 <link rel="stylesheet" href="shared.css">
-<style>
-  .glyph { font-size: 14px; font-weight: 700; line-height: 1; }
-</style>
 </head>
 <body>
   <!-- a：AI running —— 流式面板出现在 query 与列表之间；打字不清空答案 -->
@@ -15,7 +12,7 @@
     <div class="t">a · AI running 态</div>
     <div class="n">▍流式光标 + 转轮 · 下方结果列表保持可用 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" data-theme="appA" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appA" title="切换亮暗主题">◐</button>
   </header>
   <div class="panel w-s" id="appA">
     <div class="query">
@@ -24,7 +21,7 @@
     </div>
     <div class="slot">
       <div class="head">
-        <span class="glyph" style="font-size:12px">✦</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg>
         <span>AI is answering…</span>
         <span class="sp"></span>
         <span class="spin"></span>
@@ -32,25 +29,25 @@
       <div class="body">这个 makefile 做三件事：① 用 `wildcard` 收集 `src/` 下全部 `.c` 文件；② 把每个文件编译为同名 `.o`（`-O2 -Wall`）；③ 链接成 `app`。`clean` 目标删除全部产物。 ▍</div>
     </div>
     <div class="list">
-      <div class="row selected">
-        <div class="tile"><span class="glyph">✦</span></div>
-        <div class="txt"><div class="ttl">translate — ai translate &lt;lang&gt;</div><div class="sub">AI · streams into the panel, copies when done</div></div>
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg></div>
+        <div class="txt"><div class="ttl">translate — <mark class="qhit">ai translate</mark> &lt;lang&gt;</div><div class="sub">AI · streams into the panel, copies when done</div></div>
         <span class="badge">AI</span>
         <span class="chip">↵</span>
       </div>
-      <div class="row">
-        <div class="tile"><span class="glyph">=</span></div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4.5" y="3" width="15" height="18" rx="2"/><path d="M8 7.5h8"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01"/></svg></div>
         <div class="txt"><div class="ttl">12 × 12 = 144</div><div class="sub">Calculator · exact arithmetic · ↵ copies</div></div>
         <span class="badge">Calc</span>
       </div>
-      <div class="row">
-        <div class="tile"><span class="glyph">✦</span></div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg></div>
         <div class="txt"><div class="ttl">explain</div><div class="sub">AI · explain the selection or clipboard</div></div>
         <span class="badge">AI</span>
       </div>
     </div>
     <div class="foot">
-      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
       <span class="sp"></span>
       <span class="status">AI is answering…</span>
     </div>
@@ -61,7 +58,7 @@
     <div class="t">b · AI done 态</div>
     <div class="n">答案已上剪贴板 · Esc 只收起答案面板 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" data-theme="appB" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appB" title="切换亮暗主题">◐</button>
   </header>
   <div class="panel w-s" id="appB">
     <div class="query">
@@ -70,28 +67,78 @@
     </div>
     <div class="slot">
       <div class="head">
-        <span class="glyph" style="font-size:12px">✦</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg>
         <span>AI answer</span>
       </div>
       <div class="body">这个 makefile 做三件事：① 用 `wildcard` 收集 `src/` 下全部 `.c` 文件；② 把每个文件编译为同名 `.o`（`-O2 -Wall`）；③ 链接成 `app`。`clean` 目标删除全部产物。</div>
       <div class="hint">Answer copied to the clipboard · esc dismisses</div>
     </div>
     <div class="list">
-      <div class="row">
-        <div class="tile"><span class="glyph">=</span></div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4.5" y="3" width="15" height="18" rx="2"/><path d="M8 7.5h8"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01"/></svg></div>
         <div class="txt"><div class="ttl">12 × 12 = 144</div><div class="sub">Calculator · exact arithmetic · ↵ copies</div></div>
         <span class="badge">Calc</span>
       </div>
-      <div class="row">
-        <div class="tile"><span class="glyph">✦</span></div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg></div>
         <div class="txt"><div class="ttl">chat — continue the conversation</div><div class="sub">AI · ai chat &lt;message&gt;</div></div>
         <span class="badge">AI</span>
       </div>
     </div>
     <div class="foot">
-      <span>↑↓ navigate · ↵ run · ⌘K actions · esc clear/hide</span>
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
       <span class="sp"></span>
       <span class="status">Answer copied to the clipboard</span>
+    </div>
+  </div>
+
+  <!-- c：AI error —— BYOK 失败三态之一：key 失效 / 超时 / 429；原因可读 + 重试路径 -->
+  <header class="cap">
+    <div class="t">c · AI error 态</div>
+    <div class="n">provider 401 · 不静默失败 · 重试与设置入口都在面板内 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appC" title="切换亮暗主题">◐</button>
+  </header>
+  <div class="panel w-s" id="appC">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">ai translate 简洁地解释这段 makefile</div>
+    </div>
+    <div class="slot error">
+      <div class="head">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg>
+        <span>AI request failed</span>
+        <span class="sp"></span>
+        <span class="badge">401</span>
+      </div>
+      <div class="body">The provider rejected the saved API key. Nothing was sent to the model, and the clipboard is unchanged.</div>
+      <div class="fix">Fix the key in <b>Settings → AI</b> and retry, or switch the provider to <code>Ollama</code>. <b>⌘,</b> opens Settings.</div>
+      <button class="retry" type="button">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+        Retry · ⌘R
+      </button>
+    </div>
+    <div class="list">
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg></div>
+        <div class="txt"><div class="ttl">Retry with the same prompt</div><div class="sub">AI · after fixing the key in Settings</div></div>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg></div>
+        <div class="txt"><div class="ttl">Open Settings → AI</div><div class="sub">Replace the API key or choose another provider</div></div>
+        <span class="badge">⌘,</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v6"/><circle cx="12" cy="17.5" r=".6"/><circle cx="12" cy="12" r="9"/></svg></div>
+        <div class="txt"><div class="ttl">Why did this fail?</div><div class="sub">AI · 401 unauthorized · key stored on this device only</div></div>
+        <span class="badge">Help</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">AI request failed — 401 from provider</span>
     </div>
   </div>
 

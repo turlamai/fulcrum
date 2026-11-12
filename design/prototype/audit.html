@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fulcrum — 原型自检（状态矩阵）</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  :root { --shell-w: 680px; }
+  body.dark {
+    background: radial-gradient(1200px 800px at 20% 0%, #2a2a2c, #1c1c1e 55%, #151516);
+  }
+  body.dark .iconbtn {
+    background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.20); color: rgba(242,242,242,.72);
+  }
+  h2.sec {
+    width: 680px; max-width: 100%; margin: 22px 0 -2px;
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    font-size: 13px; font-weight: 700;
+  }
+  h2.sec span { font-size: 11.5px; font-weight: 400; color: var(--faint); }
+  .note {
+    width: 680px; max-width: 100%; font-size: 11.5px; line-height: 1.65; color: var(--mute);
+  }
+  .note b { color: var(--ink); font-weight: 600; }
+  .note code { font-family: inherit; color: var(--accent-text); }
+  .rules {
+    width: 680px; max-width: 100%; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px;
+  }
+  .rule {
+    background: rgba(255,255,255,.55); border: 1px solid rgba(0,0,0,.08);
+    border-radius: 8px; padding: 10px 12px; font-size: 11.5px; line-height: 1.55;
+  }
+  .rule h3 {
+    font-size: 10px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 5px;
+  }
+  .rule ol { margin: 0; padding-left: 16px; }
+  .rule li { margin: 2px 0; }
+  body.dark .rule { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.10); }
+
+  .panel.short { max-height: 420px; }
+  .listwrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .listwrap .list { flex: 1 1 auto; }
+  .fade {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 30px; pointer-events: none;
+    background: linear-gradient(to bottom, rgba(250,250,249,0), rgba(250,250,249,.96));
+  }
+  .dark .fade { background: linear-gradient(to bottom, rgba(28,28,30,0), rgba(28,28,30,.96)); }
+
+  .wrap {
+    width: 680px; max-width: 100%; background: var(--glass);
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  table.matrix { width: 100%; border-collapse: collapse; font-size: 11.5px; line-height: 1.5; color: var(--ink); }
+  table.matrix th, table.matrix td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--hairline); }
+  table.matrix th { font-size: 10px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--faint); }
+  table.matrix td:first-child { font-weight: 600; }
+  table.matrix td:nth-child(2) { color: var(--mute); }
+  table.matrix tr:last-child td { border-bottom: none; }
+  table.matrix code { font-family: inherit; color: var(--accent-text); }
+
+  .footnav { width: 680px; max-width: 100%; display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--mute); margin: 10px 0 24px; }
+  .footnav a { color: var(--accent-text); text-decoration: none; }
+  .footnav a:hover { text-decoration: underline; }
+  .footnav a:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+
+  @media (max-width: 640px) {
+    table.matrix thead { display: none; }
+    table.matrix, table.matrix tbody, table.matrix tr, table.matrix td { display: block; width: 100%; }
+    table.matrix tr { border-bottom: 1px solid var(--hairline); padding: 8px 12px; }
+    table.matrix td { border: none; padding: 2px 0; }
+    table.matrix td:first-child { font-size: 12.5px; }
+    table.matrix td:nth-child(2)::before { content: "触发 · "; color: var(--faint); }
+    table.matrix td:nth-child(3)::before { content: "表现 · "; color: var(--faint); }
+    table.matrix td:nth-child(4)::before { content: "出路 · "; color: var(--faint); }
+    table.matrix code { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+  <header class="cap">
+    <div class="t">Fulcrum — 原型自检（状态矩阵）</div>
+    <div class="n">命中高亮 · 输入法守卫 · 焦点顺序 · 异常与边界状态 · 原型 v0.1</div>
+    <div class="sp"></div>
+    <button class="iconbtn" aria-label="Toggle light or dark theme" id="themeBtn" title="切换亮暗主题">◐</button>
+  </header>
+
+  <p class="note">这一页把散在各屏的状态集中起来逐条验收：<b>不是截图</b>，每个面板都是真实 DOM，亮暗一次切换全部生效。看的是「用户能否看懂为什么出现这条结果、能否安全地按对键」，其余视觉细节沿用既有契约。</p>
+
+  <h2 class="sec">1 · 命中高亮<span>颜色 + 字重双线索，不铺底色</span></h2>
+  <div class="panel w-s">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">fig<span class="caret"></span></div>
+    </div>
+    <div class="list">
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M6.5 6.5h.01M9.5 6.5h.01"/></svg></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">Fig</mark>ma</div><div class="sub">/Applications/Figma.app</div></div>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-tokens.json</div><div class="sub">~/Projects/fulcrum/design</div></div>
+        <span class="badge">File</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 7H7.5A3.5 3.5 0 0 0 4 10.5v.5A3.5 3.5 0 0 0 7.5 14.5H9a1.5 1.5 0 0 1-1.5 1.5H6"/><path d="M19 7h-2.5A3.5 3.5 0 0 0 13 10.5v.5a3.5 3.5 0 0 0 3.5 3.5H18a1.5 1.5 0 0 1-1.5 1.5H15"/></svg></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-export</div><div class="sub">Snippet · “export @2x png to ~/Shots”</div></div>
+        <span class="badge">Snip</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>let — Gallery plugin</div><div class="sub">Plugin · ASCII banner generator · not installed</div></div>
+        <span class="badge">Gallery</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">4 results</span>
+    </div>
+  </div>
+  <p class="note">命中片段只换 <code>--accent-text</code> 并加 650 字重：<b>不靠颜色单独传达</b>，也不铺底色块。命中发生在副标题或来源时，高亮落在对应字段上（如第 5 节的「copied from tokens.css」），行语法不变。</p>
+
+  <h2 class="sec">2 · 输入法组合态<span>preedit 未上屏时，Enter / ↑ / ↓ / Tab 归输入法</span></h2>
+  <div class="panel w-s">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">fig<span class="preedit">ma</span><span class="caret"></span></div>
+      <span class="imeflag">Composing</span>
+    </div>
+    <div class="list">
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M6.5 6.5h.01M9.5 6.5h.01"/></svg></div>
+        <div class="txt"><div class="ttl">Figma</div><div class="sub">/Applications/Figma.app</div></div>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+        <div class="txt"><div class="ttl">figma-tokens.json</div><div class="sub">~/Projects/fulcrum/design</div></div>
+        <span class="badge">File</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ candidate · ↵ commit · esc cancel composition</span>
+      <span class="sp"></span>
+      <span class="status">Composing — keys stay with the IME until 上屏</span>
+    </div>
+  </div>
+  <p class="note"><b>契约</b>：compositionstart 后锁住执行与选择，compositionend 才恢复 ↑↓/↵；Esc 第一次只取消组合、不退层；Tab 在组合态不补全。虚线只是 preedit 的可读标记，<b>候选窗由系统绘制，原型不伪造</b>。</p>
+
+  <h2 class="sec">3 · 焦点顺序<span>Tab 环、⌘K 进入、Esc 按 item id 回位</span></h2>
+  <div class="panel w-s mode-actions">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">tokens</div>
+    </div>
+    <div class="modebar">
+      <button class="back demo-focus" type="button" aria-label="Back to results">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        esc
+      </button>
+      <div class="mt">Actions for <b>--accent-soft: #faeee5; --line: #e7e3da;</b></div>
+      <span class="badge">Clipboard</span>
+    </div>
+    <div class="list">
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div>
+        <div class="txt"><div class="ttl">Copy</div><div class="sub">Put the clipboard text back on the pasteboard</div></div>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
+        <div class="txt"><div class="ttl">Paste to frontmost app</div><div class="sub">Needs the Accessibility permission on macOS</div></div>
+        <span class="badge">⌘V</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 17v5M9 3h6l1 7 3 2-2 2h-9l-2-2 3-2z"/></svg></div>
+        <div class="txt"><div class="ttl">Pin</div><div class="sub">Keep at the top of clipboard history</div></div>
+        <span class="badge">Pin</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · esc back</span>
+      <span class="sp"></span>
+      <span class="status">Actions — esc returns focus to the originating row</span>
+    </div>
+  </div>
+  <div class="rules">
+    <div class="rule">
+      <h3>Tab 环</h3>
+      <ol>
+        <li>query → 结果列表（整体一个 tab stop）→ footer 链接</li>
+        <li>actions 层：首条 action → modebar 的 <b>esc</b> → query</li>
+        <li>Shift+Tab 严格反向，不跳层</li>
+      </ol>
+    </div>
+    <div class="rule">
+      <h3>进入与回位</h3>
+      <ol>
+        <li><b>⌘K</b> 后焦点落首条 action，选中行同步</li>
+        <li><b>Esc</b> 返回结果，按 item id 恢复原行焦点，不取第一行</li>
+        <li>行被过滤掉时，焦点落到主操作而不是脱离文档的节点</li>
+      </ol>
+    </div>
+    <div class="rule">
+      <h3>可见性</h3>
+      <ol>
+        <li>全站 2px <code>--accent-text</code> ring，offset 2px；行内 -2px</li>
+        <li>键盘焦点与选中是两件事：选中是 amber 底 / 内描边，焦点是外环</li>
+        <li>宿主用 roving tabindex；原型为静态评审稿，行仍逐条可 Tab 以便查看焦点环</li>
+      </ol>
+    </div>
+  </div>
+
+  <h2 class="sec">4 · 离线<span>本地结果照常工作，联网行禁用并写清原因</span></h2>
+  <div class="panel w-s">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">fig<span class="caret"></span></div>
+    </div>
+    <div class="banner">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2l20 20"/><path d="M8.5 8.5A10 10 0 0 1 21 9.5"/><path d="M5 12.5a12 12 0 0 1 5.2-2.6"/><path d="M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="19.5" r=".6"/></svg>
+      <div class="bt"><b>Offline.</b> Showing local results only — web search and AI need a connection.</div>
+      <button class="eact neutral" type="button">Retry</button>
+    </div>
+    <div class="list">
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M6.5 6.5h.01M9.5 6.5h.01"/></svg></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">Fig</mark>ma</div><div class="sub">/Applications/Figma.app</div></div>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+        <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-tokens.json</div><div class="sub">~/Projects/fulcrum/design</div></div>
+        <span class="badge">File</span>
+      </div>
+      <div class="row disabled" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
+        <div class="txt"><div class="ttl">fig</div><div class="sub">Search the web with Google · unavailable offline</div></div>
+        <span class="badge">Offline</span>
+      </div>
+      <div class="row disabled" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg></div>
+        <div class="txt"><div class="ttl">ai fig</div><div class="sub">AI · needs a connection to your provider</div></div>
+        <span class="badge">Offline</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">Offline — local results only</span>
+    </div>
+  </div>
+  <p class="note">联网行不是消失，而是<b>留下并标明不可用</b>，避免用户以为结果丢了。重连后 banner 消失，但 status line 保留一条「Back online — web search and AI restored」，反馈不静默。</p>
+
+  <h2 class="sec">5 · AI 限流<span>429 带倒计时；重试禁用，而不是静默重复请求</span></h2>
+  <div class="panel w-s">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">ai summarize this thread<span class="caret"></span></div>
+    </div>
+    <div class="slot error">
+      <div class="head">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg>
+        <span>AI request throttled</span>
+        <span class="sp"></span>
+        <span class="badge">429</span>
+      </div>
+      <div class="body">The provider is rate-limiting this key. The prompt was not run and the clipboard is unchanged. Retrying automatically in 27 seconds.</div>
+      <div class="fix">Next step: wait for the countdown, or switch to <code>Ollama</code> in <b>Settings → AI</b>.</div>
+      <button class="retry" type="button" disabled>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+        Retry in 27s
+      </button>
+    </div>
+    <div class="list">
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg></div>
+        <div class="txt"><div class="ttl">Switch provider to Ollama</div><div class="sub">Local model · no rate limit · keeps the prompt</div></div>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg></div>
+        <div class="txt"><div class="ttl">Open Settings → AI</div><div class="sub">Change the key, provider or per-minute limit</div></div>
+        <span class="badge">⌘,</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">429 — retry unlocks in 27s</span>
+    </div>
+  </div>
+
+  <h2 class="sec">6 · 敏感剪贴板<span>掩码由字符表达，揭示后才能复制</span></h2>
+  <div class="panel w-s">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">key<span class="caret"></span></div>
+    </div>
+    <div class="list">
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5 20 3l1.5 1.5L20 6l-2 2 2 2-2 2-2-2-2 2"/></svg></div>
+        <div class="txt">
+          <div class="ttl"><span class="redact">sk-••••••••••••4f2a</span></div>
+          <div class="sub">Clipboard · detected as an API key · ⌘Y reveals on this device only</div>
+        </div>
+        <span class="badge">Sensitive</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
+        <div class="txt"><div class="ttl">Bearer eyJhbGciOi…</div><div class="sub">Clipboard · detected as a token · ⌘Y reveals on this device only</div></div>
+        <span class="badge">Sensitive</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ⌘Y reveal · ↵ run · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">Sensitive values masked — reveal is local, never synced</span>
+    </div>
+  </div>
+  <p class="note">掩码态的 <b>↵ 不直接复制</b>：先 ⌘Y 在本机揭示，再 ↵/⌘C。揭示动作不写日志、不进入同步文件夹；这条规则同时适用于剪贴板历史与 AI 输入。</p>
+
+  <h2 class="sec">7 · 超长标题<span>1 行截断，完整值始终有可达路径</span></h2>
+  <div class="panel w-s">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">季度<span class="caret"></span></div>
+    </div>
+    <div class="list">
+      <div class="row selected" tabindex="0" aria-current="true">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+        <div class="txt">
+          <div class="ttl">第三季度华东区渠道复盘与下季度投放预算调整说明（终稿·含附录、预算明细表与法务批注）</div>
+          <div class="sub">Documents · modified 2 hours ago · ⌘Y previews the full title</div>
+        </div>
+        <span class="chip">↵</span>
+      </div>
+      <div class="row" tabindex="0">
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+        <div class="txt"><div class="ttl">季度目标.json</div><div class="sub">~/Work/planning</div></div>
+        <span class="badge">File</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · ⌘Y preview · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">Selected title truncated — ⌘Y shows the full value</span>
+    </div>
+  </div>
+  <p class="note">可变长度数据（文件名、标题、地址）允许 1 行省略，但<b>截断值必须可展开</b>；价格、时间、数量、状态与主操作永不截断。省略号造成的孤字由容器宽度与字号控制，不靠硬裁。</p>
+
+  <h2 class="sec">8 · 结果超上限 / 窗口过矮<span>12 行封顶，底部渐隐 + 计数</span></h2>
+  <div class="panel short w-s">
+    <div class="query">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <div class="q">fig<span class="caret"></span></div>
+      <span class="badge">12 max</span>
+    </div>
+    <div class="listwrap">
+      <div class="list">
+        <div class="row selected" tabindex="0" aria-current="true">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M6.5 6.5h.01M9.5 6.5h.01"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">Fig</mark>ma</div><div class="sub">/Applications/Figma.app</div></div>
+          <span class="chip">↵</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-tokens.json</div><div class="sub">~/Projects/fulcrum/design</div></div>
+          <span class="badge">File</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 7H7.5A3.5 3.5 0 0 0 4 10.5v.5A3.5 3.5 0 0 0 7.5 14.5H9a1.5 1.5 0 0 1-1.5 1.5H6"/><path d="M19 7h-2.5A3.5 3.5 0 0 0 13 10.5v.5a3.5 3.5 0 0 0 3.5 3.5H18a1.5 1.5 0 0 1-1.5 1.5H15"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-export</div><div class="sub">Snippet · “export @2x png to ~/Shots”</div></div>
+          <span class="badge">Snip</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">Fig</mark>ma team templates</div><div class="sub">Quicklink · figma.com/files/team</div></div>
+          <span class="badge">Link</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>let — Gallery plugin</div><div class="sub">Plugin · ASCII banner generator</div></div>
+          <span class="badge">Gallery</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">fig</mark></div><div class="sub">Search the web with Google</div></div>
+          <span class="badge">!g</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 2v4M16 2v4"/><path d="M8 12h8M8 16h5"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">Fig</mark>Jam</div><div class="sub">/Applications/FigJam.app</div></div>
+          <span class="badge">App</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">Fig</mark>ma Community</div><div class="sub">Quicklink · figma.com/community</div></div>
+          <span class="badge">Link</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-plugin-api.md</div><div class="sub">~/Projects/fulcrum/docs</div></div>
+          <span class="badge">File</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 7H7.5A3.5 3.5 0 0 0 4 10.5v.5A3.5 3.5 0 0 0 7.5 14.5H9a1.5 1.5 0 0 1-1.5 1.5H6"/><path d="M19 7h-2.5A3.5 3.5 0 0 0 13 10.5v.5a3.5 3.5 0 0 0 3.5 3.5H18a1.5 1.5 0 0 1-1.5 1.5H15"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-export-2x</div><div class="sub">Snippet · “export selection at 2×”</div></div>
+          <span class="badge">Snip</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-color-styles</div><div class="sub">Snippet · “list every local color style”</div></div>
+          <span class="badge">Snip</span>
+        </div>
+        <div class="row" tabindex="0">
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg></div>
+          <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma handoff</div><div class="sub">AI · “summarize the selected frame for handoff”</div></div>
+          <span class="badge">AI</span>
+        </div>
+      </div>
+      <div class="fade" aria-hidden="true"></div>
+    </div>
+    <div class="foot">
+      <span>↑↓ navigate · ↵ run · Tab complete · esc clear/hide</span>
+      <span class="sp"></span>
+      <span class="status">12 of 34 results — scroll for more, or refine the query</span>
+    </div>
+  </div>
+  <p class="note">窗口过矮（如分屏）时列表滚动，底部渐隐提示还有内容；面板充分高时 12 行刚好排满，不出现无意义的滚动条。计数写在 status line，用户始终知道被截掉多少。</p>
+
+  <h2 class="sec">9 · 状态矩阵<span>Exit 条件的自检口径，每一行都要能在屏里找到</span></h2>
+  <div class="wrap">
+    <table class="matrix">
+      <thead>
+        <tr><th>状态</th><th>触发</th><th>屏内表现</th><th>出路</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>ready（空 query）</td><td>召唤后未输入</td><td>Suggestions / Applications / Commands 分组</td><td>↑↓ + ↵</td></tr>
+        <tr><td>搜索命中</td><td>有 query</td><td>命中字符高亮 + 类型 badge</td><td>↵ 执行 · Tab 补全</td></tr>
+        <tr><td>无本地结果（web 开）</td><td>0 本地命中</td><td>!g 兜底行 + 换引擎行</td><td>↵ 搜索</td></tr>
+        <tr><td>无结果（web 关）</td><td>0 命中且 web 关闭</td><td>诚实空态，不留下死胡同</td><td>ai / ⌘, 开启 web search</td></tr>
+        <tr><td>启动中</td><td>后端健康检查未过</td><td>居中状态 + 恢复键</td><td>⌘R 重启 · ⌘, 日志</td></tr>
+        <tr><td>离线</td><td>网络断开</td><td>banner + 本地可用，联网行禁用</td><td>重连后 Retry</td></tr>
+        <tr><td>AI running</td><td>请求进行中</td><td>流式光标 + 转轮，列表仍可用</td><td>Esc 收起</td></tr>
+        <tr><td>AI done</td><td>完成</td><td>答案 +「已复制」提示</td><td>Esc 只关答案</td></tr>
+        <tr><td>AI 401</td><td>key 失效</td><td>可读原因 + 设置/重试</td><td>⌘, · ⌘R</td></tr>
+        <tr><td>AI 429</td><td>provider 限流</td><td>倒计时，重试禁用</td><td>等待 / 换 provider</td></tr>
+        <tr><td>敏感剪贴板</td><td>检测到凭证</td><td>掩码 + Sensitive badge</td><td>⌘Y 本机揭示后才可复制</td></tr>
+        <tr><td>超长标题</td><td>标题超出 1 行</td><td>省略号，行高不变</td><td>⌘Y 预览完整值</td></tr>
+        <tr><td>结果超上限</td><td>命中 &gt; 12</td><td>12 行封顶 + 底部渐隐 + 计数</td><td>滚动 / 收窄 query</td></tr>
+        <tr><td>输入法组合</td><td>preedit 未上屏</td><td>虚线下划线 + Composing</td><td>Enter / ↑↓ / Tab 归 IME</td></tr>
+        <tr><td>焦点层级</td><td>Tab / ⌘K / Esc</td><td>2px 焦点环，层级可辨</td><td>见第 3 节焦点表</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <nav class="footnav">
+    <a href="states.html">关键状态三联</a>
+    <a href="actions.html">⌘K 次级操作</a>
+    <a href="../DESIGN.md">DESIGN.md</a>
+  </nav>
+
+  <script>
+    document.getElementById('themeBtn').addEventListener('click', () => {
+      document.body.classList.toggle('dark');
+    });
+  </script>
+</body>
+</html>
