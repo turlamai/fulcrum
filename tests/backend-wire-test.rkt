@@ -75,11 +75,16 @@
 (define srv (thread (lambda () (serve server-in server-out))))
 
 (define last-raw (box #""))
-(define (call-rpc id payload)
+;; update-check against the unreachable feed exercises rivet's manifest
+;; transport retry (3 attempts with backoff); on Windows an unlisted
+;; localhost port can DROP instead of refusing, so a single connect can
+;; park for the OS TCP timeout. Those calls pass a wider timeout; the
+;; suite asserts the honest error, not latency.
+(define (call-rpc id payload [timeout-seconds 5])
   (write-frame (frame message:request id (encode-value payload)) client-out)
   (let loop ([events '()])
     (define f
-      (if (sync/timeout 5 client-in)
+      (if (sync/timeout timeout-seconds client-in)
           (let ([f (read-frame client-in)])
             (set-box! last-raw (frame-payload f))
             f)
@@ -284,7 +289,8 @@
   (dynamic-require (build-path fulcrum-root "app" "core" "settings.rkt")
                    'settings-set!))
 (void (settings-set!* manager 'update-base-url "https://127.0.0.1:9/fulcrum"))
-(define-values (ucv uce _ucev) (call-rpc 40 (list "update-check" #t)))
+(define-values (ucv uce _ucev)
+  (call-rpc 40 (list "update-check" #t) 120))
 (check! "update-check no error" uce #f)
 (check! "update-check record shape"
         (and (list? ucv) (= (length ucv) 8) (string? (list-ref ucv 0))
