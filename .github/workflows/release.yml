@@ -619,12 +619,26 @@ jobs:
                 gh api -X DELETE "repos/$GH_REPO/releases/assets/$id" >/dev/null
               fi
             done
+      # Keep the independently verified manifest from the exact draft job;
+      # the promotion job checks it against GitHub-computed asset digests.
+      - name: Retain canonical checksums for draft promotion
+        uses: actions/upload-artifact@v4
+        with:
+          name: fulcrum-public-checksums
+          path: public/SHA256SUMS
+          if-no-files-found: error
+          overwrite: true
 
   publish:
     name: Verify assets and publish release
     needs: github-release
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: fulcrum-public-checksums
+          path: release-verify
       - name: Resolve draft release REST id
         id: release
         env:
@@ -759,6 +773,11 @@ jobs:
             echo "::error::Redundant checksum sidecar or versionless alias leaked to release"
             exit 1
           fi
+          # Compare every uploaded GitHub asset's server-side SHA-256 with
+          # the SHA256SUMS verified before the draft was created. This also
+          # rejects incomplete uploads and any extra files on the draft.
+          printf '%s\n' "$release_json" | \
+            python3 scripts/check_release_uploaded_assets.py "$version" release-verify/SHA256SUMS
           gh api -X PATCH "repos/$GH_REPO/releases/$RELEASE_ID" \
             -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f name="$tag" \
             -F draft=false -F prerelease="$prerelease" \
