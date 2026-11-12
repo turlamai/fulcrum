@@ -10,27 +10,47 @@
 
             <!-- List selection reads as the product accent (#D97706 amber),
                  not the system blue: the launcher rows are the app's face.
-                 Same alpha recipe as the macOS host's inset highlight. -->
+                 Same alpha recipe as the macOS host's inset highlight.
+                 Hover is neutral (docs/design-system.md "Hover row"): amber
+                 hover competed with the amber selection. AccentText is the
+                 readable amber pair (#9A4B06 / #F0A64B, both >= 4.5:1) for
+                 text and glyphs; Mute/Faint are the ink-alpha text tiers. -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver"
-                                     Color="#14D97706" />
+                                     Color="#0D000000" />
                     <SolidColorBrush x:Key="ListViewItemBackgroundSelected"
                                      Color="#24D97706" />
                     <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver"
                                      Color="#2ED97706" />
                     <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed"
                                      Color="#38D97706" />
+                    <SolidColorBrush x:Key="AccentTextBrush"
+                                     Color="#9A4B06" />
+                    <SolidColorBrush x:Key="MuteBrush"
+                                     Color="#A81D1D1F" />
+                    <SolidColorBrush x:Key="FaintBrush"
+                                     Color="#9E1D1D1F" />
+                    <SolidColorBrush x:Key="DangerBrush"
+                                     Color="#D02F26" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver"
-                                     Color="#14D97706" />
+                                     Color="#12FFFFFF" />
                     <SolidColorBrush x:Key="ListViewItemBackgroundSelected"
                                      Color="#24D97706" />
                     <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver"
                                      Color="#2ED97706" />
                     <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed"
                                      Color="#38D97706" />
+                    <SolidColorBrush x:Key="AccentTextBrush"
+                                     Color="#F0A64B" />
+                    <SolidColorBrush x:Key="MuteBrush"
+                                     Color="#A8F2F2F2" />
+                    <SolidColorBrush x:Key="FaintBrush"
+                                     Color="#85F2F2F2" />
+                    <SolidColorBrush x:Key="DangerBrush"
+                                     Color="#FF5449" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>

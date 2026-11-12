@@ -146,7 +146,9 @@ SettingsWindow::SettingsWindow() {
   try {
     SystemBackdrop(mx::Media::MicaBackdrop());
     if (auto appWindow = this->AppWindow()) {
-      appWindow.Resize(winrt::Windows::Graphics::SizeInt32{820, 580});
+      // 720x520 is the shared settings window size (docs/design-system.md);
+      // the older 820x580 drifted from the macOS/GTK hosts.
+      appWindow.Resize(winrt::Windows::Graphics::SizeInt32{720, 520});
     }
     // Keep current-main's Rivet-owned icon fix: passing an EXE path to
     // SetIcon(String) was incorrect, and raw HICON ownership is unsafe.

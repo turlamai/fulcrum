@@ -17,7 +17,11 @@
 #include <cstring>
 #include <map>
 #include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
+// Documents::Run — the highlight inlines (WinUI 3 puts Run in Documents).
+#include <winrt/Microsoft.UI.Xaml.Documents.h>
 #pragma comment(lib, "comctl32.lib")
+// The IME composition guard reads the thread's IMM32 context.
+#pragma comment(lib, "imm32.lib")
 // DrawIconEx/CreateDIBSection/CreateCompatibleDC live in GDI32.
 #pragma comment(lib, "Gdi32.lib")
 #pragma comment(lib, "Shcore.lib")
@@ -41,7 +45,9 @@ constexpr int kTrayMenuUpdates = 5;
 constexpr int kHotkeyIdPrimary = 0xF11C;  // Alt+Space
 constexpr int kHotkeyIdFallback = 0xF11D; // Ctrl+Alt+Space
 constexpr int kWindowWidth = 680;  // WinUI device-independent pixels (96 DPI)
-constexpr int kWindowHeight = 460;
+// Design v2: the panel's height is dynamic (240 empty .. 640 with 12 rows);
+// this is only the empty-state first paint before results arrive.
+constexpr int kWindowHeight = 240;
 
 // WinUI lays out in DIPs, but SetWindowPos receives physical pixels. Use
 // the target monitor's effective DPI, not the DPI of the monitor where the
@@ -229,6 +235,57 @@ winrt::Windows::UI::Color amber_color(BYTE alpha) {
   return winrt::Windows::UI::Color{alpha, kAmberRed, kAmberGreen, kAmberBlue};
 }
 
+// Readable amber for text and glyphs: raw #D97706 fails 4.5:1 on light
+// surfaces. #9A4B06 (light) / #F0A64B (dark) both clear it —
+// docs/design-system.md "Accent text/icons". Rows rebuild on every
+// keystroke, so reading ActualTheme at build time tracks theme switches
+// without extra plumbing.
+winrt::Windows::UI::Color accent_text_color(
+    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
+  if (theme == winrt::Microsoft::UI::Xaml::ElementTheme::Dark) {
+    return winrt::Windows::UI::Color{0xFF, 0xF0, 0xA6, 0x4B};
+  }
+  return winrt::Windows::UI::Color{0xFF, 0x9A, 0x4B, 0x06};
+}
+
+// Neutral hover fill (docs/design-system.md "Hover row"): an amber hover
+// competed with the amber selection.
+winrt::Windows::UI::Color hover_color(
+    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
+  if (theme == winrt::Microsoft::UI::Xaml::ElementTheme::Dark) {
+    return winrt::Windows::UI::Color{0x12, 0xFF, 0xFF, 0xFF};
+  }
+  return winrt::Windows::UI::Color{0x0D, 0x00, 0x00, 0x00};
+}
+
+// IME composition guard (docs/cross-platform-interaction.md): WinUI 3
+// raises KeyDown for keys the IME is still composing — confirming a
+// composition with Enter fires VirtualKey.Enter — and the standard
+// TextBox does not expose its text-edit context. The guard asks the
+// thread's IMM32 context whether a composition string is open; TSF IMEs
+// service that query through the documented compatibility layer.
+// Conservative by construction: it only ever suppresses launcher
+// actions, and when the shim cannot see the composition the behavior is
+// exactly the pre-guard one. GCS_COMPSTR returns >= 0 bytes while a
+// (possibly empty) composition string is open, -1 otherwise.
+bool ime_composition_open(HWND hwnd) {
+  if (hwnd == nullptr) {
+    return false;
+  }
+  if (HIMC context = ::ImmGetContext(hwnd)) {
+    wchar_t buffer[256];
+    const LONG size = ::ImmGetCompositionStringW(
+        context, GCS_COMPSTR, buffer, sizeof(buffer) - sizeof(wchar_t));
+    ::ImmReleaseContext(hwnd, context);
+    // Negative: no open composition (the documented error return). Zero:
+    // an open preedit that carries no text yet — it owns no navigation
+    // keys either, so the guard stays off; the packaged acceptance (en-US
+    // runner, no IME session) proved >= 0 swallows Enter forever.
+    return size > 0;
+  }
+  return false;
+}
+
 // Segoe Fluent Icons codepoints (the FontIcon default font family).
 wchar_t const* row_glyph(rivet_app::ResultRow const& row) {
   if (row.kind == "Calculator") return L"\uE8EF";  // Calculator
@@ -249,7 +306,8 @@ wchar_t const* row_glyph(rivet_app::ResultRow const& row) {
 }
 
 winrt::Microsoft::UI::Xaml::Controls::Border make_chip(
-    std::wstring const& text, float font_size) {
+    std::wstring const& text, float font_size,
+    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
   namespace mx = winrt::Microsoft::UI::Xaml;
   namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
   namespace wum = winrt::Microsoft::UI::Xaml::Media;
@@ -257,7 +315,8 @@ winrt::Microsoft::UI::Xaml::Controls::Border make_chip(
   mxc::TextBlock label;
   label.Text(text);
   label.FontSize(font_size);
-  label.Foreground(wum::SolidColorBrush{amber_color(0xFF)});
+  // Chip glyphs are text: the readable amber pair, not the raw accent.
+  label.Foreground(wum::SolidColorBrush{accent_text_color(theme)});
   label.VerticalAlignment(mx::VerticalAlignment::Center);
 
   mxc::Border chip;
@@ -340,9 +399,96 @@ winrt::Microsoft::UI::Xaml::Media::Imaging::WriteableBitmap shell_app_icon(
 struct RowContent {
   winrt::Microsoft::UI::Xaml::Controls::Grid root{nullptr};
   winrt::Microsoft::UI::Xaml::Controls::Border enter_chip{nullptr};
+  // Selection/focus ring: 1.5px inset in the actions layer, 2px focus
+  // ring while the list owns keyboard focus (design v2).
+  winrt::Microsoft::UI::Xaml::Controls::Border selection_ring{nullptr};
 };
 
-RowContent build_row_content(rivet_app::ResultRow const& row) {
+// Hit ranges from the meta column: `t:` (title) or `s:` (subtitle),
+// comma-separated start-len runs in Unicode code points. std::wstring
+// indexes UTF-16 units — identical for BMP text, which CJK queries are.
+std::vector<std::pair<std::size_t, std::size_t>> meta_ranges(
+    std::string const& meta, char field) {
+  std::vector<std::pair<std::size_t, std::size_t>> out;
+  std::string const key = std::string(1, field) + ":";
+  std::size_t cursor = 0;
+  while (cursor < meta.size()) {
+    auto semicolon = meta.find(';', cursor);
+    auto part = meta.substr(cursor, semicolon == std::string::npos
+                                         ? std::string::npos
+                                         : semicolon - cursor);
+    if (part.rfind(key, 0) == 0) {
+      std::size_t pc = key.size();  // skip the "t:"/"s:" key prefix
+      while (pc < part.size()) {
+        auto comma = part.find(',', pc);
+        auto piece = part.substr(pc, comma == std::string::npos
+                                         ? std::string::npos
+                                         : comma - pc);
+        auto dash = piece.find('-');
+        if (dash != std::string::npos) {
+          out.emplace_back(static_cast<std::size_t>(std::stoul(piece.substr(0, dash))),
+                           static_cast<std::size_t>(std::stoul(piece.substr(dash + 1))));
+        }
+        if (comma == std::string::npos) break;
+        pc = comma + 1;
+      }
+    }
+    if (semicolon == std::string::npos) break;
+    cursor = semicolon + 1;
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+bool meta_sensitive(std::string const& meta) {
+  return meta.find("x:sensitive") != std::string::npos;
+}
+
+// Renders a field with the matched runs in the readable amber at semibold
+// — color + weight double cue, never a background fill (design v2). A
+// field without ranges keeps the plain text path.
+void fill_highlighted(
+    winrt::Microsoft::UI::Xaml::Controls::TextBlock& block,
+    std::wstring const& text,
+    std::vector<std::pair<std::size_t, std::size_t>> const& ranges,
+    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
+  namespace mx = winrt::Microsoft::UI::Xaml;
+  namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
+  // Run lives in Documents, not Controls, in WinUI 3.
+  namespace mxd = winrt::Microsoft::UI::Xaml::Documents;
+  namespace wum = winrt::Microsoft::UI::Xaml::Media;
+  if (ranges.empty()) {
+    block.Text(text);
+    return;
+  }
+  std::size_t cursor = 0;
+  for (auto const& [start, length] : ranges) {
+    if (start < cursor || start >= text.size()) continue;
+    auto const begin = start;
+    auto const end = std::min(start + length, text.size());
+    if (begin > cursor) {
+      mxd::Run plain;
+      plain.Text(text.substr(cursor, begin - cursor));
+      block.Inlines().Append(plain);
+    }
+    mxd::Run hit;
+    hit.Text(text.substr(begin, end - begin));
+    hit.FontWeight({600});
+    hit.Foreground(wum::SolidColorBrush{accent_text_color(theme)});
+    block.Inlines().Append(hit);
+    cursor = end;
+  }
+  if (cursor < text.size()) {
+    mxd::Run plain;
+    plain.Text(text.substr(cursor));
+    block.Inlines().Append(plain);
+  }
+}
+
+RowContent build_row_content(
+    rivet_app::ResultRow const& row,
+    winrt::Microsoft::UI::Xaml::ElementTheme theme,
+    std::wstring const& sensitive_label) {
   namespace mx = winrt::Microsoft::UI::Xaml;
   namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
   namespace wum = winrt::Microsoft::UI::Xaml::Media;
@@ -350,9 +496,10 @@ RowContent build_row_content(rivet_app::ResultRow const& row) {
   mxc::Grid root;
   root.Margin({12, 7, 12, 7});
 
-  std::array<mx::GridLength, 4> const widths = {
+  std::array<mx::GridLength, 5> const widths = {
       mx::GridLengthHelper::Auto(),
       mx::GridLengthHelper::FromValueAndType(1, mx::GridUnitType::Star),
+      mx::GridLengthHelper::Auto(),
       mx::GridLengthHelper::Auto(),
       mx::GridLengthHelper::Auto()};
   for (auto const& width : widths) {
@@ -379,6 +526,8 @@ RowContent build_row_content(rivet_app::ResultRow const& row) {
     mxc::FontIcon icon;
     icon.Glyph(row_glyph(row));
     icon.FontSize(14);
+    // Tile glyphs are icons: readable amber pair on the amber 12% tile.
+    icon.Foreground(wum::SolidColorBrush{accent_text_color(theme)});
     mxc::Border icon_tile;
     icon_tile.Width(28);
     icon_tile.Height(28);
@@ -394,15 +543,19 @@ RowContent build_row_content(rivet_app::ResultRow const& row) {
   // Title + muted subtitle stacked.
   auto const& subtitle = row.subtitle.empty() ? row.kind : row.subtitle;
   mxc::TextBlock title;
-  title.Text(to_wide(row.title));
-  title.FontSize(13.5);
-  title.FontWeight({600});
+  title.FontSize(13);
+  title.FontWeight({500});
   title.TextTrimming(mx::TextTrimming::CharacterEllipsis);
   title.MaxLines(1);
+  fill_highlighted(title, to_wide(row.title), meta_ranges(row.meta, 't'),
+                   theme);
   mxc::TextBlock subtitle_label;
-  subtitle_label.Text(to_wide(subtitle));
   subtitle_label.FontSize(11.5);
-  subtitle_label.Opacity(0.6);
+  subtitle_label.Opacity(0.66);
+  subtitle_label.TextTrimming(mx::TextTrimming::CharacterEllipsis);
+  subtitle_label.MaxLines(1);
+  fill_highlighted(subtitle_label, to_wide(subtitle),
+                   meta_ranges(row.meta, 's'), theme);
   subtitle_label.TextTrimming(mx::TextTrimming::CharacterEllipsis);
   subtitle_label.MaxLines(1);
   mxc::StackPanel texts;
@@ -414,20 +567,41 @@ RowContent build_row_content(rivet_app::ResultRow const& row) {
   mx::Controls::Grid::SetColumn(texts, 1);
   root.Children().Append(texts);
 
+  if (meta_sensitive(row.meta)) {
+    // Masked credential row (design v2 invariant 9): the raw text never
+    // reached the wire; the badge names the mask.
+    auto sensitive = make_chip(sensitive_label, 10, theme);
+    sensitive.Margin({0, 0, 8, 0});
+    mx::Controls::Grid::SetColumn(sensitive, 2);
+    root.Children().Append(sensitive);
+  }
+
   if (!row.badge.empty()) {
-    auto badge = make_chip(to_wide(row.badge), 10);
+    auto badge = make_chip(to_wide(row.badge), 10, theme);
     badge.Margin({0, 0, 8, 0});
-    mx::Controls::Grid::SetColumn(badge, 2);
+    mx::Controls::Grid::SetColumn(badge, 3);
     root.Children().Append(badge);
   }
 
   // ↵ affordance: only the selected row shows it (UpdateEnterChips).
-  auto enter_chip = make_chip(L"\u21B5", 11);
+  auto enter_chip = make_chip(L"\u21B5", 11, theme);
   enter_chip.Visibility(mx::Visibility::Collapsed);
-  mx::Controls::Grid::SetColumn(enter_chip, 3);
+  mx::Controls::Grid::SetColumn(enter_chip, 4);
   root.Children().Append(enter_chip);
 
-  return {root, enter_chip};
+  // Selection/focus ring, laid over the whole row. Hidden by default;
+  // UpdateEnterChips reveals it on the selected row in the actions layer
+  // (1.5px inset) and while the list owns keyboard focus (2px).
+  mxc::Border selection_ring;
+  selection_ring.CornerRadius({8, 8, 8, 8});
+  selection_ring.BorderBrush(wum::SolidColorBrush{accent_text_color(theme)});
+  selection_ring.BorderThickness({2, 2, 2, 2});
+  selection_ring.IsHitTestVisible(false);
+  selection_ring.Visibility(mx::Visibility::Collapsed);
+  mx::Controls::Grid::SetColumnSpan(selection_ring, 5);
+  root.Children().Append(selection_ring);
+
+  return {root, enter_chip, selection_ring};
 }
 
 // ---- hotkey grammar -------------------------------------------------------
@@ -1059,6 +1233,16 @@ void MainWindow::FinishNativeSetup() {
   // The ↵ chip follows the list selection.
   ResultsList().SelectionChanged(
       [this](auto&&, auto&&) { UpdateEnterChips(); });
+  // The results list is one tab stop as a whole; while it owns keyboard
+  // focus the selected row carries the 2px accent-text focus ring.
+  ResultsList().GotFocus([this](auto&&, auto&&) {
+    list_has_focus_ = true;
+    UpdateEnterChips();
+  });
+  ResultsList().LostFocus([this](auto&&, auto&&) {
+    list_has_focus_ = false;
+    UpdateEnterChips();
+  });
 
   // Overlay chrome: resizable off, not shown in taskbar/alt-tab, topmost,
   // positioned at the top quarter of the work area — all plain Win32 so we
@@ -1488,6 +1672,7 @@ void MainWindow::ApplyHotkey(std::string const& spec) {
 }
 
 void MainWindow::ApplyAiStream(rivet_app::AiStream const& stream) {
+  UpdatePanelHeight();
   if (stream.phase == "idle") {
     DismissAiPanel();
     return;
@@ -1505,10 +1690,12 @@ void MainWindow::ApplyAiStream(rivet_app::AiStream const& stream) {
 }
 
 void MainWindow::DismissAiPanel() {
+  UpdatePanelHeight();
   AiPanel().Visibility(winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
 }
 
 void MainWindow::ApplyPluginDetail(rivet_app::DetailView const& view) {
+  UpdatePanelHeight();
   DetailPanel().Visibility(winrt::Microsoft::UI::Xaml::Visibility::Visible);
   DetailText().Text(to_wide(view.text));
   auto items = winrt::single_threaded_observable_vector<winrt::hstring>();
@@ -1521,6 +1708,7 @@ void MainWindow::ApplyPluginDetail(rivet_app::DetailView const& view) {
 }
 
 void MainWindow::DismissDetailPanel() {
+  UpdatePanelHeight();
   DetailPanel().Visibility(winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
 }
 
@@ -1599,16 +1787,56 @@ void MainWindow::QueryBox_KeyDown(
   // ⌘K equivalent: Ctrl+K opens the selected row's secondary actions.
   // Plain Win32 state read: the WinUI InputKeyboardSource projection is
   // not worth its include surface for one modifier check.
-  if (args.Key() == winrt::Windows::System::VirtualKey::K &&
-      (::GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) {
+  const bool ctrl_down = (::GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+  const bool shift_down = (::GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+  // IME composition guard (docs/cross-platform-interaction.md): while a
+  // composition session is open, Enter/arrows/Tab/Esc/Ctrl+K belong to
+  // the IME — no execution, no selection move, no layer change; the
+  // first Esc cancels only the composition. Fall through without
+  // touching the key.
+  if (IsImeComposing()) {
+    switch (args.Key()) {
+      case winrt::Windows::System::VirtualKey::Enter:
+      case winrt::Windows::System::VirtualKey::Up:
+      case winrt::Windows::System::VirtualKey::Down:
+      case winrt::Windows::System::VirtualKey::Tab:
+      case winrt::Windows::System::VirtualKey::Escape:
+        return;
+      case winrt::Windows::System::VirtualKey::K:
+        if (ctrl_down) return;
+        break;
+      default:
+        break;
+    }
+  }
+  if (args.Key() == winrt::Windows::System::VirtualKey::K && ctrl_down) {
     ShowActionsForSelection();
+    args.Handled(true);
+    return;
+  }
+  // Ctrl+Y reveals the selected masked clipboard row (local-only RPC).
+  if (args.Key() == winrt::Windows::System::VirtualKey::Y && ctrl_down) {
+    RevealSensitiveSelection();
     args.Handled(true);
     return;
   }
   switch (args.Key()) {
     case winrt::Windows::System::VirtualKey::Tab:
-      // Autocomplete the selected row's title into the query field.
+      // Shift+Tab returns to the query — strictly reversed, never
+      // skipping layers.
+      if (shift_down) {
+        QueryBox().Focus(
+            winrt::Microsoft::UI::Xaml::FocusState::Programmatic);
+        args.Handled(true);
+        break;
+      }
+      // Autocomplete the selected row's title into the query field;
+      // with nothing to complete, focus moves to the results list — the
+      // second tab stop as a whole (design v2 focus contract).
       if (actions_mode_) {
+        ResultsList().Focus(
+            winrt::Microsoft::UI::Xaml::FocusState::Keyboard);
+        args.Handled(true);
         break;
       }
       if (auto const index = ResultsList().SelectedIndex();
@@ -1616,6 +1844,9 @@ void MainWindow::QueryBox_KeyDown(
         QueryBox().Text(to_wide(rows_[static_cast<std::size_t>(index)].title));
         QueryBox().Focus(
             winrt::Microsoft::UI::Xaml::FocusState::Programmatic);
+      } else {
+        ResultsList().Focus(
+            winrt::Microsoft::UI::Xaml::FocusState::Keyboard);
       }
       args.Handled(true);
       break;
@@ -1716,10 +1947,20 @@ winrt::fire_and_forget MainWindow::SearchAsync(std::wstring const& query) {
   }
 }
 
-void MainWindow::ApplyActions(std::vector<rivet_app::ResultRow> rows) {
-  ApplyResults(std::move(rows));
-  actions_mode_ = true;  // ApplyResults resets it; the actions stay up.
+void MainWindow::ApplyActions(std::vector<rivet_app::ResultRow> rows,
+                              rivet_app::ResultRow const& parent) {
+  ApplyResults(std::move(rows), /*actions=*/true);
   HintBar().Text(t("navigationHintActions"));
+  UpdatePanelHeight();
+  // Mode bar: the layer's exit pill and the row it acts on — "which
+  // layer am I in" is visible, not read (design v2).
+  ActionsModeTitle().Text(std::wstring(t("actionsLabel")) + L" " +
+                          to_wide(parent.title));
+  ActionsModeBadge().Text(to_wide(parent.badge));
+  ActionsModeBadge().Visibility(
+      parent.badge.empty() ? winrt::Microsoft::UI::Xaml::Visibility::Collapsed
+                           : winrt::Microsoft::UI::Xaml::Visibility::Visible);
+  ActionsModebar().Visibility(winrt::Microsoft::UI::Xaml::Visibility::Visible);
 }
 
 namespace {
@@ -1743,8 +1984,9 @@ bool rows_identical(std::vector<rivet_app::ResultRow> const& a,
 
 }  // namespace
 
-void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
-  actions_mode_ = false;
+void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows,
+                              bool actions) {
+  actions_mode_ = actions;
   // A revision-driven re-run usually returns exactly the rows on screen.
   // Rebuilding anyway cleared the whole ListView — the launcher jumped and
   // the selection snapped back to the top on every catalog batch.
@@ -1752,23 +1994,55 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
     return;
   }
   // When the rebuild is real, keep the user's selection if the selected
-  // row survived the update.
+  // row survived the update. Esc-from-actions restore wins: the
+  // originating row comes back by item id, never the first row.
   std::string selected_id;
   std::string selected_arg;
-  auto const previous = ResultsList().SelectedIndex();
-  if (previous >= 0 && previous < static_cast<int>(rows_.size())) {
-    selected_id = rows_[static_cast<std::size_t>(previous)].id;
-    selected_arg = rows_[static_cast<std::size_t>(previous)].arg;
+  if (!pending_restore_id_.empty()) {
+    selected_id = pending_restore_id_;
+    selected_arg = pending_restore_arg_;
+    pending_restore_id_.clear();
+    pending_restore_arg_.clear();
+  } else {
+    auto const previous = ResultsList().SelectedIndex();
+    if (previous >= 0 && previous < static_cast<int>(rows_.size())) {
+      selected_id = rows_[static_cast<std::size_t>(previous)].id;
+      selected_arg = rows_[static_cast<std::size_t>(previous)].arg;
+    }
   }
   rows_ = std::move(rows);
   auto items = ResultsList().Items();
   items.Clear();
   enter_chips_.clear();
+  selection_rings_.clear();
+  auto const sensitive_label = t("sensitiveBadge");  // t() already returns wstring
   for (auto const& row : rows_) {
-    auto content = build_row_content(row);
+    auto content = build_row_content(row, ResultsList().ActualTheme(),
+                                     sensitive_label);
     enter_chips_.push_back(content.enter_chip);
+    selection_rings_.push_back(content.selection_ring);
     winrt::Microsoft::UI::Xaml::Controls::ListViewItem item;
     item.Content(content.root);
+    if (actions) {
+      // Actions layer: selection reads as the neutral hover plus the
+      // 1.5px inset accent-text ring, not the amber fill — "which layer
+      // am I in" is visible, not read. ThemeResource resolves through
+      // the element's own resources first, so per-item overrides swap
+      // the selection brushes for this container only.
+      namespace wum = winrt::Microsoft::UI::Xaml::Media;
+      auto const hover = wum::SolidColorBrush{
+          hover_color(ResultsList().ActualTheme())};
+      auto const transparent = wum::SolidColorBrush{
+          winrt::Windows::UI::Color{0x00, 0, 0, 0}};
+      item.Resources().Insert(
+          winrt::box_value(L"ListViewItemBackgroundSelected"), hover);
+      item.Resources().Insert(
+          winrt::box_value(L"ListViewItemBackgroundSelectedPointerOver"),
+          hover);
+      item.Resources().Insert(
+          winrt::box_value(L"ListViewItemBackgroundSelectedPressed"),
+          transparent);
+    }
     items.Append(item);
   }
   if (!rows_.empty()) {
@@ -1789,6 +2063,7 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
     ResultsList().SelectedIndex(-1);
   }
   UpdateEnterChips();
+  UpdatePanelHeight();
   if (!startup_presented_) {
     startup_presented_ = true;
     // Login-run stays resident in the tray/hotkey, without flashing the UI.
@@ -1801,10 +2076,105 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
 void MainWindow::UpdateEnterChips() {
   auto const selected = ResultsList().SelectedIndex();
   for (std::size_t i = 0; i < enter_chips_.size(); ++i) {
+    const bool is_selected = static_cast<int>(i) == selected;
     enter_chips_[i].Visibility(
-        static_cast<int>(i) == selected
-            ? winrt::Microsoft::UI::Xaml::Visibility::Visible
-            : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
+        is_selected ? winrt::Microsoft::UI::Xaml::Visibility::Visible
+                    : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
+    if (i < selection_rings_.size()) {
+      // Actions layer: the 1.5px inset ring marks the selected action;
+      // outside it the ring is the 2px focus ring and only shows while
+      // the list owns keyboard focus. Focus and selection stay two
+      // different visuals in normal mode.
+      const bool ring = is_selected && (actions_mode_ || list_has_focus_);
+      selection_rings_[i].BorderThickness(actions_mode_
+                                              ? winrt::Microsoft::UI::Xaml::
+                                                    ThicknessHelper::FromUniformLength(1.5)
+                                              : winrt::Microsoft::UI::Xaml::
+                                                    ThicknessHelper::FromUniformLength(2));
+      selection_rings_[i].Visibility(
+          ring ? winrt::Microsoft::UI::Xaml::Visibility::Visible
+               : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
+    }
+  }
+}
+
+bool MainWindow::IsImeComposing() {
+  return ime_composition_open(WindowHandle());
+}
+
+void MainWindow::ActionsBack_Click(
+    winrt::Windows::Foundation::IInspectable const&,
+    winrt::Microsoft::UI::Xaml::RoutedEventArgs const&) {
+  CloseActions();
+}
+
+void MainWindow::RevealSensitiveSelection() {
+  auto const index = ResultsList().SelectedIndex();
+  if (index < 0 || index >= static_cast<int>(rows_.size()) || api_ == nullptr ||
+      actions_mode_) {
+    return;
+  }
+  auto const row = rows_[static_cast<std::size_t>(index)];
+  if (!meta_sensitive(row.meta)) {
+    return;
+  }
+  auto const dispatcher = DispatcherQueue();
+  auto const weak = get_weak();
+  auto api = api_;
+  std::thread([weak, api, dispatcher, row]() mutable {
+    try {
+      auto const raw = api->clipboard_reveal(row.arg).get();
+      dispatcher.TryEnqueue([weak, row, raw]() mutable {
+        if (auto window = weak.get()) {
+          window->ApplyReveal(row, raw);
+        }
+      });
+    } catch (...) {
+      // Reveal is best-effort: the masked row simply stays masked.
+    }
+  }).detach();
+}
+
+void MainWindow::ApplyReveal(rivet_app::ResultRow const& row,
+                             std::string const& raw) {
+  for (auto& r : rows_) {
+    if (r.id == row.id && r.arg == row.arg && r.title == row.title) {
+      auto text = raw;
+      std::replace(text.begin(), text.end(), '\n', ' ');
+      if (text.size() > 120) {
+        text = text.substr(0, 120) + "\u2026";
+      }
+      r.title = text;
+      break;
+    }
+  }
+  // Rebuild the one row's content by repopulating the list; the selection
+  // preserves by id/arg and the raw text lives in host memory only.
+  ApplyResults(rows_, actions_mode_);
+}
+
+void MainWindow::UpdatePanelHeight() {
+  // Design v2: 680 wide; height grows with the result count — 240 empty,
+  // 12 visible rows / 640 max — plus the overlays that are up. The top
+  // edge stays put; only the bottom edge moves.
+  int const rows = std::clamp(static_cast<int>(rows_.size()), 0, 12);
+  double h = 49.0 + rows * 46.0 + 16.0 + 31.0 + 4.0;
+  if (actions_mode_) {
+    h += 30.0;
+  }
+  if (AiPanel().Visibility() == winrt::Microsoft::UI::Xaml::Visibility::Visible) {
+    h += 175.0;
+  }
+  if (DetailPanel().Visibility() ==
+      winrt::Microsoft::UI::Xaml::Visibility::Visible) {
+    h += 185.0;
+  }
+  h = std::clamp(h, 240.0, 640.0);
+  UINT const dpi = ::GetDpiForWindow(WindowHandle());
+  if (auto appWindow = AppWindow()) {
+    appWindow.Resize(
+        {::MulDiv(kWindowWidth, static_cast<int>(dpi), 96),
+         ::MulDiv(static_cast<int>(h), static_cast<int>(dpi), 96)});
   }
 }
 
@@ -1827,6 +2197,8 @@ void MainWindow::ShowActionsForSelection() {
   }
   auto const row = rows_[static_cast<std::size_t>(index)];
   search_rows_ = rows_;
+  actions_parent_id_ = row.id;
+  actions_parent_arg_ = row.arg;
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto api = api_;
@@ -1839,9 +2211,9 @@ void MainWindow::ShowActionsForSelection() {
       for (auto const& cells : raw_actions) {
         actions.push_back(rivet_app::ResultRow::from(cells));
       }
-      dispatcher.TryEnqueue([weak, actions = std::move(actions)]() mutable {
+      dispatcher.TryEnqueue([weak, actions = std::move(actions), row]() mutable {
         if (auto window = weak.get()) {
-          window->ApplyActions(std::move(actions));
+          window->ApplyActions(std::move(actions), row);
           if (window->rows_.empty()) {
             window->SetStatusError(t("noSecondaryActions"));
           }
@@ -1859,10 +2231,16 @@ void MainWindow::ShowActionsForSelection() {
 }
 
 void MainWindow::CloseActions() {
+  // Esc restores the originating row by item id — never the first row;
+  // a row filtered away falls back to the primary action.
+  pending_restore_id_ = actions_parent_id_;
+  pending_restore_arg_ = actions_parent_arg_;
   actions_mode_ = false;
   auto saved = std::move(search_rows_);
   search_rows_.clear();
   ApplyResults(std::move(saved));
+  ActionsModebar().Visibility(
+      winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
   HintBar().Text(t("navigationHint"));
   QueryBox().Focus(winrt::Microsoft::UI::Xaml::FocusState::Programmatic);
 }

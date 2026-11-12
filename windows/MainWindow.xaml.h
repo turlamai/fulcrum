@@ -24,6 +24,9 @@ struct ResultRow {
   std::string icon;
   std::string hint;
   std::string badge;
+  // Optional 9th wire column (design v2): hit-highlight ranges (t:/s:,
+  // code-point start-len runs) and the sensitive flag (x:sensitive).
+  std::string meta;
 
   static ResultRow from(std::vector<std::string> const& cells) {
     ResultRow row;
@@ -36,6 +39,9 @@ struct ResultRow {
       row.icon = cells[5];
       row.hint = cells[6];
       row.badge = cells[7];
+      if (cells.size() >= 9) {
+        row.meta = cells[8];
+      }
     }
     return row;
   }
@@ -78,7 +84,22 @@ struct MainWindow : MainWindowT<MainWindow> {
   // secondary actions; Esc walks back to the search rows.
   void ShowActionsForSelection();
   void CloseActions();
-  void ApplyActions(std::vector<rivet_app::ResultRow> rows);
+  void ApplyActions(std::vector<rivet_app::ResultRow> rows,
+                    rivet_app::ResultRow const& parent);
+  // Mode bar esc pill: same path as the Esc key.
+  void ActionsBack_Click(winrt::Windows::Foundation::IInspectable const&,
+                         winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  // Ctrl+Y on a masked clipboard row: fetch the raw text through the
+  // local-only clipboard-reveal RPC and swap it into the on-screen row.
+  // Reveal lives in host memory until the next result rebuild.
+  void RevealSensitiveSelection();
+  void ApplyReveal(rivet_app::ResultRow const& row, std::string const& raw);
+  // Design v2 panel sizing: 680 wide, height grows with the result count
+  // (240 empty, 12 rows / 640 max) plus the overlays that are up.
+  void UpdatePanelHeight();
+  // IME composition guard: true while the thread's IMM32 context reports
+  // an open composition string (docs/cross-platform-interaction.md).
+  bool IsImeComposing();
 
   // Host-side helpers shared by the event handler and the hotkey flow.
   void WriteClipboardText(std::wstring const& text);
@@ -113,7 +134,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   void HideLauncher();
   void ApplyLanguage();
   void MoveSelection(int delta);
-  void ApplyResults(std::vector<rivet_app::ResultRow> rows);
+  void ApplyResults(std::vector<rivet_app::ResultRow> rows,
+                    bool actions = false);
   // Fires 400ms after the last revision push: re-runs the visible query.
   void OnRevisionTimerTick(winrt::Windows::Foundation::IInspectable const&,
                            winrt::Windows::Foundation::IInspectable const&);
@@ -159,6 +181,10 @@ struct MainWindow : MainWindowT<MainWindow> {
   // Per-row ↵ affordance chips, parallel to rows_ (strong refs; the list
   // owns the visual tree so these stay alive with it).
   std::vector<winrt::Microsoft::UI::Xaml::Controls::Border> enter_chips_;
+  // Per-row selection/focus rings, parallel to rows_: the 1.5px inset
+  // ring marks the selected action in the actions layer, and keyboard
+  // focus on the selected row while the list owns focus.
+  std::vector<winrt::Microsoft::UI::Xaml::Controls::Border> selection_rings_;
   std::atomic<std::uint64_t> search_generation_{0};
   // Coalesces bursts of search-revision pushes into one query re-run.
   // The initial catalog build nudges about once a second; repainting per
@@ -175,6 +201,15 @@ struct MainWindow : MainWindowT<MainWindow> {
   // search_rows_ remembers the live result list.
   bool actions_mode_{false};
   std::vector<rivet_app::ResultRow> search_rows_;
+  // The originating row of the actions layer: Esc restores it by item id,
+  // never the first row.
+  std::string actions_parent_id_;
+  std::string actions_parent_arg_;
+  std::string pending_restore_id_;
+  std::string pending_restore_arg_;
+  // True while the results list owns keyboard focus (design v2 focus
+  // contract: focus and selection are two different visuals).
+  bool list_has_focus_{false};
   // Expansion state (all touched on the UI thread: the LL hook delivers
   // on the thread that installed it).
   bool expansion_enabled_{true};
