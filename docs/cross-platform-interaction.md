@@ -4,6 +4,11 @@ Fulcrum has one product interaction grammar rendered by three native hosts.
 AppKit, WinUI and GTK may use their platform materials and system integration,
 but those mechanisms must not change what the launcher does.
 
+This file is aligned to the v2 design baseline (`design/DESIGN.md`, commit
+`0ca2178`): accent split into fill vs text tokens, neutral hover, dynamic
+panel height, hit highlighting, the IME composition guard, the focus contract
+and masked sensitive clipboard rows.
+
 ## Required launcher behavior
 
 | Interaction | macOS | Windows | Linux |
@@ -13,18 +18,41 @@ but those mechanisms must not change what the launcher does.
 | Focus after first activation | Hide when focus leaves Fulcrum, except while an owned dialog is active | Same | Same, with a short pointer/WM handoff debounce |
 | Pointer on result | One click selects; double click executes | Same | Same |
 | Keyboard on result | Up/Down select, Enter executes, Tab completes, Command/Ctrl+K opens actions | Same, using Ctrl | Same, using Ctrl |
-| Escape ladder | actions → detail → AI → clear query → hide | Same | Same |
+| IME composition guard | While a composition session is open (preedit visible), Enter/Up/Down/Tab belong to the IME: no execution, no selection move, no completion; the first Esc cancels only the composition. Guard reads the query field editor's marked range inside the local key monitor | Same rule; the query TextBox's key path must not act on keys the IME owns — the platform routes composition keys to the IME, verified by a composition test, with an explicit guard added only if any key leaks through | Same rule; the window key controller must not sit at the capture phase ahead of the IM context, and the guard gates on the GtkIMContext preedit state |
+| Escape ladder | actions → detail → AI → clear query → hide; leaving the actions layer returns to the originating row (by item id, never the first row) | Same | Same |
 
 The pre-activation distinction is deliberate: a freshly presented panel may be
 visible before GNOME grants it focus. Focus-loss dismissal is armed only after
 the panel has been active once, otherwise the summon operation can erase itself.
 
+## Focus contract
+
+- Tab order is query → result list (the list is one tab stop as a whole) → back
+  to the query; Tab-completion and the Escape ladder keep their meanings above.
+- Command/Ctrl+K moves focus to the first action row; Esc leaves the actions
+  layer by restoring focus to the originating row.
+- Focus is a 2 px accent-text ring inset −2 px on every host. Focus and
+  selection are two different visuals: hover is a neutral tint, selection is the
+  amber fill (or the 1.5 px inset ring inside the actions layer), and the ring
+  marks keyboard focus independently of both.
+
 ## Shared visual and language grammar
 
-- The panel is 680×460, uses amber `#D97706`, 44-point result rows, an inset
-  rounded selection, a leading semantic icon and a trailing badge/Enter chip.
+- The panel is 680 wide with a height that grows with results (240–640, capped
+  at 12 visible rows), uses the amber family — `#D97706` for fills and
+  `#9A4B06`/`#F0A64B` (light/dark) for text and icons — 44-point result rows, an
+  inset rounded selection, a leading semantic icon and a trailing badge/Enter
+  chip. Values live in [design-system.md](design-system.md).
+- Query matches are visibly marked inside result rows (accent-text, weight 650,
+  no background): a hit that is merely present but never marked makes users
+  guess why a row matched. The backend supplies match offsets with the row.
+- Clipboard rows whose content looks like a credential arrive masked and carry a
+  `Sensitive` badge. Reveal is local-only via Command/Ctrl+Y on the selected
+  row; copying is allowed only after reveal, and neither the reveal event nor
+  the content is ever logged or synced.
 - Application rows should use the real application icon when the platform can
-  resolve it. Other kinds use distinct semantic icons; Calculator and AI must
+  resolve it. Other kinds use distinct 2 px-stroke linear glyphs from one icon
+  family; text characters must not stand in for icons; Calculator and AI must
   never share a glyph.
 - The query placeholder, status/phase labels, detail heading, footer hints,
   settings labels, common Open/Settings/Updates/About/Quit entries and recovery
@@ -64,8 +92,18 @@ Each packaged-host acceptance suite exercises the same observable sequence:
 2. after one second, assert the panel is visible and the query owns focus;
 3. type `12*12` through the native keyboard path and observe result `144`;
 4. execute the selected row and verify the native side effect;
-5. cover the Escape ladder and post-activation focus-loss policy in host tests;
-6. switch language and assert visible launcher chrome changes immediately.
+5. cover the Escape ladder, post-activation focus-loss policy and the tab/focus
+   contract in host tests;
+6. switch language and assert visible launcher chrome changes immediately;
+7. assert hit characters are marked in the result row for the `12*12` query;
+8. assert the composition guard: with an open IME session, Enter/Up/Down/Tab
+   reach the IME only (mechanism-specific supplement per the table above);
+9. assert a credential-like clipboard row renders masked with a `Sensitive`
+   badge and reveals only on Command/Ctrl+Y.
+
+Design-state parity for these cases is referenced against the prototype matrix
+in `design/prototype/audit.html`; new states enter that matrix before hosts
+implement them.
 
 Mechanism-specific tests supplement this sequence: X11 tests inject the real
 chord on a private X server; Wayland acceptance calls the exact activation
