@@ -26,23 +26,19 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 - **原生材质，家族皮肤**：blur/acrylic/vibrancy 是平台机制，玻璃底 + amber 家族色是契约；无 compositor 的 Linux 会话用 ≥98% 不透明底——清晰优先于透明。
 - **层级克制**：glass 一层表面 + 发丝线分隔足够，不用阴影堆叠表达层级；accent 只给选中、行图标、badge、↵ chip 与进行态。
 
-## Tokens（与实现 1:1）
+## Tokens（语义；值不在此复制）
 
-| Token | Light | Dark | 用途 |
-|---|---|---|---|
-| `--glass` | `rgba(250,250,249,.98)` | `rgba(28,28,30,.98)` | 面板玻璃底（GTK 值；macOS vibrancy / Windows acrylic 以此为基线） |
-| `--ink` | `#1d1d1f` | `#f2f2f2` | 主文字 |
-| `--mute` | `rgba(29,29,31,.66)` | `rgba(242,242,242,.66)` | 行副标题 / hint（macOS secondary） |
-| `--faint` | `rgba(29,29,31,.62)` | `rgba(242,242,242,.52)` | status line / 最弱文字（≥4.5:1） |
-| `--line` | `rgba(0,0,0,.10)` | `rgba(255,255,255,.10)` | 面板描边 |
-| `--hairline` | `rgba(0,0,0,.08)` | `rgba(255,255,255,.08)` | 分隔线 |
-| `--accent` | `#D97706` | `#D97706` | 色块用 amber：选中底、tile 底、switch、caret、spin |
-| `--accent-text` | `#9A4B06` | `#F0A64B` | 文字/图标用 amber：badge、↵ chip、标题、选中侧栏项、tile 图标（亮暗各自 ≥4.5:1） |
-| `--sel` | `rgba(217,119,6,.14)` | 同 | 选中行底 |
-| `--hover` | `rgba(0,0,0,.05)` | `rgba(255,255,255,.07)` | 悬浮行底（中性，不与选中抢 amber） |
-| `--tile` | `rgba(217,119,6,.12)` | 同 | 图标 tile 底 |
-| `--badge` | `rgba(217,119,6,.14)` | 同 | badge / ↵ chip 底 |
-| `--danger` | `#d02f26` | `#ff5449` | 仅错误与破坏性操作（源自系统红） |
+值类 token 真源 = 现行实现（`docs/design-system.md` 契约基线 · `macos-host/Sources/RivetHost/ContentView.swift` macOS 字号与 alpha · `linux/src/main.cpp` GTK 玻璃底亮暗值 · `windows/App.xaml` + `windows/MainWindow.xaml` XAML amber 层级）；原型 `design/prototype/shared.css` 与实现值一一对应，本表只记语义与层级。
+
+| Token | 语义 |
+|---|---|
+| `--glass` | 面板玻璃底（GTK 值；macOS vibrancy / Windows acrylic 以此为基线） |
+| `--ink --mute --faint` | 主文字 / 行副标题 hint / status line 三档（faint ≥4.5:1） |
+| `--line --hairline` | 面板描边 / 分隔线 |
+| `--accent` | amber 色块专用：选中底、tile 底、switch、caret、spin |
+| `--accent-text` | amber 文字/图标专用：badge、↵ chip、标题、选中侧栏项、tile 图标（亮暗各自 ≥4.5:1） |
+| `--sel --hover --tile --badge` | 选中行 / 中性悬浮（不与 amber 抢）/ 图标 tile / badge·↵ chip 底 |
+| `--danger` | 仅错误与破坏性操作（源自系统红） |
 
 - alpha 层级对应实现：SwiftUI `.opacity(0.08/0.12/0.14)` · GTK `alpha(#D97706, …)` · XAML `#14/#1F/#24`（pressed 另有 `#2E/#38`）。dark 态沿用同一 alpha（GTK shared_css 已验证）。
 - **尺寸**：面板 680 宽、高随结果数增长（240–640，12 行封顶；设置「Maximum results」上限与可视行数一致）· 设置窗 720×520 · 圆角 12（窗）/ 8（行）/ 6（tile）· 行高 ≥44 · 图标 tile 28。
