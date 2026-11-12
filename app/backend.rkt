@@ -1245,11 +1245,16 @@
       (for/list ([item (in-list (if (string=? (string-trim query) "")
                                     (clipboard-list store 25)
                                     (clipboard-search store query)))])
+        ;; Sensitive rows stay masked on every wire surface — the
+        ;; history listing cannot leak what the search rows hide.
         (define preview
           (let ([text (string-replace (clipboard-item-text item) "\n" " ")])
-            (if (> (string-length text) 200)
-                (string-append (substring text 0 200) "…")
-                text)))
+            (cond
+              [(clipboard-item-sensitive? item)
+               (mask-sensitive-preview text)]
+              [(> (string-length text) 200)
+               (string-append (substring text 0 200) "…")]
+              [else text])))
         (list (clipboard-item-id item)
               preview
               (if (clipboard-item-pinned? item) "pinned" "")
