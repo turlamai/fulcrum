@@ -25,7 +25,8 @@
          racket/string)
 
 (provide fuzzy-score
-         fuzzy-score-fields)
+         fuzzy-score-fields
+         fuzzy-match-offsets)
 
 (define score-upper-bound 1000)
 
@@ -105,3 +106,27 @@
 (define/contract (fuzzy-score query candidate)
   (-> string? string? (or/c exact-integer? #f))
   (fuzzy-score-fields query (list (cons 1.0 candidate))))
+
+;; Greedy in-order match of `term` inside `text`, collecting the matched
+;; code-point indices. The alignment is exactly subsequence-score's — the
+;; same greedy walk — so highlight ranges agree with what ranking scored.
+;; Returns #f when the term does not match.
+(define/contract (fuzzy-match-offsets term text)
+  (-> string? string? (or/c (listof exact-nonnegative-integer?) #f))
+  (define qlen (string-length term))
+  (define clen (string-length text))
+  ;; An empty term is no match, mirroring the empty-query guard in
+  ;; fuzzy-score-fields (a vacuous match with zero offsets would read as
+  ;; "nothing to highlight" anyway).
+  (if (zero? qlen)
+      #f
+      (let loop ([qi 0] [ci 0] [acc '()])
+    (cond
+        [(= qi qlen) (reverse acc)]
+        [(>= ci clen) #f]
+        [else
+         (define qc (string-ref term qi))
+         (define cc (string-ref text ci))
+         (if (char=? (folded qc) (folded cc))
+             (loop (add1 qi) (add1 ci) (cons ci acc))
+             (loop qi (add1 ci) acc))]))))

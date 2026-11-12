@@ -6,7 +6,9 @@
 ;; cross-platform release, not a local edit.
 ;;
 ;; Row layout (positional, all strings):
-;;   (id title subtitle kind arg icon hint badge)
+;;   (id title subtitle kind arg icon hint badge [meta])
+;; The optional 9th column carries hit-highlight ranges (t:/s:) and the
+;; sensitive flag (x:sensitive) — see app/core/engine.rkt for the encoding.
 ;;
 ;; Lifecycle: the embedded runtime calls `start` with the two RVT1 fds. The
 ;; engine is built once here (app discovery, stores, plugins) and shared by
@@ -1225,6 +1227,15 @@
       (let ([item (clipboard-record! store text)])
         (if item (clipboard-item-id item) ""))
       ""))
+
+;; Local-only reveal for a masked clipboard row: returns the raw text so
+;; the host can unmask the row on screen. Never logged, never synced — the
+;; reveal lives in host memory until the selection moves (design v2
+;; invariant 9).
+(define-rpc (clipboard-reveal [id String] : String)
+  (define store (engine-clipboard (engine!)))
+  (define item (and store (clipboard-item-ref store id)))
+  (if item (clipboard-item-text item) ""))
 
 (define-rpc (clipboard-history [query String] : (List (List String)))
   (define store (engine-clipboard (engine!)))
