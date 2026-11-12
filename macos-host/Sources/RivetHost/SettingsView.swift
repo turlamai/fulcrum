@@ -375,6 +375,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @ObservedObject var model: SettingsModel
     @State private var selection: SettingsSection = .general
+    @Environment(\.colorScheme) private var scheme
 
     // Translation reads the observable backend setting, so switching language
     // immediately re-renders the visible settings surface. "system" resolves
@@ -396,6 +397,9 @@ struct SettingsView: View {
                         selection = section
                     } label: {
                         Label(t(section.titleKey), systemImage: section.icon)
+                            .foregroundStyle(selection == section
+                                             ? FulcrumTheme.accentText(scheme)
+                                             : Color.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }
@@ -403,7 +407,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings-sidebar-\(section.rawValue)")
                     .listRowBackground(
                         selection == section
-                            ? Color.accentColor.opacity(0.16)
+                            ? FulcrumTheme.accent.opacity(0.14)
                             : Color.clear)
                 }
                 .listStyle(.sidebar)
@@ -425,7 +429,7 @@ struct SettingsView: View {
             if let error = model.error {
                 Text(error)
                     .font(.system(size: 11))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(FulcrumTheme.danger(scheme))
                     .lineLimit(2)
                     .textSelection(.enabled)
                     .padding(.horizontal, 16)
@@ -461,7 +465,7 @@ struct SettingsView: View {
                 if let error = model.loginItemError {
                     Text(error)
                         .font(.system(size: 11))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(FulcrumTheme.danger(scheme))
                         .textSelection(.enabled)
                     Button("Open Login Items settings") {
                         SMAppService.openSystemSettingsLoginItems()
@@ -563,7 +567,7 @@ struct SettingsView: View {
                 if let bindingError = model.bindingError {
                     Text(bindingError)
                         .font(.system(size: 11))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(FulcrumTheme.danger(scheme))
                         .textSelection(.enabled)
                 }
             }

@@ -6,6 +6,7 @@ import SwiftUI
 /// The new bundle is activated only after RivetUpdate's verified handoff. All
 /// strings come from shared/i18n via I18nService (language setting).
 struct UpdatePanelView: View {
+    @Environment(\.colorScheme) private var scheme
     @ObservedObject var controller: UpdateController
 
     private var sizeLabel: String {
@@ -82,7 +83,7 @@ struct UpdatePanelView: View {
         VStack(spacing: 14) {
             Image(systemName: "arrow.down.circle")
                 .font(.system(size: 32, weight: .medium))
-                .foregroundStyle(FulcrumTheme.accent)
+                .foregroundStyle(FulcrumTheme.accentText(scheme))
             Text(controller.t("updateAvailableTitle"))
                 .font(.system(size: 15, weight: .semibold))
             Text(controller.t("updateAvailableBody",

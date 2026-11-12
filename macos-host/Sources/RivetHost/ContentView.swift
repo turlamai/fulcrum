@@ -6,6 +6,25 @@ import RivetRuntime
 /// Product accent, mirroring the site palette (#D97706 amber).
 enum FulcrumTheme {
     static let accent = Color(red: 217 / 255, green: 119 / 255, blue: 6 / 255)
+    /// Readable amber for text and glyphs: raw #D97706 fails 4.5:1 on light
+    /// surfaces. #9A4B06 (light) / #F0A64B (dark) both clear 4.5:1 on their
+    /// glass tints — see docs/design-system.md "Accent text/icons".
+    static let accentTextLight = Color(red: 0x9A / 255, green: 0x4B / 255, blue: 0x06 / 255)
+    static let accentTextDark = Color(red: 0xF0 / 255, green: 0xA6 / 255, blue: 0x4B / 255)
+    /// Errors and destructive actions only (system red, light/dark pair).
+    static let dangerLight = Color(red: 0xD0 / 255, green: 0x2F / 255, blue: 0x26 / 255)
+    static let dangerDark = Color(red: 0xFF / 255, green: 0x54 / 255, blue: 0x49 / 255)
+    static func accentText(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? accentTextDark : accentTextLight
+    }
+    static func danger(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? dangerDark : dangerLight
+    }
+    /// Hover is a neutral whisper: an amber hover competed with the amber
+    /// selection (docs/design-system.md "Hover row").
+    static func hover(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.05)
+    }
     static let cornerRadius: CGFloat = 12
     static let rowHeight: CGFloat = 44
 }
@@ -57,16 +76,7 @@ enum RowIcon {
         if row.kind == "Application", row.subtitle.hasSuffix(".app") {
             return AnyView(AppIconView(path: row.subtitle, size: size))
         }
-        return AnyView(
-            ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(FulcrumTheme.accent.opacity(0.12))
-                Image(systemName: symbol(for: row))
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(FulcrumTheme.accent)
-            }
-            .frame(width: size, height: size)
-        )
+        return AnyView(GlyphTile(row: row, size: size))
     }
 
     private static func symbol(for row: ResultRow) -> String {
@@ -85,6 +95,26 @@ enum RowIcon {
         case "File": return "doc"
         default: return "circle.grid.2x2"
         }
+    }
+}
+
+/// Amber tile with a linear glyph. The tile fill is accent (a color block);
+/// the glyph is accent-text, the readable amber — never raw #D97706 on a
+/// glyph (docs/design-system.md fill/text split).
+private struct GlyphTile: View {
+    let row: ResultRow
+    let size: CGFloat
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(FulcrumTheme.accent.opacity(0.12))
+            Image(systemName: RowIcon.symbol(for: row))
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(FulcrumTheme.accentText(scheme))
+        }
+        .frame(width: size, height: size)
     }
 }
 
@@ -145,6 +175,7 @@ struct ResultRowView: View {
     let row: ResultRow
     let isSelected: Bool
     @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         HStack(spacing: 12) {
@@ -168,12 +199,12 @@ struct ResultRowView: View {
                     .padding(.vertical, 2)
                     .background(
                         Capsule().fill(FulcrumTheme.accent.opacity(0.14)))
-                    .foregroundStyle(FulcrumTheme.accent)
+                    .foregroundStyle(FulcrumTheme.accentText(scheme))
             }
             if isSelected {
                 Text("↵")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(FulcrumTheme.accent)
+                    .foregroundStyle(FulcrumTheme.accentText(scheme))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
                     .background(
@@ -186,7 +217,7 @@ struct ResultRowView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isSelected
                       ? FulcrumTheme.accent.opacity(0.14)
-                      : hovering ? FulcrumTheme.accent.opacity(0.08) : Color.clear)
+                      : hovering ? FulcrumTheme.hover(scheme) : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -207,13 +238,14 @@ struct AiStreamState: Equatable {
 /// text, and the hand-off hint once the answer is on the clipboard.
 struct AiStreamView: View {
     let state: AiStreamState
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(FulcrumTheme.accent)
+                    .foregroundStyle(FulcrumTheme.accentText(scheme))
                 Text(header)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -239,7 +271,7 @@ struct AiStreamView: View {
             if let error = state.error, !error.isEmpty {
                 Text(error)
                     .font(.system(size: 11))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(FulcrumTheme.danger(scheme))
             }
         }
         .padding(.horizontal, 18)
@@ -274,13 +306,14 @@ struct DetailViewState {
 /// static payload. Text is selectable; metadata renders as a property list.
 struct PluginDetailView: View {
     let state: DetailViewState
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "puzzlepiece.extension")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(FulcrumTheme.accent)
+                    .foregroundStyle(FulcrumTheme.accentText(scheme))
                 Text(I18nService.shared.t("detailTitle"))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -322,6 +355,7 @@ struct PluginDetailView: View {
 struct LauncherView: View {
     @EnvironmentObject private var model: LauncherModel
     @FocusState private var queryFocused: Bool
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -404,7 +438,7 @@ struct LauncherView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "command")
                         .font(.system(size: 30, weight: .light))
-                        .foregroundStyle(FulcrumTheme.accent.opacity(0.8))
+                        .foregroundStyle(FulcrumTheme.accentText(scheme))
                     Text(model.status)
                         .font(.callout)
                         .foregroundStyle(.secondary)

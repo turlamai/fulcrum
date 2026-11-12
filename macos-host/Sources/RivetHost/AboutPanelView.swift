@@ -5,6 +5,7 @@ import SwiftUI
 /// via the `about` launcher row (about.open delegates here). License:
 /// BUSL-1.1 — source-available, not opensource.
 struct AboutPanelView: View {
+    @Environment(\.colorScheme) private var scheme
     /// The version compiled into this binary — the same number the
     /// backend reports and the updater compares against. Info.plist is
     /// packaging metadata that can drift on a hand-assembled bundle;
@@ -15,7 +16,7 @@ struct AboutPanelView: View {
         VStack(spacing: 12) {
             Image(systemName: "command")
                 .font(.system(size: 44))
-                .foregroundStyle(FulcrumTheme.accent)
+                .foregroundStyle(FulcrumTheme.accentText(scheme))
             Text("Fulcrum v\(version)")
                 .font(.system(size: 15, weight: .semibold))
             Text(I18nService.shared.t("aboutContent"))
