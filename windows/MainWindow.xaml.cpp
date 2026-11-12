@@ -2010,7 +2010,7 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows,
   items.Clear();
   enter_chips_.clear();
   selection_rings_.clear();
-  auto const sensitive_label = to_wide(t("sensitiveBadge"));
+  auto const sensitive_label = t("sensitiveBadge");  // t() already returns wstring
   for (auto const& row : rows_) {
     auto content = build_row_content(row, ResultsList().ActualTheme(),
                                      sensitive_label);
