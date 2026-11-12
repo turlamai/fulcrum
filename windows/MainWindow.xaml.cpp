@@ -43,7 +43,9 @@ constexpr int kTrayMenuUpdates = 5;
 constexpr int kHotkeyIdPrimary = 0xF11C;  // Alt+Space
 constexpr int kHotkeyIdFallback = 0xF11D; // Ctrl+Alt+Space
 constexpr int kWindowWidth = 680;  // WinUI device-independent pixels (96 DPI)
-constexpr int kWindowHeight = 460;
+// Design v2: the panel's height is dynamic (240 empty .. 640 with 12 rows);
+// this is only the empty-state first paint before results arrive.
+constexpr int kWindowHeight = 240;
 
 // WinUI lays out in DIPs, but SetWindowPos receives physical pixels. Use
 // the target monitor's effective DPI, not the DPI of the monitor where the
@@ -395,6 +397,85 @@ struct RowContent {
   winrt::Microsoft::UI::Xaml::Controls::Border selection_ring{nullptr};
 };
 
+// Hit ranges from the meta column: `t:` (title) or `s:` (subtitle),
+// comma-separated start-len runs in Unicode code points. std::wstring
+// indexes UTF-16 units — identical for BMP text, which CJK queries are.
+std::vector<std::pair<std::size_t, std::size_t>> meta_ranges(
+    std::string const& meta, char field) {
+  std::vector<std::pair<std::size_t, std::size_t>> out;
+  std::string const key = std::string(1, field) + ":";
+  std::size_t cursor = 0;
+  while (cursor < meta.size()) {
+    auto semicolon = meta.find(';', cursor);
+    auto part = meta.substr(cursor, semicolon == std::string::npos
+                                         ? std::string::npos
+                                         : semicolon - cursor);
+    if (part.rfind(key, 0) == 0) {
+      std::size_t pc = 0;
+      while (pc < part.size()) {
+        auto comma = part.find(',', pc);
+        auto piece = part.substr(pc, comma == std::string::npos
+                                         ? std::string::npos
+                                         : comma - pc);
+        auto dash = piece.find('-');
+        if (dash != std::string::npos) {
+          out.emplace_back(static_cast<std::size_t>(std::stoul(piece.substr(0, dash))),
+                           static_cast<std::size_t>(std::stoul(piece.substr(dash + 1))));
+        }
+        if (comma == std::string::npos) break;
+        pc = comma + 1;
+      }
+    }
+    if (semicolon == std::string::npos) break;
+    cursor = semicolon + 1;
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+bool meta_sensitive(std::string const& meta) {
+  return meta.find("x:sensitive") != std::string::npos;
+}
+
+// Renders a field with the matched runs in the readable amber at semibold
+// — color + weight double cue, never a background fill (design v2). A
+// field without ranges keeps the plain text path.
+void fill_highlighted(
+    winrt::Microsoft::UI::Xaml::Controls::TextBlock& block,
+    std::wstring const& text,
+    std::vector<std::pair<std::size_t, std::size_t>> const& ranges,
+    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
+  namespace mx = winrt::Microsoft::UI::Xaml;
+  namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
+  namespace wum = winrt::Microsoft::UI::Xaml::Media;
+  if (ranges.empty()) {
+    block.Text(text);
+    return;
+  }
+  std::size_t cursor = 0;
+  for (auto const& [start, length] : ranges) {
+    if (start < cursor || start >= text.size()) continue;
+    auto const begin = start;
+    auto const end = std::min(start + length, text.size());
+    if (begin > cursor) {
+      mxc::Run plain;
+      plain.Text(text.substr(cursor, begin - cursor));
+      block.Inlines().Append(plain);
+    }
+    mxc::Run hit;
+    hit.Text(text.substr(begin, end - begin));
+    hit.FontWeight({600});
+    hit.Foreground(wum::SolidColorBrush{accent_text_color(theme)});
+    block.Inlines().Append(hit);
+    cursor = end;
+  }
+  if (cursor < text.size()) {
+    mxc::Run plain;
+    plain.Text(text.substr(cursor));
+    block.Inlines().Append(plain);
+  }
+}
+
 RowContent build_row_content(
     rivet_app::ResultRow const& row,
     winrt::Microsoft::UI::Xaml::ElementTheme theme) {
@@ -405,9 +486,10 @@ RowContent build_row_content(
   mxc::Grid root;
   root.Margin({12, 7, 12, 7});
 
-  std::array<mx::GridLength, 4> const widths = {
+  std::array<mx::GridLength, 5> const widths = {
       mx::GridLengthHelper::Auto(),
       mx::GridLengthHelper::FromValueAndType(1, mx::GridUnitType::Star),
+      mx::GridLengthHelper::Auto(),
       mx::GridLengthHelper::Auto(),
       mx::GridLengthHelper::Auto()};
   for (auto const& width : widths) {
@@ -451,15 +533,19 @@ RowContent build_row_content(
   // Title + muted subtitle stacked.
   auto const& subtitle = row.subtitle.empty() ? row.kind : row.subtitle;
   mxc::TextBlock title;
-  title.Text(to_wide(row.title));
   title.FontSize(13);
   title.FontWeight({500});
   title.TextTrimming(mx::TextTrimming::CharacterEllipsis);
   title.MaxLines(1);
+  fill_highlighted(title, to_wide(row.title), meta_ranges(row.meta, 't'),
+                   theme);
   mxc::TextBlock subtitle_label;
-  subtitle_label.Text(to_wide(subtitle));
   subtitle_label.FontSize(11.5);
   subtitle_label.Opacity(0.66);
+  subtitle_label.TextTrimming(mx::TextTrimming::CharacterEllipsis);
+  subtitle_label.MaxLines(1);
+  fill_highlighted(subtitle_label, to_wide(subtitle),
+                   meta_ranges(row.meta, 's'), theme);
   subtitle_label.TextTrimming(mx::TextTrimming::CharacterEllipsis);
   subtitle_label.MaxLines(1);
   mxc::StackPanel texts;
@@ -471,17 +557,26 @@ RowContent build_row_content(
   mx::Controls::Grid::SetColumn(texts, 1);
   root.Children().Append(texts);
 
+  if (meta_sensitive(row.meta)) {
+    // Masked credential row (design v2 invariant 9): the raw text never
+    // reached the wire; the badge names the mask.
+    auto sensitive = make_chip(to_wide(t("sensitiveBadge")), 10, theme);
+    sensitive.Margin({0, 0, 8, 0});
+    mx::Controls::Grid::SetColumn(sensitive, 2);
+    root.Children().Append(sensitive);
+  }
+
   if (!row.badge.empty()) {
     auto badge = make_chip(to_wide(row.badge), 10, theme);
     badge.Margin({0, 0, 8, 0});
-    mx::Controls::Grid::SetColumn(badge, 2);
+    mx::Controls::Grid::SetColumn(badge, 3);
     root.Children().Append(badge);
   }
 
   // ↵ affordance: only the selected row shows it (UpdateEnterChips).
   auto enter_chip = make_chip(L"\u21B5", 11, theme);
   enter_chip.Visibility(mx::Visibility::Collapsed);
-  mx::Controls::Grid::SetColumn(enter_chip, 3);
+  mx::Controls::Grid::SetColumn(enter_chip, 4);
   root.Children().Append(enter_chip);
 
   // Selection/focus ring, laid over the whole row. Hidden by default;
@@ -493,7 +588,7 @@ RowContent build_row_content(
   selection_ring.BorderThickness({2, 2, 2, 2});
   selection_ring.IsHitTestVisible(false);
   selection_ring.Visibility(mx::Visibility::Collapsed);
-  mx::Controls::Grid::SetColumnSpan(selection_ring, 4);
+  mx::Controls::Grid::SetColumnSpan(selection_ring, 5);
   root.Children().Append(selection_ring);
 
   return {root, enter_chip, selection_ring};
@@ -1567,6 +1662,7 @@ void MainWindow::ApplyHotkey(std::string const& spec) {
 }
 
 void MainWindow::ApplyAiStream(rivet_app::AiStream const& stream) {
+  UpdatePanelHeight();
   if (stream.phase == "idle") {
     DismissAiPanel();
     return;
@@ -1584,10 +1680,12 @@ void MainWindow::ApplyAiStream(rivet_app::AiStream const& stream) {
 }
 
 void MainWindow::DismissAiPanel() {
+  UpdatePanelHeight();
   AiPanel().Visibility(winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
 }
 
 void MainWindow::ApplyPluginDetail(rivet_app::DetailView const& view) {
+  UpdatePanelHeight();
   DetailPanel().Visibility(winrt::Microsoft::UI::Xaml::Visibility::Visible);
   DetailText().Text(to_wide(view.text));
   auto items = winrt::single_threaded_observable_vector<winrt::hstring>();
@@ -1600,6 +1698,7 @@ void MainWindow::ApplyPluginDetail(rivet_app::DetailView const& view) {
 }
 
 void MainWindow::DismissDetailPanel() {
+  UpdatePanelHeight();
   DetailPanel().Visibility(winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
 }
 
@@ -1702,6 +1801,12 @@ void MainWindow::QueryBox_KeyDown(
   }
   if (args.Key() == winrt::Windows::System::VirtualKey::K && ctrl_down) {
     ShowActionsForSelection();
+    args.Handled(true);
+    return;
+  }
+  // Ctrl+Y reveals the selected masked clipboard row (local-only RPC).
+  if (args.Key() == winrt::Windows::System::VirtualKey::Y && ctrl_down) {
+    RevealSensitiveSelection();
     args.Handled(true);
     return;
   }
@@ -1836,6 +1941,7 @@ void MainWindow::ApplyActions(std::vector<rivet_app::ResultRow> rows,
                               rivet_app::ResultRow const& parent) {
   ApplyResults(std::move(rows), /*actions=*/true);
   HintBar().Text(t("navigationHintActions"));
+  UpdatePanelHeight();
   // Mode bar: the layer's exit pill and the row it acts on — "which
   // layer am I in" is visible, not read (design v2).
   ActionsModeTitle().Text(std::wstring(t("actionsLabel")) + L" " +
@@ -1945,6 +2051,7 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows,
     ResultsList().SelectedIndex(-1);
   }
   UpdateEnterChips();
+  UpdatePanelHeight();
   if (!startup_presented_) {
     startup_presented_ = true;
     // Login-run stays resident in the tray/hotkey, without flashing the UI.
@@ -1987,6 +2094,76 @@ void MainWindow::ActionsBack_Click(
     winrt::Windows::Foundation::IInspectable const&,
     winrt::Microsoft::UI::Xaml::RoutedEventArgs const&) {
   CloseActions();
+}
+
+void MainWindow::RevealSensitiveSelection() {
+  auto const index = ResultsList().SelectedIndex();
+  if (index < 0 || index >= static_cast<int>(rows_.size()) || api_ == nullptr ||
+      actions_mode_) {
+    return;
+  }
+  auto const row = rows_[static_cast<std::size_t>(index)];
+  if (!meta_sensitive(row.meta)) {
+    return;
+  }
+  auto const dispatcher = DispatcherQueue();
+  auto const weak = get_weak();
+  auto api = api_;
+  std::thread([weak, api, dispatcher, row]() mutable {
+    try {
+      auto const raw = api->clipboard_reveal(row.arg).get();
+      dispatcher.TryEnqueue([weak, row, raw]() mutable {
+        if (auto window = weak.get()) {
+          window->ApplyReveal(row, raw);
+        }
+      });
+    } catch (...) {
+      // Reveal is best-effort: the masked row simply stays masked.
+    }
+  }).detach();
+}
+
+void MainWindow::ApplyReveal(rivet_app::ResultRow const& row,
+                             std::string const& raw) {
+  for (auto& r : rows_) {
+    if (r.id == row.id && r.arg == row.arg && r.title == row.title) {
+      auto text = raw;
+      std::replace(text.begin(), text.end(), '\n', ' ');
+      if (text.size() > 120) {
+        text = text.substr(0, 120) + "\u2026";
+      }
+      r.title = text;
+      break;
+    }
+  }
+  // Rebuild the one row's content by repopulating the list; the selection
+  // preserves by id/arg and the raw text lives in host memory only.
+  ApplyResults(rows_, actions_mode_);
+}
+
+void MainWindow::UpdatePanelHeight() {
+  // Design v2: 680 wide; height grows with the result count — 240 empty,
+  // 12 visible rows / 640 max — plus the overlays that are up. The top
+  // edge stays put; only the bottom edge moves.
+  int const rows = std::clamp(static_cast<int>(rows_.size()), 0, 12);
+  double h = 49.0 + rows * 46.0 + 16.0 + 31.0 + 4.0;
+  if (actions_mode_) {
+    h += 30.0;
+  }
+  if (AiPanel().Visibility() == winrt::Microsoft::UI::Xaml::Visibility::Visible) {
+    h += 175.0;
+  }
+  if (DetailPanel().Visibility() ==
+      winrt::Microsoft::UI::Xaml::Visibility::Visible) {
+    h += 185.0;
+  }
+  h = std::clamp(h, 240.0, 640.0);
+  UINT const dpi = ::GetDpiForWindow(WindowHandle());
+  if (auto appWindow = AppWindow()) {
+    appWindow.Resize(
+        {::MulDiv(kWindowWidth, static_cast<int>(dpi), 96),
+         ::MulDiv(static_cast<int>(h), static_cast<int>(dpi), 96)});
+  }
 }
 
 void MainWindow::MoveSelection(int delta) {

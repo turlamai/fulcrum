@@ -24,6 +24,9 @@ struct ResultRow {
   std::string icon;
   std::string hint;
   std::string badge;
+  // Optional 9th wire column (design v2): hit-highlight ranges (t:/s:,
+  // code-point start-len runs) and the sensitive flag (x:sensitive).
+  std::string meta;
 
   static ResultRow from(std::vector<std::string> const& cells) {
     ResultRow row;
@@ -36,6 +39,9 @@ struct ResultRow {
       row.icon = cells[5];
       row.hint = cells[6];
       row.badge = cells[7];
+      if (cells.size() >= 9) {
+        row.meta = cells[8];
+      }
     }
     return row;
   }
@@ -83,6 +89,14 @@ struct MainWindow : MainWindowT<MainWindow> {
   // Mode bar esc pill: same path as the Esc key.
   void ActionsBack_Click(winrt::Windows::Foundation::IInspectable const&,
                          winrt::Microsoft::UI::Xaml::RoutedEventArgs const&);
+  // Ctrl+Y on a masked clipboard row: fetch the raw text through the
+  // local-only clipboard-reveal RPC and swap it into the on-screen row.
+  // Reveal lives in host memory until the next result rebuild.
+  void RevealSensitiveSelection();
+  void ApplyReveal(rivet_app::ResultRow const& row, std::string const& raw);
+  // Design v2 panel sizing: 680 wide, height grows with the result count
+  // (240 empty, 12 rows / 640 max) plus the overlays that are up.
+  void UpdatePanelHeight();
   // IME composition guard: true while the thread's IMM32 context reports
   // an open composition string (docs/cross-platform-interaction.md).
   bool IsImeComposing();
