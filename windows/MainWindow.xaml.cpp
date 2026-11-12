@@ -447,6 +447,8 @@ void fill_highlighted(
     winrt::Microsoft::UI::Xaml::ElementTheme theme) {
   namespace mx = winrt::Microsoft::UI::Xaml;
   namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
+  // Run lives in Documents, not Controls, in WinUI 3.
+  namespace mxd = winrt::Microsoft::UI::Xaml::Documents;
   namespace wum = winrt::Microsoft::UI::Xaml::Media;
   if (ranges.empty()) {
     block.Text(text);
@@ -458,11 +460,11 @@ void fill_highlighted(
     auto const begin = start;
     auto const end = std::min(start + length, text.size());
     if (begin > cursor) {
-      mxc::Run plain;
+      mxd::Run plain;
       plain.Text(text.substr(cursor, begin - cursor));
       block.Inlines().Append(plain);
     }
-    mxc::Run hit;
+    mxd::Run hit;
     hit.Text(text.substr(begin, end - begin));
     hit.FontWeight({600});
     hit.Foreground(wum::SolidColorBrush{accent_text_color(theme)});
@@ -470,7 +472,7 @@ void fill_highlighted(
     cursor = end;
   }
   if (cursor < text.size()) {
-    mxc::Run plain;
+    mxd::Run plain;
     plain.Text(text.substr(cursor));
     block.Inlines().Append(plain);
   }
