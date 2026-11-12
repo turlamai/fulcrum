@@ -251,7 +251,7 @@
 (check! "clipboard-reveal returns the raw text locally"
         (string-contains? rev "sk-abcdef1234567890abcdef") #t)
 (define-values (rev2 _reve2 _reve2v) (call-rpc 134 (list "clipboard-reveal" "c-missing")))
-(check! "clipboard-reveal on an unknown id is empty" rev2 "" #t)
+(check! "clipboard-reveal on an unknown id is empty" (equal? rev2 "") #t)
 (call-rpc 135 (list "clipboard-clear"))
 
 ;; snippet-delete removes the seeded snippet
