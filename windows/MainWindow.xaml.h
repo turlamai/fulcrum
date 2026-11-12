@@ -134,7 +134,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   void HideLauncher();
   void ApplyLanguage();
   void MoveSelection(int delta);
-  void ApplyResults(std::vector<rivet_app::ResultRow> rows);
+  void ApplyResults(std::vector<rivet_app::ResultRow> rows,
+                    bool actions = false);
   // Fires 400ms after the last revision push: re-runs the visible query.
   void OnRevisionTimerTick(winrt::Windows::Foundation::IInspectable const&,
                            winrt::Windows::Foundation::IInspectable const&);
