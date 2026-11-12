@@ -413,7 +413,7 @@ std::vector<std::pair<std::size_t, std::size_t>> meta_ranges(
                                          ? std::string::npos
                                          : semicolon - cursor);
     if (part.rfind(key, 0) == 0) {
-      std::size_t pc = 0;
+      std::size_t pc = key.size();  // skip the "t:"/"s:" key prefix
       while (pc < part.size()) {
         auto comma = part.find(',', pc);
         auto piece = part.substr(pc, comma == std::string::npos
@@ -482,7 +482,8 @@ void fill_highlighted(
 
 RowContent build_row_content(
     rivet_app::ResultRow const& row,
-    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
+    winrt::Microsoft::UI::Xaml::ElementTheme theme,
+    std::wstring const& sensitive_label) {
   namespace mx = winrt::Microsoft::UI::Xaml;
   namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
   namespace wum = winrt::Microsoft::UI::Xaml::Media;
@@ -564,7 +565,7 @@ RowContent build_row_content(
   if (meta_sensitive(row.meta)) {
     // Masked credential row (design v2 invariant 9): the raw text never
     // reached the wire; the badge names the mask.
-    auto sensitive = make_chip(to_wide(t("sensitiveBadge")), 10, theme);
+    auto sensitive = make_chip(sensitive_label, 10, theme);
     sensitive.Margin({0, 0, 8, 0});
     mx::Controls::Grid::SetColumn(sensitive, 2);
     root.Children().Append(sensitive);
@@ -2009,8 +2010,10 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows,
   items.Clear();
   enter_chips_.clear();
   selection_rings_.clear();
+  auto const sensitive_label = to_wide(t("sensitiveBadge"));
   for (auto const& row : rows_) {
-    auto content = build_row_content(row, ResultsList().ActualTheme());
+    auto content = build_row_content(row, ResultsList().ActualTheme(),
+                                     sensitive_label);
     enter_chips_.push_back(content.enter_chip);
     selection_rings_.push_back(content.selection_ring);
     winrt::Microsoft::UI::Xaml::Controls::ListViewItem item;
