@@ -232,6 +232,28 @@
 (define-values (chv2 _che2 _che2v) (call-rpc 13 (list "clipboard-history" "fulcrum-release")))
 (check! "clipboard cleared" (null? chv2) #t)
 
+;; Design v2: a credential-like clipboard row travels masked and reveals
+;; only through the local-only clipboard-reveal RPC (issue #220).
+(call-rpc 131 (list "clipboard-record" "token: sk-abcdef1234567890abcdef"))
+(define-values (chv3 _che3 _che3v) (call-rpc 132 (list "clipboard-history" "token")))
+(check! "sensitive row is masked on the wire"
+        (and (pair? chv3)
+             (let ([row (car chv3)])
+               (and (not (string-contains? (list-ref row 1) "abcdef1234"))
+                    (string-contains? (list-ref row 1) "••••"))))
+        #t)
+(define sensitive-id (and (pair? chv3) (list-ref (car chv3) 4)))
+(check! "masked row does not leak the raw text in the subtitle"
+        (and (string? sensitive-id)
+             (not (string-contains? (list-ref (car chv3) 2) "abcdef1234")))
+        #t)
+(define-values (rev _reve _revev) (call-rpc 133 (list "clipboard-reveal" sensitive-id)))
+(check! "clipboard-reveal returns the raw text locally"
+        (string-contains? rev "sk-abcdef1234567890abcdef") #t)
+(define-values (rev2 _reve2 _reve2v) (call-rpc 134 (list "clipboard-reveal" "c-missing")))
+(check! "clipboard-reveal on an unknown id is empty" rev2 "" #t)
+(call-rpc 135 (list "clipboard-clear"))
+
 ;; snippet-delete removes the seeded snippet
 (define-values (sidv _side _sidev) (call-rpc 14 (list "snippet-list")))
 (define seeded-id (for/first ([row (in-list sidv)]
