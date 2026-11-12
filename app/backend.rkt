@@ -305,7 +305,9 @@
 (define managed-setting-keys
   '(language theme hotkey max-results clipboard-enabled expansion-enabled web-search-enabled plugins-enabled ai-provider))
 
-(define max-results-cycle '(8 12 16 20 25))
+;; The cycle tops out at the panel's 12-row visual cap; anything above
+;; scrolled out of a panel that no longer grows past it.
+(define max-results-cycle '(8 10 12))
 
 ;; Presets the settings row cycles through — every entry passes the hotkey
 ;; grammar and registers on all three platforms.

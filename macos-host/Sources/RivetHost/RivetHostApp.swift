@@ -437,6 +437,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onHide = { [weak self] in self?.hidePanel() }
     }
 
+    /// Design v2 panel sizing: 680 wide, height grows with the result
+    /// count — 240 empty, capped at 12 visible rows / 640 points — and
+    /// grows further while the AI stream, the plugin detail panel or the
+    /// actions mode bar are up. The top edge stays anchored (drop-down
+    /// convention); only the bottom edge moves.
+    func updatePanelHeight(rowCount: Int, modebar: Bool, ai: Bool, detail: Bool) {
+        guard let panel else { return }
+        let rows = max(0, min(rowCount, 12))
+        var height: CGFloat = 49 + CGFloat(rows) * 46 + 16 + 31 + 4
+        if modebar { height += 30 }
+        if ai { height += 175 }
+        if detail { height += 185 }
+        height = min(640, max(240, height))
+        var frame = panel.frame
+        let content = panel.contentRect(forFrameRect: frame)
+        let newContent = NSRect(x: content.minX, y: content.minY,
+                                width: 680, height: height)
+        let newFrame = panel.frameRect(forContentRect: newContent)
+        frame.origin.y += frame.height - newFrame.height
+        frame.size = newFrame.size
+        panel.setFrame(frame, display: true)
+    }
+
     private func centerOnActiveScreen(_ panel: NSPanel) {
         // Follow the pointer's monitor on each summon, including displays
         // with negative global origins. NSScreen.main can still describe the

@@ -51,7 +51,9 @@
    (list valid-hotkey? "alt+space"
          "Global hotkey that summons the launcher (applied by the host): modifiers alt/ctrl/shift/cmd/win/super + key (space, a-z, 0-9, f1-f12, comma, period, minus, equal, tab)")
    'max-results
-   (list (lambda (v) (and (exact-integer? v) (>= v 5) (<= v 25))) 12
+   (list (lambda (v) (and (exact-integer? v) (>= v 5) (<= v 12))) 12
+         ;; Upper bound agrees with the panel's 12-row visual cap
+         ;; (docs/design-system.md "Panel size").
          "Maximum results shown in the list")
    'clipboard-enabled
    (list boolean? #t

@@ -573,7 +573,7 @@ struct LauncherView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 9)
         }
-        .frame(minWidth: 680, minHeight: 460)
+        .frame(minWidth: 680, minHeight: 240)
         .background(VisualEffectBackground())
         .onAppear { queryFocused = true }
         .onChange(of: model.listFocusRequest) { _, _ in
@@ -583,6 +583,20 @@ struct LauncherView: View {
             resultsFocused = false
             queryFocused = true
         }
+        .onChange(of: model.rows.count) { _, _ in syncPanelHeight() }
+        .onChange(of: model.showingActions) { _, _ in syncPanelHeight() }
+        .onChange(of: model.aiStream?.phase) { _, _ in syncPanelHeight() }
+        .onChange(of: model.detailView == nil) { _, _ in syncPanelHeight() }
+    }
+
+    /// Design v2 sizing: the panel grows with results (240–640, 12 rows
+    /// capped) plus the overlays that are currently up.
+    private func syncPanelHeight() {
+        AppDelegate.shared?.updatePanelHeight(
+            rowCount: model.rows.count,
+            modebar: model.showingActions,
+            ai: model.aiStream != nil,
+            detail: model.detailView != nil)
     }
 
     /// The focus ring rides the selection: always in the actions layer
