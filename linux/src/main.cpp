@@ -59,6 +59,9 @@ struct ResultRow {
   std::string icon;
   std::string hint;
   std::string badge;
+  // Optional 9th wire column (design v2): hit-highlight ranges (t:/s:,
+  // code-point start-len runs) and the sensitive flag (x:sensitive).
+  std::string meta;
 };
 
 ResultRow parse_row(std::vector<std::string> const& cells) {
@@ -72,8 +75,101 @@ ResultRow parse_row(std::vector<std::string> const& cells) {
     row.icon = cells[5];
     row.hint = cells[6];
     row.badge = cells[7];
+    if (cells.size() >= 9) {
+      row.meta = cells[8];
+    }
   }
   return row;
+}
+
+// Hit ranges from the meta column: `t:` (title) or `s:` (subtitle),
+// comma-separated start-len runs in Unicode code points — Pango byte
+// offsets are derived at render time.
+std::vector<std::pair<std::size_t, std::size_t>> meta_ranges(
+    std::string const& meta, char field) {
+  std::vector<std::pair<std::size_t, std::size_t>> out;
+  std::string const key = std::string(1, field) + ":";
+  std::size_t cursor = 0;
+  while (cursor < meta.size()) {
+    auto semicolon = meta.find(';', cursor);
+    auto part = meta.substr(cursor, semicolon == std::string::npos
+                                         ? std::string::npos
+                                         : semicolon - cursor);
+    if (part.rfind(key, 0) == 0) {
+      std::size_t pc = key.size();  // skip the "t:"/"s:" key prefix
+      while (pc < part.size()) {
+        auto comma = part.find(',', pc);
+        auto piece = part.substr(pc, comma == std::string::npos
+                                         ? std::string::npos
+                                         : comma - pc);
+        auto dash = piece.find('-');
+        if (dash != std::string::npos) {
+          out.emplace_back(
+              static_cast<std::size_t>(std::stoul(piece.substr(0, dash))),
+              static_cast<std::size_t>(std::stoul(piece.substr(dash + 1))));
+        }
+        if (comma == std::string::npos) break;
+        pc = comma + 1;
+      }
+    }
+    if (semicolon == std::string::npos) break;
+    cursor = semicolon + 1;
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+bool meta_sensitive(std::string const& meta) {
+  return meta.find("x:sensitive") != std::string::npos;
+}
+
+// Payload for the actions-mode idle apply: rows plus the originating row
+// the mode bar shows and Esc restores by item id. Namespace scope: the
+// Launcher methods and their idle callbacks both name it.
+struct ActionsJob {
+  std::vector<ResultRow> rows;
+  std::string parent_id;
+  std::string parent_arg;
+  std::string parent_title;
+  std::string parent_badge;
+};
+
+// Code-point offset -> UTF-8 byte offset (Pango attributes are byte-based).
+std::size_t byte_offset(std::string const& text, std::size_t code_points) {
+  if (code_points >= text.size()) return text.size();
+  return g_utf8_offset_to_pointer(text.c_str(), code_points) - text.c_str();
+}
+
+gboolean panel_is_dark() {
+  gboolean dark = FALSE;
+  if (GtkSettings* settings = gtk_settings_get_default()) {
+    g_object_get(settings, "gtk-application-prefer-dark-theme", &dark,
+                 nullptr);
+  }
+  return dark;
+}
+
+// Matched runs render in the readable amber at weight 650 — color +
+// weight double cue, never a background fill (design v2 invariant 6).
+void apply_hit_attributes(GtkLabel* label, std::string const& meta,
+                          char field, std::string const& text) {
+  auto ranges = meta_ranges(meta, field);
+  if (ranges.empty()) return;
+  gboolean dark = panel_is_dark();
+  PangoAttrList* attrs = pango_attr_list_new();
+  for (auto const& [start, length] : ranges) {
+    auto const begin = byte_offset(text, start);
+    auto const end = byte_offset(text, start + length);
+    if (end <= begin || end > text.size()) continue;
+    pango_attr_list_insert(attrs, pango_attr_weight_new(
+        static_cast<PangoWeight>(650)));
+    pango_attr_list_insert(
+        attrs, pango_attr_foreground_new(
+                   dark ? 0xF0F0 : 0x9A9A, dark ? 0xA6A6 : 0x4B4B,
+                   dark ? 0x4B4B : 0x0606));
+  }
+  gtk_label_set_attributes(label, attrs);
+  pango_attr_list_unref(attrs);
 }
 
 // ---- panel styling ----------------------------------------------------------
@@ -112,6 +208,43 @@ window.fulcrum-window {
   color: #1d1d1f;
 }
 )CSS";
+  // Theme-dependent text tokens (docs/design-system.md): hover is a neutral
+  // whisper so it never competes with the amber selection; glyphs/badges use
+  // the readable amber pair (#9A4B06 / #F0A64B, both >= 4.5:1); hint and
+  // status use the mute/faint ink-alpha tiers.
+  char const* tokens_css = dark
+      ? R"CSS(
+window.fulcrum-window list row:hover { background-color: rgba(255,255,255,0.07); }
+.fulcrum-row-icon { color: #F0A64B; }
+.fulcrum-badge { color: #F0A64B; }
+.fulcrum-enter { color: #F0A64B; }
+.fulcrum-slot-header { color: #F0A64B; }
+.fulcrum-hint { color: rgba(242,242,242,0.66); }
+.fulcrum-status { color: rgba(242,242,242,0.52); }
+window.fulcrum-window list row:focus { outline: 2px solid #F0A64B; outline-offset: -2px; }
+window.fulcrum-window list.actions-mode row:selected {
+  background-color: rgba(255,255,255,0.07);
+  box-shadow: inset 0 0 0 1.5px #F0A64B;
+}
+window.fulcrum-window .fulcrum-modebar { border-bottom: 1px solid rgba(255,255,255,0.08); }
+window.fulcrum-window .fulcrum-mode-title { color: rgba(242,242,242,0.66); }
+)CSS"
+      : R"CSS(
+window.fulcrum-window list row:hover { background-color: rgba(0,0,0,0.05); }
+.fulcrum-row-icon { color: #9A4B06; }
+.fulcrum-badge { color: #9A4B06; }
+.fulcrum-enter { color: #9A4B06; }
+.fulcrum-slot-header { color: #9A4B06; }
+.fulcrum-hint { color: rgba(29,29,31,0.66); }
+.fulcrum-status { color: rgba(29,29,31,0.62); }
+window.fulcrum-window list row:focus { outline: 2px solid #9A4B06; outline-offset: -2px; }
+window.fulcrum-window list.actions-mode row:selected {
+  background-color: rgba(0,0,0,0.05);
+  box-shadow: inset 0 0 0 1.5px #9A4B06;
+}
+window.fulcrum-window .fulcrum-modebar { border-bottom: 1px solid rgba(0,0,0,0.08); }
+window.fulcrum-window .fulcrum-mode-title { color: rgba(29,29,31,0.66); }
+)CSS";
   static char const* const shared_css = R"CSS(
 window.fulcrum-window entry {
   background: none;
@@ -132,40 +265,60 @@ window.fulcrum-window list row {
   padding: 4px 8px;
   background-color: transparent;
 }
-window.fulcrum-window list row:hover {
-  background-color: alpha(#D97706, 0.08);
-}
 window.fulcrum-window list row:selected {
   background-color: alpha(#D97706, 0.14);
 }
 .fulcrum-row-title {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .fulcrum-row-subtitle {
-  font-size: 11px;
+  font-size: 11.5px;
 }
 .fulcrum-row-icon {
   background-color: alpha(#D97706, 0.12);
   border-radius: 6px;
   padding: 5px;
-  color: #D97706;
 }
 .fulcrum-badge {
   background-color: alpha(#D97706, 0.14);
-  color: #D97706;
   border-radius: 9px;
   padding: 1px 7px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .fulcrum-enter {
-  color: #D97706;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   opacity: 0;
 }
 list row:selected .fulcrum-enter {
   opacity: 1;
+}
+.fulcrum-slot-header {
+  font-size: 11px;
+  font-weight: 600;
+}
+.fulcrum-body {
+  font-size: 12.5px;
+}
+.fulcrum-hint {
+  font-size: 11px;
+}
+.fulcrum-status {
+  font-size: 11px;
+}
+.fulcrum-modebar {
+  padding: 4px 6px;
+}
+.fulcrum-modebar button {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  min-height: 0;
+}
+.fulcrum-mode-title {
+  font-size: 11px;
 }
 )CSS";
 
@@ -180,8 +333,9 @@ list row:selected .fulcrum-enter {
     g_panel_css = nullptr;
   }
   g_panel_css = gtk_css_provider_new();
-  gtk_css_provider_load_from_string(g_panel_css,
-                                    (std::string(glass_css) + shared_css).c_str());
+  gtk_css_provider_load_from_string(
+      g_panel_css,
+      (std::string(glass_css) + tokens_css + shared_css).c_str());
   gtk_style_context_add_provider_for_display(
       display, GTK_STYLE_PROVIDER(g_panel_css),
       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -967,6 +1121,15 @@ struct Launcher {
   // search_rows remembers the live result list.
   bool actions_mode{false};
   std::vector<ResultRow> search_rows;
+  // Design v2 actions layer: the mode bar (esc pill + parent row) and the
+  // originating row identity Esc restores by item id.
+  GtkWidget* actions_modebar{nullptr};
+  GtkLabel* actions_mode_title{nullptr};
+  GtkLabel* actions_mode_badge{nullptr};
+  std::string actions_parent_id;
+  std::string actions_parent_arg;
+  // IME composition guard: true while the query IM context holds preedit.
+  bool query_composing{false};
 
   static Launcher& instance() {
     static Launcher launcher;
@@ -1045,6 +1208,7 @@ struct Launcher {
       return;
     }
     gtk_widget_set_visible(ai_panel, TRUE);
+    update_panel_height();
     gtk_label_set_text(ai_text, stream.text.c_str());
     if (stream.phase == "running") {
       gtk_label_set_text(ai_phase, "AI is answering…");
@@ -1055,7 +1219,8 @@ struct Launcher {
     }
   }
 
-  void dismiss_ai_panel() { gtk_widget_set_visible(ai_panel, FALSE); }
+  void dismiss_ai_panel() {
+    update_panel_height(); gtk_widget_set_visible(ai_panel, FALSE); }
 
   void apply_plugin_detail(rivet_app::DetailView const& view) {
     gtk_widget_set_visible(detail_panel, TRUE);
@@ -1071,6 +1236,7 @@ struct Launcher {
   }
 
   void dismiss_detail_panel() {
+    update_panel_height();
     gtk_widget_set_visible(detail_panel, FALSE);
   }
 
@@ -1520,14 +1686,26 @@ struct Launcher {
       gtk_label_set_xalign(GTK_LABEL(title), 0.0);
       gtk_label_set_ellipsize(GTK_LABEL(title), PANGO_ELLIPSIZE_END);
       gtk_widget_add_css_class(title, "fulcrum-row-title");
+      apply_hit_attributes(GTK_LABEL(title), row.meta, 't', title_text);
       auto* subtitle = gtk_label_new(subtitle_text.c_str());
       gtk_label_set_xalign(GTK_LABEL(subtitle), 0.0);
       gtk_label_set_ellipsize(GTK_LABEL(subtitle), PANGO_ELLIPSIZE_END);
       gtk_widget_add_css_class(subtitle, "fulcrum-row-subtitle");
       gtk_widget_add_css_class(subtitle, "dim-label");
+      apply_hit_attributes(GTK_LABEL(subtitle), row.meta, 's',
+                           subtitle_text);
       gtk_box_append(GTK_BOX(texts), title);
       gtk_box_append(GTK_BOX(texts), subtitle);
       gtk_box_append(GTK_BOX(box), texts);
+
+      if (meta_sensitive(row.meta)) {
+        // Masked credential row (design v2 invariant 9): the raw text
+        // never reached the wire; the badge names the mask.
+        auto* sensitive = gtk_label_new(tr("sensitiveBadge").c_str());
+        gtk_widget_add_css_class(sensitive, "fulcrum-badge");
+        gtk_widget_set_valign(sensitive, GTK_ALIGN_CENTER);
+        gtk_box_append(GTK_BOX(box), sensitive);
+      }
 
       if (!row.badge.empty() || row.id == "settings.set") {
         auto* badge = gtk_label_new(row.badge.empty() ? tr("notSet").c_str() : row.badge.c_str());
@@ -1552,6 +1730,23 @@ struct Launcher {
       gtk_list_box_select_row(results,
                               gtk_list_box_get_row_at_index(results, index));
     }
+    update_panel_height();
+  }
+
+  // Design v2 panel sizing: 680 wide, height grows with the result count
+  // — 240 empty, capped at 12 visible rows / 640 points — plus the
+  // overlays that are up. The top edge stays anchored for GTK too (the
+  // WM picks the edge; most gravity setups keep the title edge).
+  void update_panel_height() {
+    if (window == nullptr) return;
+    int const row_count = std::clamp(static_cast<int>(rows.size()), 0, 12);
+    double h = 49.0 + row_count * 46.0 + 16.0 + 31.0 + 4.0;
+    if (actions_mode) h += 30.0;
+    if (ai_panel != nullptr && gtk_widget_get_visible(ai_panel)) h += 175.0;
+    if (detail_panel != nullptr && gtk_widget_get_visible(detail_panel))
+      h += 185.0;
+    h = std::clamp(h, 240.0, 640.0);
+    gtk_window_set_default_size(window, 680, static_cast<int>(h));
   }
 
   struct AppImageTicket {
@@ -1591,31 +1786,107 @@ struct Launcher {
       } catch (std::exception const& e) {
         error = e.what();
       }
+      auto* job = new ActionsJob{std::move(actions), row.id, row.arg,
+                                 row.title, row.badge};
       g_idle_add([](gpointer user_data) -> int {
-        std::unique_ptr<std::vector<ResultRow>> job(
-            static_cast<std::vector<ResultRow>*>(user_data));
+        std::unique_ptr<ActionsJob> job(static_cast<ActionsJob*>(user_data));
         Launcher& launcher = Launcher::instance();
         launcher.actions_mode = true;
-        launcher.rows = std::move(*job);
+        launcher.rows = std::move(job->rows);
+        launcher.actions_parent_id = job->parent_id;
+        launcher.actions_parent_arg = job->parent_arg;
         launcher.refresh_results();
         gtk_label_set_text(launcher.navigation_hint,
                            tr("navigationHintActions").c_str());
+        // Mode bar: the layer's exit pill and the row it acts on —
+        // "which layer am I in" is visible, not read (design v2).
+        gtk_widget_set_visible(launcher.actions_modebar, TRUE);
+        gtk_widget_add_css_class(GTK_WIDGET(launcher.results), "actions-mode");
+        gchar* escaped =
+            g_markup_escape_text(job->parent_title.c_str(), -1);
+        std::string markup = std::string(tr("actionsLabel")) + " <b>" +
+                             escaped + "</b>";
+        gtk_label_set_markup(launcher.actions_mode_title, markup.c_str());
+        g_free(escaped);
+        gtk_label_set_text(launcher.actions_mode_badge,
+                           job->parent_badge.c_str());
+        gtk_widget_set_visible(GTK_WIDGET(launcher.actions_mode_badge),
+                               !job->parent_badge.empty());
         if (launcher.rows.empty()) {
           launcher.set_status(tr("noSecondaryActions"));
         }
         return G_SOURCE_REMOVE;
-      }, new std::vector<ResultRow>(std::move(actions)));
+      }, job);
       (void)error;
     }).detach();
   }
 
   void close_actions() {
+    // Esc restores the originating row by item id — never the first row;
+    // a row filtered away falls back to the primary action (index 0).
+    std::string restore_id = std::move(actions_parent_id);
+    std::string restore_arg = std::move(actions_parent_arg);
+    actions_parent_id.clear();
+    actions_parent_arg.clear();
     actions_mode = false;
     rows = std::move(search_rows);
     search_rows.clear();
-    refresh_results();
+    refresh_results(restore_arg, restore_id);
     gtk_label_set_text(navigation_hint, tr("navigationHint").c_str());
+    gtk_widget_set_visible(actions_modebar, FALSE);
+    gtk_widget_remove_css_class(GTK_WIDGET(results), "actions-mode");
     gtk_widget_grab_focus(GTK_WIDGET(search));
+  }
+
+  // Ctrl+Y on a masked clipboard row: fetch the raw text through the
+  // local-only reveal RPC and swap it into the on-screen row. Reveal
+  // lives in host memory until the next result rebuild.
+  void reveal_sensitive_selection() {
+    if (api == nullptr || rows.empty() || actions_mode) return;
+    GtkListBoxRow* selected = gtk_list_box_get_selected_row(results);
+    int index = selected != nullptr ? gtk_list_box_row_get_index(selected) : 0;
+    if (index < 0 || index >= static_cast<int>(rows.size())) return;
+    ResultRow const row = rows[static_cast<std::size_t>(index)];
+    if (!meta_sensitive(row.meta)) return;
+    auto* api_raw = api.get();
+    struct RevealJob {
+      std::string id;
+      std::string arg;
+      std::string title;
+      std::string raw;
+    };
+    std::thread([api_raw, row]() mutable {
+      std::string raw;
+      try {
+        raw = api_raw->clipboard_reveal(row.arg).get();
+      } catch (...) {
+        // Reveal is best-effort: the masked row simply stays masked.
+        return;
+      }
+      g_idle_add([](gpointer user_data) -> int {
+        std::unique_ptr<RevealJob> job(static_cast<RevealJob*>(user_data));
+        Launcher& launcher = Launcher::instance();
+        std::replace(job->raw.begin(), job->raw.end(), '\n', ' ');
+        if (job->raw.size() > 120) {
+          job->raw = job->raw.substr(0, 120) + "\u2026";
+        }
+        for (auto& r : launcher.rows) {
+          if (r.id == job->id && r.arg == job->arg && r.title == job->title) {
+            r.title = job->raw;
+            break;
+          }
+        }
+        auto* selected = gtk_list_box_get_selected_row(launcher.results);
+        int const selected_index =
+            selected != nullptr ? gtk_list_box_row_get_index(selected) : 0;
+        launcher.refresh_results();
+        if (auto* kept = gtk_list_box_get_row_at_index(launcher.results,
+                                                       selected_index)) {
+          gtk_list_box_select_row(launcher.results, kept);
+        }
+        return G_SOURCE_REMOVE;
+      }, new RevealJob{row.id, row.arg, row.title, std::move(raw)});
+    }).detach();
   }
 
   void run_selected() {
@@ -2459,7 +2730,9 @@ void settings_build() {
   auto* window = gtk_window_new();
   g_settings_form->window = GTK_WINDOW(window);
   gtk_window_set_title(GTK_WINDOW(window), "Fulcrum Settings");
-  gtk_window_set_default_size(GTK_WINDOW(window), 760, 560);
+  // 720x520 is the shared settings window size (docs/design-system.md);
+  // the older 760x560 drifted from the macOS/WinUI hosts.
+  gtk_window_set_default_size(GTK_WINDOW(window), 720, 520);
   gtk_window_set_hide_on_close(GTK_WINDOW(window), TRUE);
 
   // Mirror native macOS/WinUI Settings information architecture: five
@@ -2508,7 +2781,7 @@ void settings_build() {
   settings_hint(general,
                 "Focus the hotkey field and press modifiers plus a key. "
                 "Esc cancels; the shared backend rejects unsupported combos.");
-  settings_add_number(general, "Maximum results", "max-results", 5, 25);
+  settings_add_number(general, "Maximum results", "max-results", 5, 12);
   auto* startup_toggle = gtk_switch_new();
   gtk_switch_set_active(GTK_SWITCH(startup_toggle), fulcrum_autostart_enabled());
   gtk_accessible_update_property(GTK_ACCESSIBLE(startup_toggle),
@@ -3215,31 +3488,72 @@ void on_row_activated(GtkListBox*, GtkListBoxRow*, gpointer) {
   Launcher::instance().run_selected();
 }
 
+// IME composition guard signal: GTK4 keeps the IM context inside the
+// entry's internal GtkText and exposes no accessor, so preedit tracking
+// hooks the GtkText::preedit-changed signal (found by walking the search
+// entry's children). A non-empty preedit means the IM owns the keys.
+static void on_query_preedit_changed(GtkText*, gchar* preedit, gpointer) {
+  Launcher::instance().query_composing = preedit != nullptr && *preedit != '\0';
+}
+
+static void on_actions_back_clicked(GtkButton*, gpointer) {
+  Launcher::instance().close_actions();
+}
+
 gboolean on_key_pressed(GtkEventControllerKey*, guint keyval, guint,
                         GdkModifierType state, gpointer) {
+  // IME composition guard (docs/cross-platform-interaction.md): while the
+  // query IM context holds preedit, Enter/arrows/Tab/Esc belong to the
+  // input method — no execution, no selection move, no layer change; the
+  // first Esc cancels only the composition. Pass the key through so the
+  // IME and the entry handle it.
+  if (Launcher::instance().query_composing) {
+    const bool layer_key =
+        keyval == GDK_KEY_Return || keyval == GDK_KEY_ISO_Enter ||
+        keyval == GDK_KEY_Up || keyval == GDK_KEY_Down ||
+        keyval == GDK_KEY_Tab || keyval == GDK_KEY_ISO_Left_Tab ||
+        keyval == GDK_KEY_Escape ||
+        (keyval == GDK_KEY_k && (state & GDK_CONTROL_MASK) != 0);
+    if (layer_key) {
+      return FALSE;
+    }
+  }
   // Ctrl+K equivalent: the selected row's secondary actions.
   if (keyval == GDK_KEY_k && (state & GDK_CONTROL_MASK) != 0) {
     Launcher::instance().show_actions_for_selection();
     return TRUE;
   }
+  // Ctrl+Y reveals the selected masked clipboard row (local-only RPC).
+  if (keyval == GDK_KEY_y && (state & GDK_CONTROL_MASK) != 0) {
+    Launcher::instance().reveal_sensitive_selection();
+    return TRUE;
+  }
   switch (keyval) {
     case GDK_KEY_Tab:
     case GDK_KEY_ISO_Left_Tab: {
-      // Autocomplete the selected row's title into the query field.
       Launcher& launcher = Launcher::instance();
-      if (launcher.actions_mode || launcher.rows.empty()) {
+      // Shift+Tab (ISO_Left_Tab): back to the query, strictly reversed.
+      if (keyval == GDK_KEY_ISO_Left_Tab) {
+        gtk_widget_grab_focus(GTK_WIDGET(launcher.search));
         return TRUE;
       }
-      GtkListBoxRow* selected =
-          gtk_list_box_get_selected_row(launcher.results);
-      int index = selected != nullptr ? gtk_list_box_row_get_index(selected) : 0;
-      if (index < 0 || index >= static_cast<int>(launcher.rows.size())) {
-        index = 0;
+      // Tab completes when a row offers it, else focus moves to the
+      // results list — the list is the second tab stop as a whole
+      // (design v2 focus contract).
+      if (!launcher.actions_mode && !launcher.rows.empty()) {
+        GtkListBoxRow* selected =
+            gtk_list_box_get_selected_row(launcher.results);
+        int index = selected != nullptr ? gtk_list_box_row_get_index(selected) : 0;
+        if (index < 0 || index >= static_cast<int>(launcher.rows.size())) {
+          index = 0;
+        }
+        gtk_editable_set_text(GTK_EDITABLE(launcher.search),
+                              launcher.rows[static_cast<std::size_t>(index)]
+                                  .title.c_str());
+        gtk_editable_set_position(GTK_EDITABLE(launcher.search), -1);
+        return TRUE;
       }
-      gtk_editable_set_text(GTK_EDITABLE(launcher.search),
-                            launcher.rows[static_cast<std::size_t>(index)]
-                                .title.c_str());
-      gtk_editable_set_position(GTK_EDITABLE(launcher.search), -1);
+      gtk_widget_grab_focus(GTK_WIDGET(launcher.results));
       return TRUE;
     }
     case GDK_KEY_Escape:
@@ -3360,7 +3674,9 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* window = gtk_application_window_new(app);
   launcher.window = GTK_WINDOW(window);
   gtk_window_set_title(launcher.window, "Fulcrum");
-  gtk_window_set_default_size(launcher.window, 680, 460);
+  // Design v2: the height is dynamic (240 empty .. 640 with 12 rows);
+  // this is only the empty-state first paint before results arrive.
+  gtk_window_set_default_size(launcher.window, 680, 240);
   gtk_window_set_resizable(launcher.window, FALSE);
   // Chromeless like the other hosts: the panel content IS the window, and
   // the stylesheet rounds it. Close still hides (below) via Esc / the tray.
@@ -3396,6 +3712,7 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* status = gtk_label_new("Starting embedded Racket CS…");
   gtk_label_set_xalign(GTK_LABEL(status), 0.0);
   gtk_label_set_selectable(GTK_LABEL(status), TRUE);
+  gtk_widget_add_css_class(status, "fulcrum-status");
   gtk_widget_set_margin_start(status, 12);
   gtk_widget_set_margin_top(status, 6);
   launcher.status = GTK_LABEL(status);
@@ -3420,8 +3737,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_set_margin_top(ai_panel, 4);
   auto* ai_phase = gtk_label_new("AI is answering…");
   gtk_label_set_xalign(GTK_LABEL(ai_phase), 0.0);
-  gtk_widget_add_css_class(ai_phase, "caption");
-  gtk_widget_add_css_class(ai_phase, "dim-label");
+  gtk_widget_add_css_class(ai_phase, "fulcrum-slot-header");
   auto* ai_scroll = gtk_scrolled_window_new();
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(ai_scroll),
                                  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -3433,7 +3749,9 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_label_set_wrap(GTK_LABEL(ai_text), TRUE);
   gtk_label_set_xalign(GTK_LABEL(ai_text), 0.0);
   gtk_label_set_selectable(GTK_LABEL(ai_text), TRUE);
-  gtk_widget_add_css_class(ai_text, "monospace");
+  // 12.5 regular per the shared typography; the old monospace drifted from
+  // the macOS/WinUI hosts.
+  gtk_widget_add_css_class(ai_text, "fulcrum-body");
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(ai_scroll), ai_text);
   gtk_box_append(GTK_BOX(ai_panel), ai_phase);
   gtk_box_append(GTK_BOX(ai_panel), ai_scroll);
@@ -3450,8 +3768,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_set_margin_top(detail_panel, 4);
   auto* detail_header = gtk_label_new("Details");
   gtk_label_set_xalign(GTK_LABEL(detail_header), 0.0);
-  gtk_widget_add_css_class(detail_header, "caption");
-  gtk_widget_add_css_class(detail_header, "dim-label");
+  gtk_widget_add_css_class(detail_header, "fulcrum-slot-header");
   auto* detail_scroll = gtk_scrolled_window_new();
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(detail_scroll),
                                  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -3464,6 +3781,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_label_set_wrap(GTK_LABEL(detail_text), TRUE);
   gtk_label_set_xalign(GTK_LABEL(detail_text), 0.0);
   gtk_label_set_selectable(GTK_LABEL(detail_text), TRUE);
+  gtk_widget_add_css_class(detail_text, "fulcrum-body");
   auto* detail_meta = gtk_label_new("");
   gtk_label_set_wrap(GTK_LABEL(detail_meta), TRUE);
   gtk_label_set_xalign(GTK_LABEL(detail_meta), 0.0);
@@ -3492,13 +3810,59 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* hint = gtk_label_new("↑↓ navigate · ↵ run · esc hide — Fulcrum");
   launcher.navigation_hint = GTK_LABEL(hint);
   gtk_label_set_xalign(GTK_LABEL(hint), 0.0);
-  gtk_widget_add_css_class(hint, "caption");
-  gtk_widget_add_css_class(hint, "dim-label");
+  gtk_widget_add_css_class(hint, "fulcrum-hint");
   gtk_widget_set_margin_start(hint, 12);
   gtk_widget_set_margin_top(hint, 4);
   gtk_widget_set_margin_bottom(hint, 8);
 
+  // Actions-layer mode bar: esc pill (the layer's exit), the row it acts
+  // on, and the layer badge. Hidden until ⌘K opens the actions layer.
+  auto* modebar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_visible(modebar, FALSE);
+  gtk_widget_add_css_class(modebar, "fulcrum-modebar");
+  gtk_widget_set_margin_start(modebar, 12);
+  gtk_widget_set_margin_end(modebar, 12);
+  gtk_widget_set_margin_top(modebar, 2);
+  auto* back_btn = gtk_button_new();
+  auto* back_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_box_append(GTK_BOX(back_box),
+                 gtk_image_new_from_icon_name("go-previous-symbolic"));
+  gtk_box_append(GTK_BOX(back_box), gtk_label_new("esc"));
+  gtk_button_set_child(GTK_BUTTON(back_btn), back_box);
+  gtk_widget_add_css_class(back_btn, "flat");
+  gtk_widget_set_tooltip_text(back_btn, "esc");
+  gtk_widget_set_valign(back_btn, GTK_ALIGN_CENTER);
+  g_signal_connect(back_btn, "clicked",
+                   G_CALLBACK(on_actions_back_clicked), nullptr);
+  auto* mode_title = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(mode_title), 0.0);
+  gtk_label_set_ellipsize(GTK_LABEL(mode_title), PANGO_ELLIPSIZE_END);
+  gtk_widget_set_hexpand(mode_title, TRUE);
+  gtk_widget_add_css_class(mode_title, "fulcrum-mode-title");
+  auto* mode_badge = gtk_label_new("");
+  gtk_widget_add_css_class(mode_badge, "fulcrum-badge");
+  gtk_widget_set_valign(mode_badge, GTK_ALIGN_CENTER);
+  gtk_box_append(GTK_BOX(modebar), back_btn);
+  gtk_box_append(GTK_BOX(modebar), mode_title);
+  gtk_box_append(GTK_BOX(modebar), mode_badge);
+  launcher.actions_modebar = modebar;
+  launcher.actions_mode_title = GTK_LABEL(mode_title);
+  launcher.actions_mode_badge = GTK_LABEL(mode_badge);
+
+  // IME composition guard source: the entry's internal GtkText reports
+  // preedit changes (docs/cross-platform-interaction.md). GTK4 exposes no
+  // accessor for the IM context itself; the GtkText child is the hook.
+  for (GtkWidget* child = gtk_widget_get_first_child(search);
+       child != nullptr; child = gtk_widget_get_next_sibling(child)) {
+    if (GTK_IS_TEXT(child)) {
+      g_signal_connect(child, "preedit-changed",
+                       G_CALLBACK(on_query_preedit_changed), nullptr);
+      break;
+    }
+  }
+
   gtk_box_append(GTK_BOX(root), search_row);
+  gtk_box_append(GTK_BOX(root), modebar);
   gtk_box_append(GTK_BOX(root), status);
   gtk_box_append(GTK_BOX(root), hotkey_fix);
   gtk_box_append(GTK_BOX(root), ai_panel);
