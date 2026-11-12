@@ -4,6 +4,45 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [0.19.0] - 2026-11-13
+
+### Added
+
+- **Design baseline v2 across all three hosts** (prototype `0ca2178`).
+  Text and glyphs move to the readable amber pair — `#9A4B06` light /
+  `#F0A64B` dark, both ≥ 4.5:1 — with raw `#D97706` reserved for fills;
+  hover becomes a neutral tint that never competes with the amber
+  selection; typography converges (row title 13 medium, subtitle 11.5,
+  AI/detail body 12.5); the settings window is 720 × 520 everywhere.
+- **Hit highlighting.** Query matches are marked inside result rows —
+  the readable amber at weight 650, no background fill — from per-row
+  match ranges the engine ships on the wire. Rows that matched only via
+  keywords render unhighlighted rather than wrong.
+- **Masked clipboard credentials.** Clipboard content that looks like a
+  credential (provider tokens, PEM key headers, long secret
+  assignments) travels masked with a localized `Sensitive` badge;
+  Ctrl/⌘+Y reveals the raw text through a local-only RPC — never
+  logged, never synced, and dropped when the result list refreshes.
+- **IME composition guard** on every host: while the input method holds
+  preedit, Enter / arrows / Tab / Esc / ⌘K belong to the IME — no
+  execution, no selection move — and the first Esc cancels only the
+  composition.
+- **Focus contract.** The results list is one tab stop as a whole: Tab
+  completes when a row offers it and moves focus otherwise, Shift+Tab
+  returns to the query, focus draws a 2 px accent-text ring, and Esc
+  from the actions layer restores the originating row by item id.
+- **Actions mode bar.** ⌘K shows an esc pill, the row being acted on
+  and the layer badge; the selected action swaps the amber fill for a
+  1.5 px inset ring so the layer is visible, not read.
+- **Dynamic panel height.** The panel grows with its results — 240
+  empty, capped at 12 visible rows / 640 points — and the Maximum
+  results setting tops out at 12 to agree with the visual cap.
+- **Design self-check page** (`design/prototype/audit.html`): the state
+  matrix — hit highlight, IME composition, focus order, offline /
+  rate-limit / AI running·done·401·429, sensitive clipboard, over-limit
+  CJK and the row cap — that every new state enters before hosts
+  implement it.
+
 ## [0.18.1] - 2026-11-11
 
 ### Fixed
