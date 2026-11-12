@@ -123,6 +123,17 @@ bool meta_sensitive(std::string const& meta) {
   return meta.find("x:sensitive") != std::string::npos;
 }
 
+// Payload for the actions-mode idle apply: rows plus the originating row
+// the mode bar shows and Esc restores by item id. Namespace scope: the
+// Launcher methods and their idle callbacks both name it.
+struct ActionsJob {
+  std::vector<ResultRow> rows;
+  std::string parent_id;
+  std::string parent_arg;
+  std::string parent_title;
+  std::string parent_badge;
+};
+
 // Code-point offset -> UTF-8 byte offset (Pango attributes are byte-based).
 std::size_t byte_offset(std::string const& text, std::size_t code_points) {
   if (code_points >= text.size()) return text.size();
@@ -150,7 +161,8 @@ void apply_hit_attributes(GtkLabel* label, std::string const& meta,
     auto const begin = byte_offset(text, start);
     auto const end = byte_offset(text, start + length);
     if (end <= begin || end > text.size()) continue;
-    pango_attr_list_insert(attrs, pango_attr_weight_new(650));
+    pango_attr_list_insert(attrs, pango_attr_weight_new(
+        static_cast<PangoWeight>(650)));
     pango_attr_list_insert(
         attrs, pango_attr_foreground_new(
                    dark ? 0xF0F0 : 0x9A9A, dark ? 0xA6A6 : 0x4B4B,
@@ -3475,16 +3487,6 @@ void on_search_changed(GtkSearchEntry*, gpointer) {
 void on_row_activated(GtkListBox*, GtkListBoxRow*, gpointer) {
   Launcher::instance().run_selected();
 }
-
-// Payload for the actions-mode idle apply: rows plus the originating row
-// the mode bar shows and Esc restores by item id.
-struct ActionsJob {
-  std::vector<ResultRow> rows;
-  std::string parent_id;
-  std::string parent_arg;
-  std::string parent_title;
-  std::string parent_badge;
-};
 
 // IME composition guard signal: the query IM context reports preedit
 // changes; a non-empty preedit means the input method owns the keys.
