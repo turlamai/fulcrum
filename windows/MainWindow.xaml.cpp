@@ -17,6 +17,8 @@
 #include <cstring>
 #include <map>
 #include <winrt/Microsoft.UI.Xaml.Media.Imaging.h>
+// Documents::Run — the highlight inlines (WinUI 3 puts Run in Documents).
+#include <winrt/Microsoft.UI.Xaml.Documents.h>
 #pragma comment(lib, "comctl32.lib")
 // The IME composition guard reads the thread's IMM32 context.
 #pragma comment(lib, "imm32.lib")
