@@ -110,7 +110,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="MaxResultsLabel" Text="Maximum results" Style="{StaticResource RowLabel}" />
                             <NumberBox x:Name="MaxResultsBox" Grid.Column="1" Tag="max-results"
-                                       Minimum="5" Maximum="25" SpinButtonPlacementMode="Inline"
+                                       Minimum="5" Maximum="12" SpinButtonPlacementMode="Inline"
                                        VerticalAlignment="Center" ValueChanged="Number_Changed" />
                         </Grid>
                     </StackPanel>
