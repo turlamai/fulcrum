@@ -59,6 +59,9 @@ struct ResultRow {
   std::string icon;
   std::string hint;
   std::string badge;
+  // Optional 9th wire column (design v2): hit-highlight ranges (t:/s:,
+  // code-point start-len runs) and the sensitive flag (x:sensitive).
+  std::string meta;
 };
 
 ResultRow parse_row(std::vector<std::string> const& cells) {
@@ -72,8 +75,89 @@ ResultRow parse_row(std::vector<std::string> const& cells) {
     row.icon = cells[5];
     row.hint = cells[6];
     row.badge = cells[7];
+    if (cells.size() >= 9) {
+      row.meta = cells[8];
+    }
   }
   return row;
+}
+
+// Hit ranges from the meta column: `t:` (title) or `s:` (subtitle),
+// comma-separated start-len runs in Unicode code points — Pango byte
+// offsets are derived at render time.
+std::vector<std::pair<std::size_t, std::size_t>> meta_ranges(
+    std::string const& meta, char field) {
+  std::vector<std::pair<std::size_t, std::size_t>> out;
+  std::string const key = std::string(1, field) + ":";
+  std::size_t cursor = 0;
+  while (cursor < meta.size()) {
+    auto semicolon = meta.find(';', cursor);
+    auto part = meta.substr(cursor, semicolon == std::string::npos
+                                         ? std::string::npos
+                                         : semicolon - cursor);
+    if (part.rfind(key, 0) == 0) {
+      std::size_t pc = 0;
+      while (pc < part.size()) {
+        auto comma = part.find(',', pc);
+        auto piece = part.substr(pc, comma == std::string::npos
+                                         ? std::string::npos
+                                         : comma - pc);
+        auto dash = piece.find('-');
+        if (dash != std::string::npos) {
+          out.emplace_back(
+              static_cast<std::size_t>(std::stoul(piece.substr(0, dash))),
+              static_cast<std::size_t>(std::stoul(piece.substr(dash + 1))));
+        }
+        if (comma == std::string::npos) break;
+        pc = comma + 1;
+      }
+    }
+    if (semicolon == std::string::npos) break;
+    cursor = semicolon + 1;
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+bool meta_sensitive(std::string const& meta) {
+  return meta.find("x:sensitive") != std::string::npos;
+}
+
+// Code-point offset -> UTF-8 byte offset (Pango attributes are byte-based).
+std::size_t byte_offset(std::string const& text, std::size_t code_points) {
+  if (code_points >= text.size()) return text.size();
+  return g_utf8_offset_to_pointer(text.c_str(), code_points) - text.c_str();
+}
+
+gboolean panel_is_dark() {
+  gboolean dark = FALSE;
+  if (GtkSettings* settings = gtk_settings_get_default()) {
+    g_object_get(settings, "gtk-application-prefer-dark-theme", &dark,
+                 nullptr);
+  }
+  return dark;
+}
+
+// Matched runs render in the readable amber at weight 650 — color +
+// weight double cue, never a background fill (design v2 invariant 6).
+void apply_hit_attributes(GtkLabel* label, std::string const& meta,
+                          char field, std::string const& text) {
+  auto ranges = meta_ranges(meta, field);
+  if (ranges.empty()) return;
+  gboolean dark = panel_is_dark();
+  PangoAttrList* attrs = pango_attr_list_new();
+  for (auto const& [start, length] : ranges) {
+    auto const begin = byte_offset(text, start);
+    auto const end = byte_offset(text, start + length);
+    if (end <= begin || end > text.size()) continue;
+    pango_attr_list_insert(attrs, pango_attr_weight_new(650));
+    pango_attr_list_insert(
+        attrs, pango_attr_foreground_new(
+                   dark ? 0xF0F0 : 0x9A9A, dark ? 0xA6A6 : 0x4B4B,
+                   dark ? 0x4B4B : 0x0606));
+  }
+  gtk_label_set_attributes(label, attrs);
+  pango_attr_list_unref(attrs);
 }
 
 // ---- panel styling ----------------------------------------------------------
@@ -1112,6 +1196,7 @@ struct Launcher {
       return;
     }
     gtk_widget_set_visible(ai_panel, TRUE);
+    update_panel_height();
     gtk_label_set_text(ai_text, stream.text.c_str());
     if (stream.phase == "running") {
       gtk_label_set_text(ai_phase, "AI is answering…");
@@ -1122,7 +1207,8 @@ struct Launcher {
     }
   }
 
-  void dismiss_ai_panel() { gtk_widget_set_visible(ai_panel, FALSE); }
+  void dismiss_ai_panel() {
+    update_panel_height(); gtk_widget_set_visible(ai_panel, FALSE); }
 
   void apply_plugin_detail(rivet_app::DetailView const& view) {
     gtk_widget_set_visible(detail_panel, TRUE);
@@ -1138,6 +1224,7 @@ struct Launcher {
   }
 
   void dismiss_detail_panel() {
+    update_panel_height();
     gtk_widget_set_visible(detail_panel, FALSE);
   }
 
@@ -1587,14 +1674,26 @@ struct Launcher {
       gtk_label_set_xalign(GTK_LABEL(title), 0.0);
       gtk_label_set_ellipsize(GTK_LABEL(title), PANGO_ELLIPSIZE_END);
       gtk_widget_add_css_class(title, "fulcrum-row-title");
+      apply_hit_attributes(GTK_LABEL(title), row.meta, 't', title_text);
       auto* subtitle = gtk_label_new(subtitle_text.c_str());
       gtk_label_set_xalign(GTK_LABEL(subtitle), 0.0);
       gtk_label_set_ellipsize(GTK_LABEL(subtitle), PANGO_ELLIPSIZE_END);
       gtk_widget_add_css_class(subtitle, "fulcrum-row-subtitle");
       gtk_widget_add_css_class(subtitle, "dim-label");
+      apply_hit_attributes(GTK_LABEL(subtitle), row.meta, 's',
+                           subtitle_text);
       gtk_box_append(GTK_BOX(texts), title);
       gtk_box_append(GTK_BOX(texts), subtitle);
       gtk_box_append(GTK_BOX(box), texts);
+
+      if (meta_sensitive(row.meta)) {
+        // Masked credential row (design v2 invariant 9): the raw text
+        // never reached the wire; the badge names the mask.
+        auto* sensitive = gtk_label_new(tr("sensitiveBadge").c_str());
+        gtk_widget_add_css_class(sensitive, "fulcrum-badge");
+        gtk_widget_set_valign(sensitive, GTK_ALIGN_CENTER);
+        gtk_box_append(GTK_BOX(box), sensitive);
+      }
 
       if (!row.badge.empty() || row.id == "settings.set") {
         auto* badge = gtk_label_new(row.badge.empty() ? tr("notSet").c_str() : row.badge.c_str());
@@ -1619,6 +1718,23 @@ struct Launcher {
       gtk_list_box_select_row(results,
                               gtk_list_box_get_row_at_index(results, index));
     }
+    update_panel_height();
+  }
+
+  // Design v2 panel sizing: 680 wide, height grows with the result count
+  // — 240 empty, capped at 12 visible rows / 640 points — plus the
+  // overlays that are up. The top edge stays anchored for GTK too (the
+  // WM picks the edge; most gravity setups keep the title edge).
+  void update_panel_height() {
+    if (window == nullptr) return;
+    int const row_count = std::clamp(static_cast<int>(rows.size()), 0, 12);
+    double h = 49.0 + row_count * 46.0 + 16.0 + 31.0 + 4.0;
+    if (actions_mode) h += 30.0;
+    if (ai_panel != nullptr && gtk_widget_get_visible(ai_panel)) h += 175.0;
+    if (detail_panel != nullptr && gtk_widget_get_visible(detail_panel))
+      h += 185.0;
+    h = std::clamp(h, 240.0, 640.0);
+    gtk_window_set_default_size(window, 680, static_cast<int>(h));
   }
 
   struct AppImageTicket {
@@ -1708,6 +1824,57 @@ struct Launcher {
     gtk_widget_set_visible(actions_modebar, FALSE);
     gtk_widget_remove_css_class(GTK_WIDGET(results), "actions-mode");
     gtk_widget_grab_focus(GTK_WIDGET(search));
+  }
+
+  // Ctrl+Y on a masked clipboard row: fetch the raw text through the
+  // local-only reveal RPC and swap it into the on-screen row. Reveal
+  // lives in host memory until the next result rebuild.
+  void reveal_sensitive_selection() {
+    if (api == nullptr || rows.empty() || actions_mode) return;
+    GtkListBoxRow* selected = gtk_list_box_get_selected_row(results);
+    int index = selected != nullptr ? gtk_list_box_row_get_index(selected) : 0;
+    if (index < 0 || index >= static_cast<int>(rows.size())) return;
+    ResultRow const row = rows[static_cast<std::size_t>(index)];
+    if (!meta_sensitive(row.meta)) return;
+    auto* api_raw = api.get();
+    struct RevealJob {
+      std::string id;
+      std::string arg;
+      std::string title;
+      std::string raw;
+    };
+    std::thread([api_raw, row]() mutable {
+      std::string raw;
+      try {
+        raw = api_raw->clipboard_reveal(row.arg).get();
+      } catch (...) {
+        // Reveal is best-effort: the masked row simply stays masked.
+        return;
+      }
+      g_idle_add([](gpointer user_data) -> int {
+        std::unique_ptr<RevealJob> job(static_cast<RevealJob*>(user_data));
+        Launcher& launcher = Launcher::instance();
+        std::replace(job->raw.begin(), job->raw.end(), '\n', ' ');
+        if (job->raw.size() > 120) {
+          job->raw = job->raw.substr(0, 120) + "\u2026";
+        }
+        for (auto& r : launcher.rows) {
+          if (r.id == job->id && r.arg == job->arg && r.title == job->title) {
+            r.title = job->raw;
+            break;
+          }
+        }
+        auto* selected = gtk_list_box_get_selected_row(launcher.results);
+        int const selected_index =
+            selected != nullptr ? gtk_list_box_row_get_index(selected) : 0;
+        launcher.refresh_results();
+        if (auto* kept = gtk_list_box_get_row_at_index(launcher.results,
+                                                       selected_index)) {
+          gtk_list_box_select_row(launcher.results, kept);
+        }
+        return G_SOURCE_REMOVE;
+      }, new RevealJob{row.id, row.arg, row.title, std::move(raw)});
+    }).detach();
   }
 
   void run_selected() {
@@ -2602,7 +2769,7 @@ void settings_build() {
   settings_hint(general,
                 "Focus the hotkey field and press modifiers plus a key. "
                 "Esc cancels; the shared backend rejects unsupported combos.");
-  settings_add_number(general, "Maximum results", "max-results", 5, 25);
+  settings_add_number(general, "Maximum results", "max-results", 5, 12);
   auto* startup_toggle = gtk_switch_new();
   gtk_switch_set_active(GTK_SWITCH(startup_toggle), fulcrum_autostart_enabled());
   gtk_accessible_update_property(GTK_ACCESSIBLE(startup_toggle),
@@ -3360,6 +3527,11 @@ gboolean on_key_pressed(GtkEventControllerKey*, guint keyval, guint,
     Launcher::instance().show_actions_for_selection();
     return TRUE;
   }
+  // Ctrl+Y reveals the selected masked clipboard row (local-only RPC).
+  if (keyval == GDK_KEY_y && (state & GDK_CONTROL_MASK) != 0) {
+    Launcher::instance().reveal_sensitive_selection();
+    return TRUE;
+  }
   switch (keyval) {
     case GDK_KEY_Tab:
     case GDK_KEY_ISO_Left_Tab: {
@@ -3506,7 +3678,9 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* window = gtk_application_window_new(app);
   launcher.window = GTK_WINDOW(window);
   gtk_window_set_title(launcher.window, "Fulcrum");
-  gtk_window_set_default_size(launcher.window, 680, 460);
+  // Design v2: the height is dynamic (240 empty .. 640 with 12 rows);
+  // this is only the empty-state first paint before results arrive.
+  gtk_window_set_default_size(launcher.window, 680, 240);
   gtk_window_set_resizable(launcher.window, FALSE);
   // Chromeless like the other hosts: the panel content IS the window, and
   // the stylesheet rounds it. Close still hides (below) via Esc / the tray.
