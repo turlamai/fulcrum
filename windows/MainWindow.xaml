@@ -48,15 +48,14 @@
                 Text="AI is answering…"
                 FontSize="12"
                 FontWeight="SemiBold"
-                Foreground="#D97706"
-                Opacity="0.9" />
+                Foreground="{ThemeResource AccentTextBrush}" />
             <ScrollViewer MaxHeight="170" VerticalScrollBarVisibility="Auto">
                 <TextBlock
                     x:Name="AiText"
                     TextWrapping="Wrap"
                     IsTextSelectionEnabled="True"
-                    FontSize="13"
-                    LineHeight="20" />
+                    FontSize="12.5"
+                    LineHeight="19" />
             </ScrollViewer>
         </StackPanel>
 
@@ -71,15 +70,14 @@
                 Text="Details"
                 FontSize="12"
                 FontWeight="SemiBold"
-                Foreground="#D97706"
-                Opacity="0.9" />
+                Foreground="{ThemeResource AccentTextBrush}" />
             <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="6">
                     <TextBlock
                         x:Name="DetailText"
                         TextWrapping="Wrap"
                         IsTextSelectionEnabled="True"
-                        FontSize="13" />
+                        FontSize="12.5" />
                     <ItemsControl x:Name="DetailMetadata">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="x:String">
@@ -119,14 +117,14 @@
             <TextBlock
                 x:Name="HintBar"
                 Grid.Column="0"
-                Opacity="0.45"
+                Foreground="{ThemeResource MuteBrush}"
                 FontSize="11"
                 Text="↑↓ navigate · ↵ run · Ctrl+K actions · Esc clear/hide" />
             <TextBlock
                 x:Name="StatusText"
                 Grid.Column="1"
                 Margin="12,0,0,0"
-                Opacity="0.6"
+                Foreground="{ThemeResource FaintBrush}"
                 FontSize="11"
                 TextAlignment="End"
                 TextTrimming="CharacterEllipsis"

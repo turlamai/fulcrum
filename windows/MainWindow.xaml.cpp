@@ -229,6 +229,19 @@ winrt::Windows::UI::Color amber_color(BYTE alpha) {
   return winrt::Windows::UI::Color{alpha, kAmberRed, kAmberGreen, kAmberBlue};
 }
 
+// Readable amber for text and glyphs: raw #D97706 fails 4.5:1 on light
+// surfaces. #9A4B06 (light) / #F0A64B (dark) both clear it —
+// docs/design-system.md "Accent text/icons". Rows rebuild on every
+// keystroke, so reading ActualTheme at build time tracks theme switches
+// without extra plumbing.
+winrt::Windows::UI::Color accent_text_color(
+    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
+  if (theme == winrt::Microsoft::UI::Xaml::ElementTheme::Dark) {
+    return winrt::Windows::UI::Color{0xFF, 0xF0, 0xA6, 0x4B};
+  }
+  return winrt::Windows::UI::Color{0xFF, 0x9A, 0x4B, 0x06};
+}
+
 // Segoe Fluent Icons codepoints (the FontIcon default font family).
 wchar_t const* row_glyph(rivet_app::ResultRow const& row) {
   if (row.kind == "Calculator") return L"\uE8EF";  // Calculator
@@ -249,7 +262,8 @@ wchar_t const* row_glyph(rivet_app::ResultRow const& row) {
 }
 
 winrt::Microsoft::UI::Xaml::Controls::Border make_chip(
-    std::wstring const& text, float font_size) {
+    std::wstring const& text, float font_size,
+    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
   namespace mx = winrt::Microsoft::UI::Xaml;
   namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
   namespace wum = winrt::Microsoft::UI::Xaml::Media;
@@ -257,7 +271,8 @@ winrt::Microsoft::UI::Xaml::Controls::Border make_chip(
   mxc::TextBlock label;
   label.Text(text);
   label.FontSize(font_size);
-  label.Foreground(wum::SolidColorBrush{amber_color(0xFF)});
+  // Chip glyphs are text: the readable amber pair, not the raw accent.
+  label.Foreground(wum::SolidColorBrush{accent_text_color(theme)});
   label.VerticalAlignment(mx::VerticalAlignment::Center);
 
   mxc::Border chip;
@@ -342,7 +357,9 @@ struct RowContent {
   winrt::Microsoft::UI::Xaml::Controls::Border enter_chip{nullptr};
 };
 
-RowContent build_row_content(rivet_app::ResultRow const& row) {
+RowContent build_row_content(
+    rivet_app::ResultRow const& row,
+    winrt::Microsoft::UI::Xaml::ElementTheme theme) {
   namespace mx = winrt::Microsoft::UI::Xaml;
   namespace mxc = winrt::Microsoft::UI::Xaml::Controls;
   namespace wum = winrt::Microsoft::UI::Xaml::Media;
@@ -379,6 +396,8 @@ RowContent build_row_content(rivet_app::ResultRow const& row) {
     mxc::FontIcon icon;
     icon.Glyph(row_glyph(row));
     icon.FontSize(14);
+    // Tile glyphs are icons: readable amber pair on the amber 12% tile.
+    icon.Foreground(wum::SolidColorBrush{accent_text_color(theme)});
     mxc::Border icon_tile;
     icon_tile.Width(28);
     icon_tile.Height(28);
@@ -395,14 +414,14 @@ RowContent build_row_content(rivet_app::ResultRow const& row) {
   auto const& subtitle = row.subtitle.empty() ? row.kind : row.subtitle;
   mxc::TextBlock title;
   title.Text(to_wide(row.title));
-  title.FontSize(13.5);
-  title.FontWeight({600});
+  title.FontSize(13);
+  title.FontWeight({500});
   title.TextTrimming(mx::TextTrimming::CharacterEllipsis);
   title.MaxLines(1);
   mxc::TextBlock subtitle_label;
   subtitle_label.Text(to_wide(subtitle));
   subtitle_label.FontSize(11.5);
-  subtitle_label.Opacity(0.6);
+  subtitle_label.Opacity(0.66);
   subtitle_label.TextTrimming(mx::TextTrimming::CharacterEllipsis);
   subtitle_label.MaxLines(1);
   mxc::StackPanel texts;
@@ -415,14 +434,14 @@ RowContent build_row_content(rivet_app::ResultRow const& row) {
   root.Children().Append(texts);
 
   if (!row.badge.empty()) {
-    auto badge = make_chip(to_wide(row.badge), 10);
+    auto badge = make_chip(to_wide(row.badge), 10, theme);
     badge.Margin({0, 0, 8, 0});
     mx::Controls::Grid::SetColumn(badge, 2);
     root.Children().Append(badge);
   }
 
   // ↵ affordance: only the selected row shows it (UpdateEnterChips).
-  auto enter_chip = make_chip(L"\u21B5", 11);
+  auto enter_chip = make_chip(L"\u21B5", 11, theme);
   enter_chip.Visibility(mx::Visibility::Collapsed);
   mx::Controls::Grid::SetColumn(enter_chip, 3);
   root.Children().Append(enter_chip);
@@ -1765,7 +1784,7 @@ void MainWindow::ApplyResults(std::vector<rivet_app::ResultRow> rows) {
   items.Clear();
   enter_chips_.clear();
   for (auto const& row : rows_) {
-    auto content = build_row_content(row);
+    auto content = build_row_content(row, ResultsList().ActualTheme());
     enter_chips_.push_back(content.enter_chip);
     winrt::Microsoft::UI::Xaml::Controls::ListViewItem item;
     item.Content(content.root);
