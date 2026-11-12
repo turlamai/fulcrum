@@ -55,7 +55,12 @@ class UploadedAssetTests(unittest.TestCase):
         verify_uploaded_assets(VERSION, self.checksums, self.release)
 
     def test_valid_uploaded_asset_matrix(self) -> None:
-        self.assertEqual(len(self.payloads), 20)
+        # Derive the count from the shared inventory so the fixture and
+        # the gate drift together (a hard-coded 20 went stale at 22).
+        self.assertEqual(
+            len(self.payloads),
+            len(FIXED_SUFFIXES) + len(UPDATE_FEEDS) + len(RPM_ARCHES),
+        )
         self.validate()
 
     def test_corrupt_payload_digest_is_rejected(self) -> None:

@@ -54,7 +54,11 @@ def verify_uploaded_assets(version: str, checksums: bytes, release: dict) -> Non
             raise ValueError(f"Expected one RPM revision for {arch}, got {matches}")
         expected.add(matches[0])
 
-    if set(rows) != expected or len(rows) != 20:
+    # The set difference is the complete missing/extra story — rows is a
+    # dict, so equal sets already imply equal size. A hard-coded count
+    # here went stale (20 vs 22) the moment the shared asset inventory
+    # gained entries and silently rejected every real draft.
+    if set(rows) != expected:
         raise ValueError(
             "Uploaded checksum inventory mismatch: "
             f"missing={sorted(expected - set(rows))}, "
