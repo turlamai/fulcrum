@@ -273,10 +273,15 @@ bool ime_composition_open(HWND hwnd) {
     return false;
   }
   if (HIMC context = ::ImmGetContext(hwnd)) {
-    const LONG size =
-        ::ImmGetCompositionStringW(context, GCS_COMPSTR, nullptr, 0);
+    wchar_t buffer[256];
+    const LONG size = ::ImmGetCompositionStringW(
+        context, GCS_COMPSTR, buffer, sizeof(buffer) - sizeof(wchar_t));
     ::ImmReleaseContext(hwnd, context);
-    return size >= 0;
+    // Negative: no open composition (the documented error return). Zero:
+    // an open preedit that carries no text yet — it owns no navigation
+    // keys either, so the guard stays off; the packaged acceptance (en-US
+    // runner, no IME session) proved >= 0 swallows Enter forever.
+    return size > 0;
   }
   return false;
 }
