@@ -40,6 +40,11 @@ struct ResultRow: Equatable {
     let icon: String
     let hint: String
     let badge: String
+    /// Optional 9th wire column (design v2): semicolon-separated
+    /// key:value pairs — `t:`/`s:` carry hit-highlight runs as
+    /// comma-separated start-len code-point ranges, `x:sensitive` marks
+    /// a masked credential row revealed only via clipboard-reveal.
+    var meta: String = ""
 
     /// Column 0 (`id`) is the *action* id and repeats across rows of the
     /// same provider ("app.launch" for every app). SwiftUI identity needs a
@@ -54,11 +59,69 @@ struct ResultRow: Equatable {
     }
 
     static func from(_ cells: [String]) -> ResultRow? {
-        guard cells.count == 8 else { return nil }
+        // 8 columns is the base row; the optional 9th carries the meta
+        // column (hit-highlight ranges / sensitive flag).
+        guard cells.count == 8 || cells.count == 9 else { return nil }
         return ResultRow(id: cells[0], title: cells[1], subtitle: cells[2],
                          kind: cells[3], arg: cells[4], icon: cells[5],
-                         hint: cells[6], badge: cells[7])
+                         hint: cells[6], badge: cells[7],
+                         meta: cells.count == 9 ? cells[8] : "")
     }
+
+    // ---- meta column (design v2) -------------------------------------
+
+    /// `true` when the row is a masked credential; the raw text reaches
+    /// the UI only through the local-only clipboard-reveal RPC.
+    var isSensitive: Bool {
+        meta.split(separator: ";").contains { $0.hasPrefix("x:sensitive") }
+    }
+
+    /// Hit runs over a field's text, as (start, length) code-point pairs.
+    func hitRanges(field: String) -> [(Int, Int)] {
+        guard let part = meta.split(separator: ";").first(where: {
+            $0.hasPrefix("\(field):")
+        }) else { return [] }
+        return part.dropFirst(field.count + 1).split(separator: ",").compactMap { piece in
+            let bounds = piece.split(separator: "-").compactMap { Int($0) }
+            guard bounds.count == 2 else { return nil }
+            return (bounds[0], bounds[1])
+        }
+    }
+
+    var titleHitRanges: [(Int, Int)] { hitRanges(field: "t") }
+    var subtitleHitRanges: [(Int, Int)] { hitRanges(field: "s") }
+}
+
+/// Builds the highlighted Text for a field: matched runs render in the
+/// readable amber at semibold — color + weight double cue, never a
+/// background fill (design v2 invariant 6). Ranges are Unicode code-point
+/// offsets over the field text. Returns nil when nothing is highlighted.
+func hitHighlighted(_ text: String, ranges: [(Int, Int)],
+                    scheme: ColorScheme) -> Text? {
+    guard !ranges.isEmpty else { return nil }
+    let scalars = Array(text.unicodeScalars)
+    func scalarString(_ bounds: Range<Int>) -> String {
+        String(String.UnicodeScalarView(scalars[bounds]))
+    }
+    var runs: [Text] = []
+    var cursor = 0
+    let total = scalars.count
+    for (start, length) in ranges.sorted(by: { $0.0 < $1.0 }) {
+        let begin = min(start, total)
+        let end = min(start + length, total)
+        guard begin >= cursor else { continue }
+        if begin > cursor {
+            runs.append(Text(scalarString(cursor..<begin)))
+        }
+        runs.append(Text(scalarString(begin..<end))
+            .fontWeight(.semibold)
+            .foregroundColor(FulcrumTheme.accentText(scheme)))
+        cursor = end
+    }
+    if cursor < total {
+        runs.append(Text(scalarString(cursor..<total)))
+    }
+    return runs.reduce(Text(""), +)
 }
 
 /// Icon provider. Application rows point at real .app bundles, so render
@@ -79,7 +142,7 @@ enum RowIcon {
         return AnyView(GlyphTile(row: row, size: size))
     }
 
-    private static func symbol(for row: ResultRow) -> String {
+    static func symbol(for row: ResultRow) -> String {
         switch row.kind {
         case "Calculator": return "equal.circle.fill"
         case "Clipboard": return "doc.on.clipboard"
@@ -176,22 +239,44 @@ struct ResultRowView: View {
     let isSelected: Bool
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
+    @EnvironmentObject private var model: LauncherModel
+
+    /// The row's display title: the raw text after a local-only reveal
+    /// (design v2 invariant 9), otherwise the wire title (already masked
+    /// by the engine for sensitive rows).
+    private var displayTitle: String {
+        model.revealedRaw[row.rowId] ?? row.title
+    }
 
     var body: some View {
         HStack(spacing: 12) {
             RowIcon.view(for: row)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title)
+                (hitHighlighted(displayTitle, ranges: row.titleHitRanges,
+                                scheme: scheme)
+                 ?? Text(displayTitle))
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(row.displaySubtitle)
+                (hitHighlighted(row.displaySubtitle, ranges: row.subtitleHitRanges,
+                                scheme: scheme)
+                 ?? Text(row.displaySubtitle))
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             Spacer(minLength: 8)
+            if row.isSensitive {
+                Text(model.t("sensitiveBadge"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(FulcrumTheme.accent.opacity(0.14)))
+                    .foregroundStyle(FulcrumTheme.accentText(scheme))
+                    .accessibilityIdentifier("FulcrumSensitiveBadge")
+            }
             if !row.badge.isEmpty {
                 Text(row.badge)
                     .font(.system(size: 10, weight: .semibold))
@@ -355,6 +440,7 @@ struct PluginDetailView: View {
 struct LauncherView: View {
     @EnvironmentObject private var model: LauncherModel
     @FocusState private var queryFocused: Bool
+    @FocusState private var resultsFocused: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -401,6 +487,15 @@ struct LauncherView: View {
 
             Divider().opacity(0.5)
 
+            if model.showingActions, let parent = model.actionParent {
+                ActionsModebarView(parentTitle: parent.title,
+                                   badge: parent.badge,
+                                   label: model.t("actionsLabel")) {
+                    model.closeActions()
+                }
+                Divider().opacity(0.5)
+            }
+
             if let ai = model.aiStream, ai.phase != "idle" {
                 AiStreamView(state: ai)
                 Divider().opacity(0.5)
@@ -416,12 +511,20 @@ struct LauncherView: View {
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             ForEach(model.rows, id: \.rowId) { row in
-                                ResultRowView(row: row,
-                                              isSelected: model.selection == row.rowId)
+                                rowView(row)
                                     .id(row.rowId)
                                     .onTapGesture { model.select(row) }
                                     .onTapGesture(count: 2) { model.run(row) }
                             }
+                            // Focus anchor: the results list is one tab stop
+                            // as a whole. Tab with nothing to complete lands
+                            // here; ↑↓ keep driving the selection while the
+                            // ring rides it.
+                            Color.clear
+                                .frame(width: 0, height: 0)
+                                .focusable()
+                                .focused($resultsFocused)
+                                .accessibilityHidden(true)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 8)
@@ -431,7 +534,9 @@ struct LauncherView: View {
                         if let newValue {
                             proxy.scrollTo(newValue, anchor: .center)
                         }
-                        queryFocused = true
+                        if !resultsFocused {
+                            queryFocused = true
+                        }
                     }
                 }
             } else {
@@ -468,9 +573,103 @@ struct LauncherView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 9)
         }
-        .frame(minWidth: 680, minHeight: 460)
+        .frame(minWidth: 680, minHeight: 240)
         .background(VisualEffectBackground())
         .onAppear { queryFocused = true }
+        .onChange(of: model.listFocusRequest) { _, _ in
+            resultsFocused = true
+        }
+        .onChange(of: model.queryFocusRequest) { _, _ in
+            resultsFocused = false
+            queryFocused = true
+        }
+        .onChange(of: model.rows.count) { _, _ in syncPanelHeight() }
+        .onChange(of: model.showingActions) { _, _ in syncPanelHeight() }
+        .onChange(of: model.aiStream?.phase) { _, _ in syncPanelHeight() }
+        .onChange(of: model.detailView == nil) { _, _ in syncPanelHeight() }
+    }
+
+    /// Design v2 sizing: the panel grows with results (240–640, 12 rows
+    /// capped) plus the overlays that are currently up.
+    private func syncPanelHeight() {
+        AppDelegate.shared?.updatePanelHeight(
+            rowCount: model.rows.count,
+            modebar: model.showingActions,
+            ai: model.aiStream != nil,
+            detail: model.detailView != nil)
+    }
+
+    /// The focus ring rides the selection: always in the actions layer
+    /// (selection = the 1.5px inset ring), otherwise only while the
+    /// results list owns keyboard focus. Focus and selection stay two
+    /// different visuals in normal mode.
+    @ViewBuilder
+    private func rowView(_ row: ResultRow) -> some View {
+        let selected = model.selection == row.rowId
+        ResultRowView(row: row, isSelected: selected)
+            .overlay { ring(for: row, selected: selected) }
+    }
+
+    /// Actions layer: the 1.5px inset ring replaces the amber fill as
+    /// "which layer am I in"; the focused results list gets the 2px focus
+    /// ring (design v2).
+    @ViewBuilder
+    private func ring(for row: ResultRow, selected: Bool) -> some View {
+        if selected, model.showingActions || resultsFocused {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(FulcrumTheme.accentText(scheme),
+                              lineWidth: model.showingActions ? 1.5 : 2)
+        }
+    }
+}
+
+/// Actions-layer mode bar: an esc pill that reads as the layer's exit, the
+/// row it acts on, and the layer badge — "which layer am I in" is visible,
+/// not read from the hint bar (design v2 actions mode).
+private struct ActionsModebarView: View {
+    let parentTitle: String
+    let badge: String
+    let label: String
+    let onBack: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: onBack) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("esc")
+                        .font(.system(size: 10.5))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("FulcrumActionsBack")
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(parentTitle)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            if !badge.isEmpty {
+                Text(badge)
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 7)
+        .background(Color.primary.opacity(0.02))
     }
 }
 
@@ -514,6 +713,11 @@ struct FulcrumAPI {
     func clipboardRecord(_ text: String) async throws -> String {
         try await generated.clipboard_record(text: text)
     }
+    /// Local-only reveal for a masked clipboard row (design v2): the raw
+    /// text of one item, on this device, never logged or synced.
+    func clipboardReveal(id: String) async throws -> String {
+        try await generated.clipboard_reveal(id: id)
+    }
     func rowActions(id: String, arg: String) async throws -> [ResultRow] {
         (try await generated.row_actions(id: id, arg: arg)).compactMap { ResultRow.from($0) }
     }
@@ -556,13 +760,23 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var language = "en"
     /// ⌘K mode: rows currently holds secondary actions for `actionParent`.
     @Published var showingActions = false
+    /// The row ⌘K was opened on; Esc restores it by item id, never the
+    /// first row.
+    private(set) var actionParent: ResultRow?
+    /// One-shot counters the key monitor raises to move keyboard focus
+    /// between the two tab stops, query field and results list.
+    @Published var listFocusRequest = 0
+    @Published var queryFocusRequest = 0
+    /// Locally revealed raw texts for masked clipboard rows (rowId →
+    /// raw). Host memory only: nothing here is logged or synced, and a
+    /// fresh result list drops the reveal.
+    @Published var revealedRaw: [String: String] = [:]
     /// Live AI answer (nil = nothing to show); survives typing so the user
     /// can keep reading while the model finishes.
     @Published var aiStream: AiStreamState?
     /// FPP2 plugin detail view (nil = nothing to show); dismissed by the
     /// next keystroke or Esc.
     @Published var detailView: DetailViewState?
-    private var actionParent: ResultRow?
 
     var onToggle: (() -> Void)?
     var onHide: (() -> Void)?
@@ -655,13 +869,17 @@ final class LauncherModel: ObservableObject {
 
     /// Tab: autocomplete the selected row's title into the query field —
     /// the Raycast convention for refining a fuzzy hit into its exact
-    /// text before running it.
-    func completeFromSelection() {
+    /// text before running it. Returns false when there is nothing to
+    /// complete, so the key monitor can move focus to the results list
+    /// instead (the list is the second tab stop).
+    @discardableResult
+    func completeFromSelection() -> Bool {
         guard !showingActions,
               let row = rows.first(where: { $0.rowId == selection }),
-              !row.title.isEmpty else { return }
+              !row.title.isEmpty else { return false }
         detailView = nil
         query = row.title
+        return true
     }
 
     /// The backend bumped search-revision (FPP2 daemon push): refresh the
@@ -730,11 +948,38 @@ final class LauncherModel: ObservableObject {
         }
     }
 
-    /// Esc inside the action panel: back to the live search results.
+    /// ⌘Y on a masked clipboard row: fetch the raw text through the
+    /// local-only reveal RPC and swap it into the row on screen. Reveal
+    /// lives in host memory until the next result rebuild.
+    func revealSensitiveSelection() {
+        guard !showingActions, let api,
+              let row = rows.first(where: { $0.rowId == selection }),
+              row.isSensitive else { return }
+        let rowId = row.rowId
+        Task { [weak self] in
+            do {
+                let raw = try await api.clipboardReveal(id: row.arg)
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    let trimmed = raw.replacingOccurrences(of: "\n", with: " ")
+                    self.revealedRaw[rowId] = trimmed.count > 120
+                        ? String(trimmed.prefix(120)) + "…" : trimmed
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.status = "Reveal error: \(error)"
+                }
+            }
+        }
+    }
+
+    /// Esc inside the action panel: back to the live search results, with
+    /// the originating row restored by item id — never the first row.
     func closeActions() {
+        let restore = actionParent?.rowId
         showingActions = false
         actionParent = nil
-        searchChanged(query)
+        searchChanged(query, restore: restore)
     }
 
     func runSelected() {
@@ -866,7 +1111,7 @@ final class LauncherModel: ObservableObject {
         onHide?()
     }
 
-    private func searchChanged(_ text: String) {
+    private func searchChanged(_ text: String, restore: String? = nil) {
         guard let api, ready else { return }
         searchGeneration += 1
         let generation = searchGeneration
@@ -880,7 +1125,17 @@ final class LauncherModel: ObservableObject {
                 await MainActor.run { [weak self] in
                     guard let self, generation == self.searchGeneration else { return }
                     self.rows = result
-                    self.selection = result.first?.rowId
+                    // A fresh result list invalidates in-memory reveals.
+                    self.revealedRaw = [:]
+                    // Esc-from-actions restore wins over "select the first
+                    // row"; a filtered-away row falls back to the primary
+                    // action instead of leaving focus on a dead node.
+                    if let restore,
+                       result.contains(where: { $0.rowId == restore }) {
+                        self.selection = restore
+                    } else {
+                        self.selection = result.first?.rowId
+                    }
                 }
             } catch {
                 await MainActor.run { [weak self] in

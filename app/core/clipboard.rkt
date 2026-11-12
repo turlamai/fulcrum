@@ -24,13 +24,45 @@
          clipboard-item-ref
          clipboard-list
          clipboard-search
-         clipboard-count)
+         clipboard-count
+         sensitive-text?
+         mask-sensitive-preview)
 
-(struct clipboard-item (id text ts pinned?) #:transparent)
+(struct clipboard-item (id text ts pinned? sensitive?) #:transparent)
 
 (struct clipboard-store (path limit items lock) #:mutable)
 
 (define max-item-chars 100000)
+
+;; Sensitive-content detection (design v2 invariant 9): clipboard rows whose
+;; content looks like a credential are masked on the wire and revealed only
+;; through the local-only clipboard-reveal RPC. The patterns are deliberately
+;; conservative — structured provider tokens, PEM headers, and long secret
+;; assignments — so ordinary text is never hidden behind a mask.
+(define sensitive-patterns
+  (list
+   #px"sk-[A-Za-z0-9_-]{16,}"
+   #px"ghp_[A-Za-z0-9]{20,}"
+   #px"gho_[A-Za-z0-9]{20,}"
+   #px"github_pat_[A-Za-z0-9_]{20,}"
+   #px"AKIA[0-9A-Z]{16}"
+   #px"xox[baprs]-[A-Za-z0-9-]{10,}"
+   #px"AIza[0-9A-Za-z_-]{30,}"
+   #px"Bearer [A-Za-z0-9._~+/-]{20,}={0,2}"
+   #rx"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+   #px"(?i:api[_-]?key|secret|password|passwd|access[_-]?token)[\"']?\\s*[:=]\\s*[\"']?[A-Za-z0-9+/_.=-]{16,}"))
+
+(define/contract (sensitive-text? text)
+  (-> string? boolean?)
+  (for/or ([rx (in-list sensitive-patterns)]) (regexp-match? rx text)))
+
+;; Masked preview: keep a short head so the user can still tell entries
+;; apart; the bullets carry the meaning, not a colour.
+(define mask-chars "••••••••••••")
+
+(define/contract (mask-sensitive-preview text)
+  (-> string? string?)
+  (string-append (substring text 0 (min 4 (string-length text))) mask-chars))
 
 (define (load-items path limit)
   (define raw (read-json-file path '()))
@@ -43,7 +75,10 @@
     (clipboard-item (hash-ref entry 'id)
                     (hash-ref entry 'text)
                     (or (hash-ref entry 'ts #f) 0)
-                    (if (hash-ref entry 'pinned #f) #t #f))))
+                    (if (hash-ref entry 'pinned #f) #t #f)
+                    ;; Legacy snapshots carry no flag: recompute on load so
+                    ;; older history gets the same masking discipline.
+                    (sensitive-text? (hash-ref entry 'text)))))
 
 (define (persist! store)
   (write-json-atomic!
@@ -52,7 +87,8 @@
      (hasheq 'id (clipboard-item-id item)
              'text (clipboard-item-text item)
              'ts (clipboard-item-ts item)
-             'pinned (clipboard-item-pinned? item)))))
+             'pinned (clipboard-item-pinned? item)
+             'sensitive (clipboard-item-sensitive? item)))))
 
 (define (next-id!)
   (format "c~a-~a" (current-inexact-milliseconds) (random 4294967087)))
@@ -96,11 +132,13 @@
                  (clipboard-item (clipboard-item-id existing)
                                  capped
                                  (current-inexact-milliseconds)
-                                 (clipboard-item-pinned? existing))
+                                 (clipboard-item-pinned? existing)
+                                 (sensitive-text? capped))
                  (clipboard-item (next-id!)
                                  capped
                                  (current-inexact-milliseconds)
-                                 #f)))
+                                 #f
+                                 (sensitive-text? capped))))
            (set-clipboard-store-items!
             store
             (cons item

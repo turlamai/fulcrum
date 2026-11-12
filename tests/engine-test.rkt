@@ -57,6 +57,66 @@
         ;; (bare gtk-launch forked a doomed child and reported victory).
         (application "dterminal" "Terminal" "/bin/true" "app" '() "/usr/share/applications/terminal.desktop")))
 
+(test-case "hit-highlight meta column (design v2)"
+  (with-fresh-data-dir
+   (lambda ()
+     (define engine (fixture-engine #:apps fixture-apps))
+     ;; A fuzzy-matched app row carries the optional 9th column with title
+     ;; ranges in the t:/s: encoding.
+     (define rows (engine-search engine "firefx"))
+     ;; App rows share the "app.launch" action id; the fixture app id
+     ;; travels in the arg column.
+     (define firefox (findf (lambda (r) (string=? (list-ref r 4) "a1")) rows))
+     (check-true (list? firefox))
+     (check-equal? (length firefox) 9)
+     (define meta (list-ref firefox 8))
+     (check-true (string-contains? meta "t:")
+                 (format "expected a title range in ~a" meta))
+     ;; Rows with no visible hit stay 8-wide; a 9-wide meta column always
+     ;; parses as semicolon-separated key:value pairs whose values are
+     ;; comma-separated start-len ranges.
+     (define plain (engine-search engine ""))
+     (check-true (for/and ([row (in-list plain)]) (= (length row) 8)))
+     (define web-rows (engine-search engine "zzzznope"))
+     ;; The web fallback embeds the query in its title/subtitle, so its
+     ;; meta legitimately highlights those runs.
+     (for ([row (in-list web-rows)] #:when (= (length row) 9))
+       (check-true
+        (andmap
+         (lambda (part)
+           (define kv (string-split part ":"))
+           (and (= (length kv) 2)
+                (member (car kv) '("t" "s" "x"))
+                (or (string=? (car kv) "x")
+                    (andmap
+                     (lambda (rng)
+                       (and (= (length (string-split rng "-")) 2)
+                            (andmap string->number (string-split rng "-"))))
+                     (string-split (cadr kv) ","))))
+           #t)
+         (string-split (list-ref row 8) ";"))
+        (format "malformed meta: ~a" (list-ref row 8)))))))
+
+(test-case "sensitive clipboard rows travel masked (design v2)"
+  (with-fresh-data-dir
+   (lambda ()
+     (define engine (fixture-engine))
+     (define store (engine-clipboard engine))
+     (check-true (sensitive-text? "sk-abcdef1234567890abcdef"))
+     (check-false (sensitive-text? "buy milk tomorrow"))
+     (define item (clipboard-record! store "sk-abcdef1234567890abcdef"))
+     (check-true (clipboard-item-sensitive? item))
+     (define rows (engine-search engine "clip"))
+     (define clip-row
+       (findf (lambda (r) (and (= (length r) 9)
+                               (string-contains? (or (list-ref r 8) "") "x:sensitive")))
+              rows))
+     (check-true (list? clip-row) "the sensitive row carries x:sensitive")
+     (check-false (string-contains? (list-ref clip-row 1) "abcdef1234")
+                  "the raw key never reaches the wire title")
+     (check-true (string-contains? (list-ref clip-row 1) "••••")
+                 "the masked preview shows bullets"))))
+
 (test-case "empty query lists apps first"
   (with-fresh-data-dir
    (lambda ()
@@ -305,12 +365,15 @@
      (check-true (hash-has-key? (engine-recents eng)
                                 (string-append "app.launch" "\u0000" "a1"))))))
 
-(test-case "rows are 8-column string lists"
+(test-case "rows are 8-or-9-column string lists"
+  ;; Design v2: the optional 9th meta column carries highlight ranges /
+  ;; the sensitive flag. "f" fuzzy-matches titles, so 9-wide rows appear;
+  ;; every cell stays a string either way.
   (with-fresh-data-dir
    (lambda ()
      (define engine (fixture-engine #:apps fixture-apps))
      (for ([row (in-list (engine-search engine "f"))])
-       (check-equal? (length row) 8)
+       (check-true (<= 8 (length row) 9))
        (check-true (andmap string? row))))))
 
 (test-case "secondary actions: the ⌘K panel contract"

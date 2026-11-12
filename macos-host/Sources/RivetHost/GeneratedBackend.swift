@@ -193,6 +193,10 @@ public struct RivetAPI: Sendable {
         let rivetResult = try await client.call("clipboard-record", arguments: [encode_String(text)])
         return try decode_String(rivetResult)
     }
+    public func clipboard_reveal(id: String) async throws -> String {
+        let rivetResult = try await client.call("clipboard-reveal", arguments: [encode_String(id)])
+        return try decode_String(rivetResult)
+    }
     public func fs_reconcile(dir: String) async throws -> String {
         let rivetResult = try await client.call("fs-reconcile", arguments: [encode_String(dir)])
         return try decode_String(rivetResult)

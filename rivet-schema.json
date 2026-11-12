@@ -276,6 +276,22 @@
       }
     },
     {
+      "name": "clipboard-reveal",
+      "arguments": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
       "arguments": [
         {
           "name": "query",
