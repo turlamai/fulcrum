@@ -112,6 +112,29 @@ window.fulcrum-window {
   color: #1d1d1f;
 }
 )CSS";
+  // Theme-dependent text tokens (docs/design-system.md): hover is a neutral
+  // whisper so it never competes with the amber selection; glyphs/badges use
+  // the readable amber pair (#9A4B06 / #F0A64B, both >= 4.5:1); hint and
+  // status use the mute/faint ink-alpha tiers.
+  char const* tokens_css = dark
+      ? R"CSS(
+window.fulcrum-window list row:hover { background-color: rgba(255,255,255,0.07); }
+.fulcrum-row-icon { color: #F0A64B; }
+.fulcrum-badge { color: #F0A64B; }
+.fulcrum-enter { color: #F0A64B; }
+.fulcrum-slot-header { color: #F0A64B; }
+.fulcrum-hint { color: rgba(242,242,242,0.66); }
+.fulcrum-status { color: rgba(242,242,242,0.52); }
+)CSS"
+      : R"CSS(
+window.fulcrum-window list row:hover { background-color: rgba(0,0,0,0.05); }
+.fulcrum-row-icon { color: #9A4B06; }
+.fulcrum-badge { color: #9A4B06; }
+.fulcrum-enter { color: #9A4B06; }
+.fulcrum-slot-header { color: #9A4B06; }
+.fulcrum-hint { color: rgba(29,29,31,0.66); }
+.fulcrum-status { color: rgba(29,29,31,0.62); }
+)CSS";
   static char const* const shared_css = R"CSS(
 window.fulcrum-window entry {
   background: none;
@@ -132,40 +155,48 @@ window.fulcrum-window list row {
   padding: 4px 8px;
   background-color: transparent;
 }
-window.fulcrum-window list row:hover {
-  background-color: alpha(#D97706, 0.08);
-}
 window.fulcrum-window list row:selected {
   background-color: alpha(#D97706, 0.14);
 }
 .fulcrum-row-title {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .fulcrum-row-subtitle {
-  font-size: 11px;
+  font-size: 11.5px;
 }
 .fulcrum-row-icon {
   background-color: alpha(#D97706, 0.12);
   border-radius: 6px;
   padding: 5px;
-  color: #D97706;
 }
 .fulcrum-badge {
   background-color: alpha(#D97706, 0.14);
-  color: #D97706;
   border-radius: 9px;
   padding: 1px 7px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .fulcrum-enter {
-  color: #D97706;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   opacity: 0;
 }
 list row:selected .fulcrum-enter {
   opacity: 1;
+}
+.fulcrum-slot-header {
+  font-size: 11px;
+  font-weight: 600;
+}
+.fulcrum-body {
+  font-size: 12.5px;
+}
+.fulcrum-hint {
+  font-size: 11px;
+}
+.fulcrum-status {
+  font-size: 11px;
 }
 )CSS";
 
@@ -180,8 +211,9 @@ list row:selected .fulcrum-enter {
     g_panel_css = nullptr;
   }
   g_panel_css = gtk_css_provider_new();
-  gtk_css_provider_load_from_string(g_panel_css,
-                                    (std::string(glass_css) + shared_css).c_str());
+  gtk_css_provider_load_from_string(
+      g_panel_css,
+      (std::string(glass_css) + tokens_css + shared_css).c_str());
   gtk_style_context_add_provider_for_display(
       display, GTK_STYLE_PROVIDER(g_panel_css),
       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -2459,7 +2491,9 @@ void settings_build() {
   auto* window = gtk_window_new();
   g_settings_form->window = GTK_WINDOW(window);
   gtk_window_set_title(GTK_WINDOW(window), "Fulcrum Settings");
-  gtk_window_set_default_size(GTK_WINDOW(window), 760, 560);
+  // 720x520 is the shared settings window size (docs/design-system.md);
+  // the older 760x560 drifted from the macOS/WinUI hosts.
+  gtk_window_set_default_size(GTK_WINDOW(window), 720, 520);
   gtk_window_set_hide_on_close(GTK_WINDOW(window), TRUE);
 
   // Mirror native macOS/WinUI Settings information architecture: five
@@ -3396,6 +3430,7 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* status = gtk_label_new("Starting embedded Racket CS…");
   gtk_label_set_xalign(GTK_LABEL(status), 0.0);
   gtk_label_set_selectable(GTK_LABEL(status), TRUE);
+  gtk_widget_add_css_class(status, "fulcrum-status");
   gtk_widget_set_margin_start(status, 12);
   gtk_widget_set_margin_top(status, 6);
   launcher.status = GTK_LABEL(status);
@@ -3420,8 +3455,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_set_margin_top(ai_panel, 4);
   auto* ai_phase = gtk_label_new("AI is answering…");
   gtk_label_set_xalign(GTK_LABEL(ai_phase), 0.0);
-  gtk_widget_add_css_class(ai_phase, "caption");
-  gtk_widget_add_css_class(ai_phase, "dim-label");
+  gtk_widget_add_css_class(ai_phase, "fulcrum-slot-header");
   auto* ai_scroll = gtk_scrolled_window_new();
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(ai_scroll),
                                  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -3433,7 +3467,9 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_label_set_wrap(GTK_LABEL(ai_text), TRUE);
   gtk_label_set_xalign(GTK_LABEL(ai_text), 0.0);
   gtk_label_set_selectable(GTK_LABEL(ai_text), TRUE);
-  gtk_widget_add_css_class(ai_text, "monospace");
+  // 12.5 regular per the shared typography; the old monospace drifted from
+  // the macOS/WinUI hosts.
+  gtk_widget_add_css_class(ai_text, "fulcrum-body");
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(ai_scroll), ai_text);
   gtk_box_append(GTK_BOX(ai_panel), ai_phase);
   gtk_box_append(GTK_BOX(ai_panel), ai_scroll);
@@ -3450,8 +3486,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_set_margin_top(detail_panel, 4);
   auto* detail_header = gtk_label_new("Details");
   gtk_label_set_xalign(GTK_LABEL(detail_header), 0.0);
-  gtk_widget_add_css_class(detail_header, "caption");
-  gtk_widget_add_css_class(detail_header, "dim-label");
+  gtk_widget_add_css_class(detail_header, "fulcrum-slot-header");
   auto* detail_scroll = gtk_scrolled_window_new();
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(detail_scroll),
                                  GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -3464,6 +3499,7 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_label_set_wrap(GTK_LABEL(detail_text), TRUE);
   gtk_label_set_xalign(GTK_LABEL(detail_text), 0.0);
   gtk_label_set_selectable(GTK_LABEL(detail_text), TRUE);
+  gtk_widget_add_css_class(detail_text, "fulcrum-body");
   auto* detail_meta = gtk_label_new("");
   gtk_label_set_wrap(GTK_LABEL(detail_meta), TRUE);
   gtk_label_set_xalign(GTK_LABEL(detail_meta), 0.0);
@@ -3492,8 +3528,7 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* hint = gtk_label_new("↑↓ navigate · ↵ run · esc hide — Fulcrum");
   launcher.navigation_hint = GTK_LABEL(hint);
   gtk_label_set_xalign(GTK_LABEL(hint), 0.0);
-  gtk_widget_add_css_class(hint, "caption");
-  gtk_widget_add_css_class(hint, "dim-label");
+  gtk_widget_add_css_class(hint, "fulcrum-hint");
   gtk_widget_set_margin_start(hint, 12);
   gtk_widget_set_margin_top(hint, 4);
   gtk_widget_set_margin_bottom(hint, 8);
