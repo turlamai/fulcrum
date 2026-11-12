@@ -646,6 +646,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                   let panel = self.panel,
                   panel.isVisible,
                   event.window === panel else { return event }
+            // IME composition guard (docs/cross-platform-interaction.md):
+            // while the query field editor holds marked (preedit) text,
+            // Enter, the arrows, Tab, Esc and ⌘K belong to the input
+            // method — no execution, no selection move, no layer change.
+            // The first Esc only cancels the composition. Pass the event
+            // through so the field editor and the IME handle it.
+            if [36, 40, 48, 53, 125, 126].contains(Int(event.keyCode)),
+               let editor = panel.firstResponder as? NSTextView,
+               editor.hasMarkedText() {
+                return event
+            }
             switch event.keyCode {
             case 53:                              // esc
               // In the ⌘K panel: back to the search rows.
@@ -667,8 +678,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                   self.model?.clearQuery()
               }
             case 48:
-                  self.model?.completeFromSelection()     // tab autocomplete
-                  return nil
+                // Tab: complete when a row offers it, else move focus to
+                // the results list (second tab stop). Shift+Tab returns to
+                // the query. Strictly reversed, never skipping layers.
+                if event.modifierFlags.contains(.shift) {
+                    self.model?.queryFocusRequest += 1
+                } else if self.model?.completeFromSelection() == true {
+                    // tab autocomplete consumed
+                } else {
+                    self.model?.listFocusRequest += 1
+                }
+                return nil
             case 40 where event.modifierFlags.contains(.command):
                   self.model?.openActionsForSelection()   // ⌘K
             case 125: self.model?.moveSelection(1)   // down

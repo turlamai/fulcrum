@@ -79,7 +79,7 @@ enum RowIcon {
         return AnyView(GlyphTile(row: row, size: size))
     }
 
-    private static func symbol(for row: ResultRow) -> String {
+    static func symbol(for row: ResultRow) -> String {
         switch row.kind {
         case "Calculator": return "equal.circle.fill"
         case "Clipboard": return "doc.on.clipboard"
@@ -355,6 +355,7 @@ struct PluginDetailView: View {
 struct LauncherView: View {
     @EnvironmentObject private var model: LauncherModel
     @FocusState private var queryFocused: Bool
+    @FocusState private var resultsFocused: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -401,6 +402,15 @@ struct LauncherView: View {
 
             Divider().opacity(0.5)
 
+            if model.showingActions, let parent = model.actionParent {
+                ActionsModebarView(parentTitle: parent.title,
+                                   badge: parent.badge,
+                                   label: model.t("actionsLabel")) {
+                    model.closeActions()
+                }
+                Divider().opacity(0.5)
+            }
+
             if let ai = model.aiStream, ai.phase != "idle" {
                 AiStreamView(state: ai)
                 Divider().opacity(0.5)
@@ -416,12 +426,20 @@ struct LauncherView: View {
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             ForEach(model.rows, id: \.rowId) { row in
-                                ResultRowView(row: row,
-                                              isSelected: model.selection == row.rowId)
+                                rowView(row)
                                     .id(row.rowId)
                                     .onTapGesture { model.select(row) }
                                     .onTapGesture(count: 2) { model.run(row) }
                             }
+                            // Focus anchor: the results list is one tab stop
+                            // as a whole. Tab with nothing to complete lands
+                            // here; ↑↓ keep driving the selection while the
+                            // ring rides it.
+                            Color.clear
+                                .frame(width: 0, height: 0)
+                                .focusable()
+                                .focused($resultsFocused)
+                                .accessibilityHidden(true)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 8)
@@ -431,7 +449,9 @@ struct LauncherView: View {
                         if let newValue {
                             proxy.scrollTo(newValue, anchor: .center)
                         }
-                        queryFocused = true
+                        if !resultsFocused {
+                            queryFocused = true
+                        }
                     }
                 }
             } else {
@@ -471,6 +491,86 @@ struct LauncherView: View {
         .frame(minWidth: 680, minHeight: 460)
         .background(VisualEffectBackground())
         .onAppear { queryFocused = true }
+        .onChange(of: model.listFocusRequest) { _, _ in
+            resultsFocused = true
+        }
+        .onChange(of: model.queryFocusRequest) { _, _ in
+            resultsFocused = false
+            queryFocused = true
+        }
+    }
+
+    /// The focus ring rides the selection: always in the actions layer
+    /// (selection = the 1.5px inset ring), otherwise only while the
+    /// results list owns keyboard focus. Focus and selection stay two
+    /// different visuals in normal mode.
+    @ViewBuilder
+    private func rowView(_ row: ResultRow) -> some View {
+        let selected = model.selection == row.rowId
+        ResultRowView(row: row, isSelected: selected)
+            .overlay { ring(for: row, selected: selected) }
+    }
+
+    /// Actions layer: the 1.5px inset ring replaces the amber fill as
+    /// "which layer am I in"; the focused results list gets the 2px focus
+    /// ring (design v2).
+    @ViewBuilder
+    private func ring(for row: ResultRow, selected: Bool) -> some View {
+        if selected, model.showingActions || resultsFocused {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(FulcrumTheme.accentText(scheme),
+                              lineWidth: model.showingActions ? 1.5 : 2)
+        }
+    }
+}
+
+/// Actions-layer mode bar: an esc pill that reads as the layer's exit, the
+/// row it acts on, and the layer badge — "which layer am I in" is visible,
+/// not read from the hint bar (design v2 actions mode).
+private struct ActionsModebarView: View {
+    let parentTitle: String
+    let badge: String
+    let label: String
+    let onBack: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: onBack) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("esc")
+                        .font(.system(size: 10.5))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("FulcrumActionsBack")
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(parentTitle)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            if !badge.isEmpty {
+                Text(badge)
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 7)
+        .background(Color.primary.opacity(0.02))
     }
 }
 
@@ -556,13 +656,19 @@ final class LauncherModel: ObservableObject {
     @Published private(set) var language = "en"
     /// ⌘K mode: rows currently holds secondary actions for `actionParent`.
     @Published var showingActions = false
+    /// The row ⌘K was opened on; Esc restores it by item id, never the
+    /// first row.
+    private(set) var actionParent: ResultRow?
+    /// One-shot counters the key monitor raises to move keyboard focus
+    /// between the two tab stops, query field and results list.
+    @Published var listFocusRequest = 0
+    @Published var queryFocusRequest = 0
     /// Live AI answer (nil = nothing to show); survives typing so the user
     /// can keep reading while the model finishes.
     @Published var aiStream: AiStreamState?
     /// FPP2 plugin detail view (nil = nothing to show); dismissed by the
     /// next keystroke or Esc.
     @Published var detailView: DetailViewState?
-    private var actionParent: ResultRow?
 
     var onToggle: (() -> Void)?
     var onHide: (() -> Void)?
@@ -655,13 +761,17 @@ final class LauncherModel: ObservableObject {
 
     /// Tab: autocomplete the selected row's title into the query field —
     /// the Raycast convention for refining a fuzzy hit into its exact
-    /// text before running it.
-    func completeFromSelection() {
+    /// text before running it. Returns false when there is nothing to
+    /// complete, so the key monitor can move focus to the results list
+    /// instead (the list is the second tab stop).
+    @discardableResult
+    func completeFromSelection() -> Bool {
         guard !showingActions,
               let row = rows.first(where: { $0.rowId == selection }),
-              !row.title.isEmpty else { return }
+              !row.title.isEmpty else { return false }
         detailView = nil
         query = row.title
+        return true
     }
 
     /// The backend bumped search-revision (FPP2 daemon push): refresh the
@@ -730,11 +840,13 @@ final class LauncherModel: ObservableObject {
         }
     }
 
-    /// Esc inside the action panel: back to the live search results.
+    /// Esc inside the action panel: back to the live search results, with
+    /// the originating row restored by item id — never the first row.
     func closeActions() {
+        let restore = actionParent?.rowId
         showingActions = false
         actionParent = nil
-        searchChanged(query)
+        searchChanged(query, restore: restore)
     }
 
     func runSelected() {
@@ -866,7 +978,7 @@ final class LauncherModel: ObservableObject {
         onHide?()
     }
 
-    private func searchChanged(_ text: String) {
+    private func searchChanged(_ text: String, restore: String? = nil) {
         guard let api, ready else { return }
         searchGeneration += 1
         let generation = searchGeneration
@@ -880,7 +992,15 @@ final class LauncherModel: ObservableObject {
                 await MainActor.run { [weak self] in
                     guard let self, generation == self.searchGeneration else { return }
                     self.rows = result
-                    self.selection = result.first?.rowId
+                    // Esc-from-actions restore wins over "select the first
+                    // row"; a filtered-away row falls back to the primary
+                    // action instead of leaving focus on a dead node.
+                    if let restore,
+                       result.contains(where: { $0.rowId == restore }) {
+                        self.selection = restore
+                    } else {
+                        self.selection = result.first?.rowId
+                    }
                 }
             } catch {
                 await MainActor.run { [weak self] in
