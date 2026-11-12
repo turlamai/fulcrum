@@ -96,7 +96,7 @@ std::vector<std::pair<std::size_t, std::size_t>> meta_ranges(
                                          ? std::string::npos
                                          : semicolon - cursor);
     if (part.rfind(key, 0) == 0) {
-      std::size_t pc = 0;
+      std::size_t pc = key.size();  // skip the "t:"/"s:" key prefix
       while (pc < part.size()) {
         auto comma = part.find(',', pc);
         auto piece = part.substr(pc, comma == std::string::npos
