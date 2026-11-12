@@ -125,6 +125,13 @@ window.fulcrum-window list row:hover { background-color: rgba(255,255,255,0.07);
 .fulcrum-slot-header { color: #F0A64B; }
 .fulcrum-hint { color: rgba(242,242,242,0.66); }
 .fulcrum-status { color: rgba(242,242,242,0.52); }
+window.fulcrum-window list row:focus { outline: 2px solid #F0A64B; outline-offset: -2px; }
+window.fulcrum-window list.actions-mode row:selected {
+  background-color: rgba(255,255,255,0.07);
+  box-shadow: inset 0 0 0 1.5px #F0A64B;
+}
+window.fulcrum-window .fulcrum-modebar { border-bottom: 1px solid rgba(255,255,255,0.08); }
+window.fulcrum-window .fulcrum-mode-title { color: rgba(242,242,242,0.66); }
 )CSS"
       : R"CSS(
 window.fulcrum-window list row:hover { background-color: rgba(0,0,0,0.05); }
@@ -134,6 +141,13 @@ window.fulcrum-window list row:hover { background-color: rgba(0,0,0,0.05); }
 .fulcrum-slot-header { color: #9A4B06; }
 .fulcrum-hint { color: rgba(29,29,31,0.66); }
 .fulcrum-status { color: rgba(29,29,31,0.62); }
+window.fulcrum-window list row:focus { outline: 2px solid #9A4B06; outline-offset: -2px; }
+window.fulcrum-window list.actions-mode row:selected {
+  background-color: rgba(0,0,0,0.05);
+  box-shadow: inset 0 0 0 1.5px #9A4B06;
+}
+window.fulcrum-window .fulcrum-modebar { border-bottom: 1px solid rgba(0,0,0,0.08); }
+window.fulcrum-window .fulcrum-mode-title { color: rgba(29,29,31,0.66); }
 )CSS";
   static char const* const shared_css = R"CSS(
 window.fulcrum-window entry {
@@ -196,6 +210,18 @@ list row:selected .fulcrum-enter {
   font-size: 11px;
 }
 .fulcrum-status {
+  font-size: 11px;
+}
+.fulcrum-modebar {
+  padding: 4px 6px;
+}
+.fulcrum-modebar button {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  min-height: 0;
+}
+.fulcrum-mode-title {
   font-size: 11px;
 }
 )CSS";
@@ -999,6 +1025,15 @@ struct Launcher {
   // search_rows remembers the live result list.
   bool actions_mode{false};
   std::vector<ResultRow> search_rows;
+  // Design v2 actions layer: the mode bar (esc pill + parent row) and the
+  // originating row identity Esc restores by item id.
+  GtkWidget* actions_modebar{nullptr};
+  GtkLabel* actions_mode_title{nullptr};
+  GtkLabel* actions_mode_badge{nullptr};
+  std::string actions_parent_id;
+  std::string actions_parent_arg;
+  // IME composition guard: true while the query IM context holds preedit.
+  bool query_composing{false};
 
   static Launcher& instance() {
     static Launcher launcher;
@@ -1623,30 +1658,55 @@ struct Launcher {
       } catch (std::exception const& e) {
         error = e.what();
       }
+      auto* job = new ActionsJob{std::move(actions), row.id, row.arg,
+                                 row.title, row.badge};
       g_idle_add([](gpointer user_data) -> int {
-        std::unique_ptr<std::vector<ResultRow>> job(
-            static_cast<std::vector<ResultRow>*>(user_data));
+        std::unique_ptr<ActionsJob> job(static_cast<ActionsJob*>(user_data));
         Launcher& launcher = Launcher::instance();
         launcher.actions_mode = true;
-        launcher.rows = std::move(*job);
+        launcher.rows = std::move(job->rows);
+        launcher.actions_parent_id = job->parent_id;
+        launcher.actions_parent_arg = job->parent_arg;
         launcher.refresh_results();
         gtk_label_set_text(launcher.navigation_hint,
                            tr("navigationHintActions").c_str());
+        // Mode bar: the layer's exit pill and the row it acts on —
+        // "which layer am I in" is visible, not read (design v2).
+        gtk_widget_set_visible(launcher.actions_modebar, TRUE);
+        gtk_widget_add_css_class(GTK_WIDGET(launcher.results), "actions-mode");
+        gchar* escaped =
+            g_markup_escape_text(job->parent_title.c_str(), -1);
+        std::string markup = std::string(tr("actionsLabel")) + " <b>" +
+                             escaped + "</b>";
+        gtk_label_set_markup(launcher.actions_mode_title, markup.c_str());
+        g_free(escaped);
+        gtk_label_set_text(launcher.actions_mode_badge,
+                           job->parent_badge.c_str());
+        gtk_widget_set_visible(GTK_WIDGET(launcher.actions_mode_badge),
+                               !job->parent_badge.empty());
         if (launcher.rows.empty()) {
           launcher.set_status(tr("noSecondaryActions"));
         }
         return G_SOURCE_REMOVE;
-      }, new std::vector<ResultRow>(std::move(actions)));
+      }, job);
       (void)error;
     }).detach();
   }
 
   void close_actions() {
+    // Esc restores the originating row by item id — never the first row;
+    // a row filtered away falls back to the primary action (index 0).
+    std::string restore_id = std::move(actions_parent_id);
+    std::string restore_arg = std::move(actions_parent_arg);
+    actions_parent_id.clear();
+    actions_parent_arg.clear();
     actions_mode = false;
     rows = std::move(search_rows);
     search_rows.clear();
-    refresh_results();
+    refresh_results(restore_arg, restore_id);
     gtk_label_set_text(navigation_hint, tr("navigationHint").c_str());
+    gtk_widget_set_visible(actions_modebar, FALSE);
+    gtk_widget_remove_css_class(GTK_WIDGET(results), "actions-mode");
     gtk_widget_grab_focus(GTK_WIDGET(search));
   }
 
@@ -3249,8 +3309,52 @@ void on_row_activated(GtkListBox*, GtkListBoxRow*, gpointer) {
   Launcher::instance().run_selected();
 }
 
+// Payload for the actions-mode idle apply: rows plus the originating row
+// the mode bar shows and Esc restores by item id.
+struct ActionsJob {
+  std::vector<ResultRow> rows;
+  std::string parent_id;
+  std::string parent_arg;
+  std::string parent_title;
+  std::string parent_badge;
+};
+
+// IME composition guard signal: the query IM context reports preedit
+// changes; a non-empty preedit means the input method owns the keys.
+static void on_query_preedit_changed(GtkIMContext* context, gpointer) {
+  char* preedit = nullptr;
+  PangoAttrList* attrs = nullptr;
+  int cursor = 0;
+  gtk_im_context_get_preedit_string(context, &preedit, &attrs, &cursor);
+  Launcher::instance().query_composing = preedit != nullptr && *preedit != '\0';
+  g_free(preedit);
+  if (attrs != nullptr) {
+    pango_attr_list_unref(attrs);
+  }
+}
+
+static void on_actions_back_clicked(GtkButton*, gpointer) {
+  Launcher::instance().close_actions();
+}
+
 gboolean on_key_pressed(GtkEventControllerKey*, guint keyval, guint,
                         GdkModifierType state, gpointer) {
+  // IME composition guard (docs/cross-platform-interaction.md): while the
+  // query IM context holds preedit, Enter/arrows/Tab/Esc belong to the
+  // input method — no execution, no selection move, no layer change; the
+  // first Esc cancels only the composition. Pass the key through so the
+  // IME and the entry handle it.
+  if (Launcher::instance().query_composing) {
+    const bool layer_key =
+        keyval == GDK_KEY_Return || keyval == GDK_KEY_ISO_Enter ||
+        keyval == GDK_KEY_Up || keyval == GDK_KEY_Down ||
+        keyval == GDK_KEY_Tab || keyval == GDK_KEY_ISO_Left_Tab ||
+        keyval == GDK_KEY_Escape ||
+        (keyval == GDK_KEY_k && (state & GDK_CONTROL_MASK) != 0);
+    if (layer_key) {
+      return FALSE;
+    }
+  }
   // Ctrl+K equivalent: the selected row's secondary actions.
   if (keyval == GDK_KEY_k && (state & GDK_CONTROL_MASK) != 0) {
     Launcher::instance().show_actions_for_selection();
@@ -3259,21 +3363,29 @@ gboolean on_key_pressed(GtkEventControllerKey*, guint keyval, guint,
   switch (keyval) {
     case GDK_KEY_Tab:
     case GDK_KEY_ISO_Left_Tab: {
-      // Autocomplete the selected row's title into the query field.
       Launcher& launcher = Launcher::instance();
-      if (launcher.actions_mode || launcher.rows.empty()) {
+      // Shift+Tab (ISO_Left_Tab): back to the query, strictly reversed.
+      if (keyval == GDK_KEY_ISO_Left_Tab) {
+        gtk_widget_grab_focus(GTK_WIDGET(launcher.search));
         return TRUE;
       }
-      GtkListBoxRow* selected =
-          gtk_list_box_get_selected_row(launcher.results);
-      int index = selected != nullptr ? gtk_list_box_row_get_index(selected) : 0;
-      if (index < 0 || index >= static_cast<int>(launcher.rows.size())) {
-        index = 0;
+      // Tab completes when a row offers it, else focus moves to the
+      // results list — the list is the second tab stop as a whole
+      // (design v2 focus contract).
+      if (!launcher.actions_mode && !launcher.rows.empty()) {
+        GtkListBoxRow* selected =
+            gtk_list_box_get_selected_row(launcher.results);
+        int index = selected != nullptr ? gtk_list_box_row_get_index(selected) : 0;
+        if (index < 0 || index >= static_cast<int>(launcher.rows.size())) {
+          index = 0;
+        }
+        gtk_editable_set_text(GTK_EDITABLE(launcher.search),
+                              launcher.rows[static_cast<std::size_t>(index)]
+                                  .title.c_str());
+        gtk_editable_set_position(GTK_EDITABLE(launcher.search), -1);
+        return TRUE;
       }
-      gtk_editable_set_text(GTK_EDITABLE(launcher.search),
-                            launcher.rows[static_cast<std::size_t>(index)]
-                                .title.c_str());
-      gtk_editable_set_position(GTK_EDITABLE(launcher.search), -1);
+      gtk_widget_grab_focus(GTK_WIDGET(launcher.results));
       return TRUE;
     }
     case GDK_KEY_Escape:
@@ -3533,7 +3645,49 @@ void on_activate(GtkApplication* app, gpointer) {
   gtk_widget_set_margin_top(hint, 4);
   gtk_widget_set_margin_bottom(hint, 8);
 
+  // Actions-layer mode bar: esc pill (the layer's exit), the row it acts
+  // on, and the layer badge. Hidden until ⌘K opens the actions layer.
+  auto* modebar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_visible(modebar, FALSE);
+  gtk_widget_add_css_class(modebar, "fulcrum-modebar");
+  gtk_widget_set_margin_start(modebar, 12);
+  gtk_widget_set_margin_end(modebar, 12);
+  gtk_widget_set_margin_top(modebar, 2);
+  auto* back_btn = gtk_button_new();
+  auto* back_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_box_append(GTK_BOX(back_box),
+                 gtk_image_new_from_icon_name("go-previous-symbolic"));
+  gtk_box_append(GTK_BOX(back_box), gtk_label_new("esc"));
+  gtk_button_set_child(GTK_BUTTON(back_btn), back_box);
+  gtk_widget_add_css_class(back_btn, "flat");
+  gtk_widget_set_tooltip_text(back_btn, "esc");
+  gtk_widget_set_valign(back_btn, GTK_ALIGN_CENTER);
+  g_signal_connect(back_btn, "clicked",
+                   G_CALLBACK(on_actions_back_clicked), nullptr);
+  auto* mode_title = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(mode_title), 0.0);
+  gtk_label_set_ellipsize(GTK_LABEL(mode_title), PANGO_ELLIPSIZE_END);
+  gtk_widget_set_hexpand(mode_title, TRUE);
+  gtk_widget_add_css_class(mode_title, "fulcrum-mode-title");
+  auto* mode_badge = gtk_label_new("");
+  gtk_widget_add_css_class(mode_badge, "fulcrum-badge");
+  gtk_widget_set_valign(mode_badge, GTK_ALIGN_CENTER);
+  gtk_box_append(GTK_BOX(modebar), back_btn);
+  gtk_box_append(GTK_BOX(modebar), mode_title);
+  gtk_box_append(GTK_BOX(modebar), mode_badge);
+  launcher.actions_modebar = modebar;
+  launcher.actions_mode_title = GTK_LABEL(mode_title);
+  launcher.actions_mode_badge = GTK_LABEL(mode_badge);
+
+  // IME composition guard source: the query entry's IM context reports
+  // preedit changes (docs/cross-platform-interaction.md).
+  if (GtkIMContext* im_context = gtk_entry_get_im_context(GTK_ENTRY(search))) {
+    g_signal_connect(im_context, "preedit-changed",
+                     G_CALLBACK(on_query_preedit_changed), nullptr);
+  }
+
   gtk_box_append(GTK_BOX(root), search_row);
+  gtk_box_append(GTK_BOX(root), modebar);
   gtk_box_append(GTK_BOX(root), status);
   gtk_box_append(GTK_BOX(root), hotkey_fix);
   gtk_box_append(GTK_BOX(root), ai_panel);
