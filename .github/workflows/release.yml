@@ -1,12 +1,15 @@
 name: Release
 
 # Stable tags require successful CI and Product Acceptance on the tagged
-# commit and explicit stable-promotion approval. Platform signing modes are
-# independent (docs/release-signing-policy.md):
-#   FULCRUM_MACOS_SIGNING_MODE:  adhoc (default) | developer-id
-#   FULCRUM_WINDOWS_SIGNING_MODE: unsigned (default) | authenticode
-# Linux artifact signing and the independent Ed25519 update feed remain
-# mandatory. Requested signed/notarized modes never downgrade silently.
+# commit and explicit stable-promotion approval. macOS production signing is
+# credential-driven (family contract, turlamai/taskly#122 template): with the
+# five account-level secrets present (DEVELOPER_ID_P12_B64,
+# DEVELOPER_ID_P12_PASSWORD, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_B64) every
+# macOS run Developer ID-signs, notarizes and staples; without them manual
+# dispatch builds stay ad-hoc and tag pushes fail closed instead of shipping
+# ad-hoc. Windows signing stays an independent opt-in variable
+# (FULCRUM_WINDOWS_SIGNING_MODE, docs/release-signing-policy.md). Linux
+# artifact signing and the independent Ed25519 update feed remain mandatory.
 
 on:
   push:
@@ -57,9 +60,8 @@ jobs:
       - name: Validate independent platform signing modes
         shell: bash
         env:
-          MACOS_SIGNING_MODE: ${{ vars.FULCRUM_MACOS_SIGNING_MODE }}
           WINDOWS_SIGNING_MODE: ${{ vars.FULCRUM_WINDOWS_SIGNING_MODE }}
-        run: bash scripts/check-release-signing-modes.sh "$MACOS_SIGNING_MODE" "$WINDOWS_SIGNING_MODE"
+        run: bash scripts/check-release-signing-modes.sh "$WINDOWS_SIGNING_MODE"
 
       # Manual tag pushes and workflow_dispatch must not bypass the same
       # exact-commit CI + packaged Product Acceptance gate as VERSION bumps.
@@ -117,6 +119,17 @@ jobs:
             platform: linux
             arch: arm64
             racket-arch: arm64
+    env:
+      # Family credential contract (turlamai/taskly#122 template): production
+      # signing lights up as soon as the account-level secrets exist
+      # (Developer ID p12 + App Store Connect API key) and applies to every
+      # workflow run that has them. Credential contract:
+      # DEVELOPER_ID_P12_B64 / DEVELOPER_ID_P12_PASSWORD / ASC_KEY_ID /
+      # ASC_ISSUER_ID / ASC_KEY_P8_B64; see rivet docs/production-signing.md.
+      MACOS_SIGNING_CONFIGURED: ${{ secrets.DEVELOPER_ID_P12_B64 != '' && secrets.ASC_KEY_P8_B64 != '' }}
+      # A tag push is a release: without credentials it must fail closed
+      # instead of silently shipping ad-hoc signed artifacts.
+      IS_TAG_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up Racket CS 9.3
@@ -173,43 +186,52 @@ jobs:
           brew install librsvg
           bash scripts/render-dmg-background.sh
           python3 scripts/check-macos-dmg-layout.py
-      # Requested Developer ID mode requires real Apple credentials; no
-      # silent fallback to ad-hoc is allowed. PR jobs never receive secrets.
-      - name: Configure macOS Developer ID and notary profile
-        if: matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id'
+      # Family two-step credential supply (turlamai/taskly#122 template).
+      # Secrets-driven, so PR jobs and any run without credentials simply
+      # skip both steps and fall into the ad-hoc / fail-closed branches below.
+      - name: Provision Developer ID certificate
+        if: matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED == 'true'
         shell: bash
         env:
-          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          MACOS_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_APP_SPECIFIC_PASSWORD }}
+          DEVELOPER_ID_P12_B64: ${{ secrets.DEVELOPER_ID_P12_B64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
         run: |
           set -euo pipefail
-          for key in MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD MACOS_SIGN_IDENTITY APPLE_ID APPLE_TEAM_ID MACOS_APP_SPECIFIC_PASSWORD; do
-            if [[ -z "${!key:-}" ]]; then echo "::error::Production macOS credential $key is missing"; exit 1; fi
-          done
-          [[ "$MACOS_SIGN_IDENTITY" == "Developer ID Application:"* ]] || {
-            echo "::error::Expected an Apple Developer ID Application signing identity"; exit 1;
-          }
           signing_dir="$(mktemp -d "$RUNNER_TEMP/fulcrum-signing.XXXXXX")"
           chmod 700 "$signing_dir"
           keychain="$signing_dir/fulcrum.keychain-db"
           keychain_password="$(openssl rand -hex 24)"
-          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 -D > "$signing_dir/identity.p12"
+          printf '%s' "$DEVELOPER_ID_P12_B64" | base64 --decode > "$signing_dir/identity.p12"
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
-          security list-keychains -d user -s "$keychain"
-          security default-keychain -d user -s "$keychain"
-          security import "$signing_dir/identity.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security import "$signing_dir/identity.p12" -k "$keychain" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
-          security find-identity -p codesigning -v "$keychain" | grep -F "$MACOS_SIGN_IDENTITY"
+          security list-keychains -s "$keychain" $(security list-keychains | tr -d '"')
           rm -f "$signing_dir/identity.p12"
-          xcrun notarytool store-credentials "fulcrum-notary" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$MACOS_APP_SPECIFIC_PASSWORD" --keychain "$keychain"
-          echo "RIVET_MACOS_SIGN_IDENTITY=$MACOS_SIGN_IDENTITY" >> "$GITHUB_ENV"
-          echo "RIVET_MACOS_NOTARY_PROFILE=fulcrum-notary" >> "$GITHUB_ENV"
+          IDENTITY_NAME="$(security find-identity -v -p codesigning "$keychain" | grep 'Developer ID Application' | head -1 | sed -E 's/^[^"]*"(.*)"$/\1/')"
+          test -n "$IDENTITY_NAME"
+          # rivet reads exactly these two (rivet docs/production-signing.md);
+          # `raco rivet release` defaults to production mode, so exporting
+          # them alone flips packaging over once --development is gated off.
+          {
+            echo "RIVET_MACOS_SIGN_IDENTITY=$IDENTITY_NAME"
+            echo "RIVET_MACOS_NOTARY_PROFILE=ASC_NOTARY"
+          } >> "$GITHUB_ENV"
+      - name: Store notarytool keychain profile
+        if: matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_B64: ${{ secrets.ASC_KEY_P8_B64 }}
+        run: |
+          set -euo pipefail
+          P8="$RUNNER_TEMP/asc-api-key.p8"
+          printf '%s' "$ASC_KEY_P8_B64" | base64 --decode > "$P8"
+          xcrun notarytool store-credentials ASC_NOTARY \
+            --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --key "$P8"
+          rm -f "$P8"
       - name: Configure Windows Authenticode identity
         if: matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE == 'authenticode'
         shell: pwsh
@@ -249,7 +271,7 @@ jobs:
       # The channel manifest is separately Ed25519-signed. Build and verify
       # production-signed artifacts first; only then stage anything for publish.
       - name: Release (production signed)
-        if: matrix.platform == 'linux' || (matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE == 'developer-id') || (matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE == 'authenticode')
+        if: matrix.platform == 'linux' || (matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED == 'true') || (matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE == 'authenticode')
         env:
           RIVET_UPDATE_BASE_URL: https://github.com/turlamai/fulcrum/releases/download/${{ github.ref_name }}
           RIVET_UPDATE_KEY_ID: ${{ secrets.RIVET_UPDATE_KEY_ID }}
@@ -276,10 +298,12 @@ jobs:
           raco rivet release
           raco rivet verify --production
         shell: bash
-      # Independent no-certificate modes. The update feed remains signed;
-      # Linux always uses its Ed25519 artifact signatures.
+      # Independent no-certificate modes: macOS ad-hoc is a dispatch-only
+      # smoke path (tag pushes fail closed below); Windows stays var-driven.
+      # The update feed remains signed; Linux always uses its Ed25519
+      # artifact signatures.
       - name: Release (platform no-certificate mode)
-        if: (matrix.platform == 'macos' && vars.FULCRUM_MACOS_SIGNING_MODE != 'developer-id') || (matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE != 'authenticode')
+        if: (matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED != 'true' && env.IS_TAG_RELEASE != 'true') || (matrix.platform == 'windows' && vars.FULCRUM_WINDOWS_SIGNING_MODE != 'authenticode')
         env:
           RIVET_UPDATE_BASE_URL: https://github.com/turlamai/fulcrum/releases/download/${{ github.ref_name }}
           RIVET_UPDATE_KEY_ID: ${{ secrets.RIVET_UPDATE_KEY_ID }}
@@ -312,6 +336,14 @@ jobs:
             echo "::error::unsigned release produced no signed update manifest"; exit 1;
           }
         shell: bash
+      # Fail closed: a tag push is a release, and releases must be
+      # production-signed. Never fall back to ad-hoc on tags.
+      - name: Release requires signing credentials
+        if: matrix.platform == 'macos' && env.MACOS_SIGNING_CONFIGURED != 'true' && env.IS_TAG_RELEASE == 'true'
+        shell: bash
+        run: |
+          echo "::error::Tag releases must be production-signed: set the macOS signing secrets (DEVELOPER_ID_P12_B64, DEVELOPER_ID_P12_PASSWORD, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_B64) on this repository before tagging."
+          exit 1
       # Wraps the tar.gz payload into a Flatpak bundle from the flatpak/
       # manifest template (family contract: deb+rpm+AppImage+Flatpak+tar.gz).
       # The manifest's module closure covers the two NEEDED entries outside
@@ -354,15 +386,14 @@ jobs:
       - name: Verify mounted Finder DMG installer
         if: matrix.platform == 'macos'
         shell: bash
-        env:
-          MACOS_SIGNING_MODE: ${{ vars.FULCRUM_MACOS_SIGNING_MODE }}
         run: |
           set -euo pipefail
           bash scripts/test-macos-dmg.sh
           dmg=(dist/fulcrum-*.dmg)
           test -f "${dmg[0]}"
-          # Only Developer ID mode may claim notarization; ad-hoc is not trusted.
-          if [[ "$MACOS_SIGNING_MODE" == "developer-id" ]]; then
+          # Only credential-configured (production-signed) runs may claim
+          # notarization; ad-hoc is not trusted.
+          if [[ "$MACOS_SIGNING_CONFIGURED" == "true" ]]; then
             codesign --verify --verbose=2 "${dmg[0]}"
             xcrun stapler validate "${dmg[0]}"
             spctl --assess --type open --context context:primary-signature "${dmg[0]}"
@@ -633,18 +664,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_ID: ${{ steps.release.outputs.id }}
-          MACOS_SIGNING_MODE: ${{ vars.FULCRUM_MACOS_SIGNING_MODE }}
+          MACOS_SIGNING_CONFIGURED: ${{ secrets.DEVELOPER_ID_P12_B64 != '' && secrets.ASC_KEY_P8_B64 != '' }}
           WINDOWS_SIGNING_MODE: ${{ vars.FULCRUM_WINDOWS_SIGNING_MODE }}
         if: ${{ !contains(github.ref_name, '-rc.') }}
         shell: bash
         run: |
           set -euo pipefail
-          macos_mode="${MACOS_SIGNING_MODE:-adhoc}"
           windows_mode="${WINDOWS_SIGNING_MODE:-unsigned}"
-          if [[ "$macos_mode" == "developer-id" && "$windows_mode" == "authenticode" ]]; then exit 0; fi
+          if [[ "$MACOS_SIGNING_CONFIGURED" == "true" && "$windows_mode" == "authenticode" ]]; then exit 0; fi
           macos_trust="macOS ad-hoc signed, NOT notarized (Gatekeeper may warn)"
           windows_trust="Windows MSI/ZIP unsigned (SmartScreen may warn)"
-          if [[ "$macos_mode" == "developer-id" ]]; then macos_trust="macOS Developer ID signed and notarization verified by release gate"; fi
+          if [[ "$MACOS_SIGNING_CONFIGURED" == "true" ]]; then macos_trust="macOS Developer ID signed and notarization verified by release gate"; fi
           if [[ "$windows_mode" == "authenticode" ]]; then windows_trust="Windows Authenticode verified by release gate"; fi
           body="$(gh api "repos/$GH_REPO/releases/$RELEASE_ID" --jq '.body')"
           banner="> ⚠️ **Release trust status:** $macos_trust; $windows_trust. The update manifest remains Ed25519-signed, and Linux artifacts retain detached signatures."

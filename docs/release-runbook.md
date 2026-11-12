@@ -7,9 +7,11 @@ the Rivet repository explains the trust model this builds on.
 ## 0. Prerequisites (one-time per machine)
 
 - Racket CS (the version Fulcrum embeds), on PATH as `raco`/`racket`.
-- macOS: Xcode command line tools. Developer ID and `notarytool` credentials
-  are required **only** when `FULCRUM_MACOS_SIGNING_MODE=developer-id`.
-  Default `adhoc` builds are not notarized; Gatekeeper may warn.
+- macOS: Xcode command line tools. The five family production secrets
+  (`DEVELOPER_ID_P12_B64`, `DEVELOPER_ID_P12_PASSWORD`, `ASC_KEY_ID`,
+  `ASC_ISSUER_ID`, `ASC_KEY_P8_B64`) are mandatory for tag releases — tag
+  pushes without them fail closed. Manual dispatch builds without the
+  secrets stay ad-hoc and are not notarized; Gatekeeper may warn.
 - Windows: Visual Studio Build Tools (Desktop C++ + WinUI workload) and WiX 5.
   An Authenticode certificate and timestamp URL are required **only** when
   `FULCRUM_WINDOWS_SIGNING_MODE=authenticode`. Default `unsigned` installs
@@ -71,11 +73,14 @@ x64, Windows x64, Linux x64):
 
 1. validates the tag against `VERSION`, `rivet.rktd` and the changelog;
 2. validates independent signing modes; Linux artifact and update-feed keys
-   are mandatory, while macOS/Windows publisher certificates are conditional;
-3. runs production signing and `raco rivet verify --production` only for a
-   selected production-signing mode. Default macOS ad-hoc and Windows unsigned
-   builds use `raco rivet release --development` and must not claim
-   Developer ID notarization or Authenticode trust;
+   are mandatory, while the Windows publisher certificate is conditional on
+   its opt-in mode;
+3. runs production signing and `raco rivet verify --production` whenever the
+   platform's production credentials are present — on macOS that means the
+   five family Apple secrets; a tag push without them fails closed. Windows
+   unsigned builds use `raco rivet release --development` and must not claim
+   Authenticode trust; macOS ad-hoc exists only for manual dispatch smoke
+   builds and must not claim Developer ID notarization;
 4. renames artifacts to the versioned, architecture-suffixed release names
    (`fulcrum-<version>-macos-<arch>.dmg` / `.zip`,
    `fulcrum-<version>-windows-x64.msi`,
@@ -92,23 +97,24 @@ x64, Windows x64, Linux x64):
    `https://github.com/turlamai/fulcrum/releases/latest/download`),
    so only publishing a non-prerelease release changes the stable feed.
 
-### Independent platform signing modes
+### Independent platform trust policies
 
 The stable release must have `FULCRUM_STABLE_RELEASE_APPROVED=true` before
 an immutable tag is created **and** before its draft is promoted.
 Platform signing policies are independent:
 
-| Platform | Default | Optional mode |
+| Platform | Credential-driven state | Opt-in mode |
 | --- | --- | --- |
-| macOS (arm64/x64) | `FULCRUM_MACOS_SIGNING_MODE=adhoc`; ad-hoc signed, **not notarized** | `developer-id`, with Developer ID and notarization/stapling |
+| macOS (arm64/x64) | Five family secrets present → Developer ID signed, notarized and stapled; absent → ad-hoc on manual dispatch builds only, **tag pushes fail closed** | No variable switch |
 | Windows (x64) | `FULCRUM_WINDOWS_SIGNING_MODE=unsigned`; no paid certificate | `authenticode`, with PFX and timestamp service |
 | Linux (x64/arm64) | Project-owned Ed25519 detached artifact signatures | No developer account required |
 
-Unset macOS/Windows values default to `adhoc`/`unsigned`. Invalid values
-fail closed. The legacy `FULCRUM_UNSIGNED_RELEASE_APPROVED` toggle is **not**
-a signing policy: the tag preflight must not couple optional Windows signing
-to macOS notarization. All modes still require separate Linux artifact and
-Ed25519 signed-update-feed secrets, and a matching update-feed key ID.
+Unset Windows values default to `unsigned`; invalid values fail closed.
+The legacy `FULCRUM_UNSIGNED_RELEASE_APPROVED` toggle is **not** a signing
+policy: the tag preflight must not couple optional Windows signing to
+macOS notarization. Tag releases always require the five family Apple
+secrets plus the Linux artifact and Ed25519 signed-update-feed secrets,
+and a matching update-feed key ID.
 `scripts/version-release-preflight.sh` and its test matrix enforce these
 requirements before tagging. Release notes must disclose Gatekeeper and
 SmartScreen warnings when applicable; never instruct users to disable
@@ -139,14 +145,16 @@ treated as the same version and would not exercise an update.
 
 **Always required** GitHub Actions secrets for stable and RC tags:
 `LINUX_SIGN_PRIVATE_KEY`, `LINUX_SIGN_KEY_ID`,
-`RIVET_UPDATE_PRIVATE_KEY` and `RIVET_UPDATE_KEY_ID=fulcrum-2026-10`.
-The following publisher credentials are conditional on the selected mode:
+`RIVET_UPDATE_PRIVATE_KEY`, `RIVET_UPDATE_KEY_ID=fulcrum-2026-10`, and the
+five family Apple production secrets
+`DEVELOPER_ID_P12_B64` (base64 of the Developer ID Application P12),
+`DEVELOPER_ID_P12_PASSWORD`, `ASC_KEY_ID`, `ASC_ISSUER_ID` and
+`ASC_KEY_P8_B64` (base64 App Store Connect API key). Tag releases are
+production-signed or fail closed. Both architecture jobs import the p12
+into temporary keychains, discover the Developer ID identity, and store the
+`ASC_NOTARY` notarytool profile. The remaining publisher credential is
+conditional on its opt-in mode:
 
-- macOS `developer-id` mode only: `MACOS_CERTIFICATE_P12`: base64 of the Developer ID Application P12,
-  `MACOS_CERTIFICATE_PASSWORD`, `MACOS_SIGN_IDENTITY` (full
-  `Developer ID Application: …` name), `APPLE_ID`, `APPLE_TEAM_ID`,
-  `MACOS_APP_SPECIFIC_PASSWORD` for `notarytool`. Both architecture jobs
-  import into temporary keychains and save a `fulcrum-notary` profile.
 - Windows `authenticode` mode only: `WINDOWS_CERTIFICATE_PFX`: base64 of an Authenticode code-signing PFX
   and `WINDOWS_CERTIFICATE_PASSWORD`. Set the repository **variable**
   `WINDOWS_TIMESTAMP_URL` to a working RFC 3161 service URL.
@@ -171,7 +179,8 @@ version-bump workflow fails and does not create a tag.
 
 Private keys are materialized only in ephemeral runner directories and
 never committed. Credentials **required by the selected platform mode**
-fail closed, not credentials for unrelated optional modes. Ad-hoc/unsigned
+fail closed, not credentials for unrelated optional modes; on macOS the
+five family secrets are always required for tag releases. Ad-hoc/unsigned
 is an explicit policy, never a fallback from a failed trusted build.
 The manifest base URL comes from the tag, not a secret.
 
@@ -205,12 +214,13 @@ with the hotkey and check Accessibility permissions are requested only
 when relevant. An app started directly inside a mounted DMG is **not**
 the installed copy and must not be used as the updater acceptance path.
 
-**Signing is a separate gate.** Only `developer-id` mode may claim
-notarization; require actual installed macOS app and DMG evidence from
-`codesign --verify --deep --strict`, `spctl --assess` and
-`xcrun stapler validate`. The default `adhoc` mode is not trusted
-publisher signing; disclose its limits rather than disabling Gatekeeper,
-clearing quarantine or calling it notarized.
+**Signing is a separate gate.** Only credential-configured
+(production-signed) runs may claim notarization; require actual installed
+macOS app and DMG evidence from `codesign --verify --deep --strict`,
+`spctl --assess` and `xcrun stapler validate`. Ad-hoc builds (dispatch
+smoke only) are not trusted publisher signing; disclose their limits
+rather than disabling Gatekeeper, clearing quarantine or calling them
+notarized.
 
 ---
 
@@ -220,7 +230,7 @@ clearing quarantine or calling it notarized.
 - [ ] `manifest.json` verifies against the embedded **Ed25519 feed
       public key**; `raco rivet verify --production` is a separate
       platform-package/signature verification, not a manifest verifier.
-- [ ] The selected macOS/Windows signing modes match the Release warning:
+- [ ] The macOS/Windows trust states match the Release warning:
       Developer ID/notarization and Authenticode checks only when enabled;
       ad-hoc and unsigned limitations clearly disclosed otherwise.
       Both Linux tarballs have verified Ed25519 detached signatures.

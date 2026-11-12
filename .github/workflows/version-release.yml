@@ -32,14 +32,15 @@ jobs:
         shell: bash
         env:
           RELEASE_APPROVED: ${{ vars.FULCRUM_STABLE_RELEASE_APPROVED }}
-          MACOS_SIGNING_MODE: ${{ vars.FULCRUM_MACOS_SIGNING_MODE }}
           WINDOWS_SIGNING_MODE: ${{ vars.FULCRUM_WINDOWS_SIGNING_MODE }}
-          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          MACOS_APP_SPECIFIC_PASSWORD: ${{ secrets.MACOS_APP_SPECIFIC_PASSWORD }}
+          # Family credential contract (turlamai/taskly#122 template): macOS
+          # releases are production-signed or fail closed, so the five Apple
+          # credentials are mandatory before minting an immutable tag.
+          DEVELOPER_ID_P12_B64: ${{ secrets.DEVELOPER_ID_P12_B64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_B64: ${{ secrets.ASC_KEY_P8_B64 }}
           WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
