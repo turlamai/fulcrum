@@ -163,6 +163,22 @@ jobs:
       - name: Set up embeddable Racket CS (Linux)
         if: matrix.platform == 'linux'
         uses: turlamai/rivet/.github/actions/setup-embed-racket@33de65ccb5d72f9ac38ff982aa4495467f89f213
+      # Racket 9.3 can fail enumerating the Windows ROOT store while building
+      # its TLS context (X509*->C on a null cert), which randomly kills
+      # `raco pkg install` on the Windows packaging leg (seen on the v0.19.0
+      # release). Node ships independent Mozilla CA roots; never disable TLS
+      # checks. Same remedy as ci.yml.
+      - name: Export trusted Mozilla CA roots for Windows Racket
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:RUNNER_TEMP 'fulcrum-mozilla-roots.pem'
+          $js = 'const tls=require("node:tls"),fs=require("node:fs"); if(tls.rootCertificates.length<50) process.exit(2); fs.writeFileSync(process.argv[1],tls.rootCertificates.join("\n")+"\n",{flag:"wx"});'
+          node -e $js $bundle
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $bundle -PathType Leaf)) {
+            throw "Unable to export trusted CA roots; refusing insecure TLS fallback"
+          }
+          "FULCRUM_CI_CA_BUNDLE=$bundle" >> $env:GITHUB_ENV
       # Installed after the embeddable runtime so Rivet's catalog closure and
       # Fulcrum's SQLite dependency (db-lib) resolve against the minimal build.
       - name: Install Rivet (catalog)
