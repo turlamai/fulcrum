@@ -13,7 +13,7 @@ permissions:
 
 env:
   # Same immutable upstream revision as CI, Release and Product Acceptance.
-  RIVET_PIN: 7f34eee832418c3ad3bd73981e7a318d78d3be24
+  RIVET_PIN: 4a248bbb7d9c051c6d35d7bd4d7931f0eee9ee27
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}

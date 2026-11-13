@@ -26,12 +26,13 @@ env:
   # cross files, so this is defined here too). Contexts aren't allowed in
   # `uses:`, so the setup-embed-racket action ref must be bumped in
   # lockstep by hand.
-  # Unified immutable upstream revision containing AppImage handoff,
-  # branded-DMG signature preservation, macOS update rollback safety, and
-  # the unprivileged RPM packaging fixes (#431/#433): rpm 6 stopped
-  # globbing quoted %files entries, which broke the linux-x64 rpm leg of
-  # 7f34eee832418c3ad3bd73981e7a318d78d3be24's first packaging run (rivet#432).
-  RIVET_PIN: 7f34eee832418c3ad3bd73981e7a318d78d3be24
+  # Immutable upstream revision containing the macOS hardened-runtime
+  # verification fix (rivet#468: `codesign -d` cannot see `(runtime)`; the
+  # flag is only in `-dv`), on top of the earlier AppImage handoff,
+  # branded-DMG signature preservation, macOS update rollback safety and
+  # the unprivileged RPM packaging fixes (#431/#433) that the previous pin
+  # 7f34eee8 carried.
+  RIVET_PIN: 4a248bbb7d9c051c6d35d7bd4d7931f0eee9ee27
 permissions:
   contents: write
   actions: read
@@ -161,7 +162,7 @@ jobs:
             rpm desktop-file-utils
       - name: Set up embeddable Racket CS (Linux)
         if: matrix.platform == 'linux'
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@7f34eee832418c3ad3bd73981e7a318d78d3be24
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@4a248bbb7d9c051c6d35d7bd4d7931f0eee9ee27
       # Installed after the embeddable runtime so Rivet's catalog closure and
       # Fulcrum's SQLite dependency (db-lib) resolve against the minimal build.
       - name: Install Rivet (catalog)
