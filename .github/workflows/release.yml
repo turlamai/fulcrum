@@ -32,7 +32,7 @@ env:
   # branded-DMG signature preservation, macOS update rollback safety and
   # the unprivileged RPM packaging fixes (#431/#433) that the previous pin
   # 7f34eee8 carried.
-  RIVET_PIN: 33de65ccb5d72f9ac38ff982aa4495467f89f213
+  RIVET_PIN: c96673ded75651c94a1d513b122691f85d76ccf5
 permissions:
   contents: write
   actions: read
@@ -162,7 +162,7 @@ jobs:
             rpm desktop-file-utils
       - name: Set up embeddable Racket CS (Linux)
         if: matrix.platform == 'linux'
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@33de65ccb5d72f9ac38ff982aa4495467f89f213
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@c96673ded75651c94a1d513b122691f85d76ccf5
       # Racket 9.3 can fail enumerating the Windows ROOT store while building
       # its TLS context (X509*->C on a null cert), which randomly kills
       # `raco pkg install` on the Windows packaging leg (seen on the v0.19.0
