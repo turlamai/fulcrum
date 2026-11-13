@@ -4,6 +4,18 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [Unreleased]
+
+### Changed
+
+- The updater now runs on `rivet/distribution`'s managed `make-updater` state
+  machine: candidate selection, the download worker, the stall/total
+  watchdog, cancellation and the terminal state are shared family code.
+  Fulcrum supplies its feed policy and staging path; the host handoff ticket
+  reads the authenticated candidate through `updater-candidate` (artifact
+  SHA-256, installer kind, rollback policy). The `update-state` wire shape is
+  unchanged.
+
 ## [0.19.0] - 2026-11-13
 
 ### Added

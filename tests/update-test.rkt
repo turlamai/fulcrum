@@ -13,6 +13,9 @@
          crypto/all
          rackunit
          rivet/distribution
+         ;; Transport injection for a loopback artifact: the managed updater
+         ;; provides these parameters to tests only.
+         (submod (lib "rivet/distribution/managed-updater.rkt") test-support)
          racket/file
          racket/path
          racket/runtime-path
@@ -83,6 +86,23 @@
                                            url sha size 'zip '() #f)))
    (update-artifact (platform-symbol) (architecture-symbol)
                     url sha size 'zip '() #f)))
+
+;; The managed check over a crafted manifest: the transport parameter is
+;; captured when perform-check! builds the updater. The artifact URL points
+;; at the loopback server, so the real download worker and verification run.
+(define (check-with-artifact! url sha size)
+  (parameterize ([current-managed-fetch-manifest
+                  (lambda (_url _key
+                          #:key-id [_key-id #f]
+                          #:trusted-keys [_trusted-keys '()]
+                          #:maximum-bytes [_maximum-bytes (* 1024 1024)])
+                    (update-manifest "site.jrtx.fulcrum" "9.9.9" 9 'stable
+                                     "2026-10-10T00:00:00Z" "0.0.0" #f #t 100
+                                     (list (update-artifact
+                                            (platform-symbol)
+                                            (architecture-symbol)
+                                            url sha size 'zip '() #f))))])
+    (perform-check! "https://dl.example/fulcrum")))
 
 (test-case "the downloaded file keeps the manifest's release name"
   (check-equal?
@@ -231,10 +251,13 @@
   (parameterize ([current-update-version "0.0.0"]
                  [current-update-settings #f])
     (reset-update-state!)
-    (install-candidate!
-     (candidate-for
-      (format "http://127.0.0.1:~a/fulcrum-9.9.9-macos-arm64.zip" port)
-      sha (bytes-length payload)))
+    (check-equal?
+     (hash-ref (check-with-artifact!
+                (format "http://127.0.0.1:~a/fulcrum-9.9.9-macos-arm64.zip" port)
+                sha (bytes-length payload))
+               'status)
+     "available")
+    (check-equal? (pending-artifact-size) (bytes-length payload))
     (check-equal? (hash-ref (update-state-snapshot) 'phase) "idle")
     (start-download! data-dir)
     (check-equal? (hash-ref (update-state-snapshot) 'phase) "downloading")
@@ -267,10 +290,12 @@
       (parameterize ([current-update-version "0.0.0"]
                      [current-update-settings #f])
         (reset-update-state!)
-        (install-candidate!
-         (candidate-for
-          (format "http://127.0.0.1:~a/fulcrum-9.9.9-macos-arm64.zip" port)
-          sha (bytes-length payload)))
+        (check-equal?
+         (hash-ref (check-with-artifact!
+                    (format "http://127.0.0.1:~a/fulcrum-9.9.9-macos-arm64.zip" port)
+                    sha (bytes-length payload))
+                   'status)
+         "available")
         (check-false (verified-install-metadata))
         (start-download! dir)
         (check-equal? (wait-for-phase! '("downloaded") 15000) "downloaded")
@@ -298,12 +323,14 @@
   (parameterize ([current-update-version "0.0.0"]
                  [current-update-settings #f])
     (reset-update-state!)
-    (install-candidate!
-     (candidate-for
-      (format "http://127.0.0.1:~a/fulcrum-9.9.9-macos-arm64.zip" port)
-      ;; signed sha256 deliberately wrong
-      (make-string 64 #\0)
-      (bytes-length payload)))
+    (check-equal?
+     (hash-ref (check-with-artifact!
+                (format "http://127.0.0.1:~a/fulcrum-9.9.9-macos-arm64.zip" port)
+                ;; signed sha256 deliberately wrong
+                (make-string 64 #\0)
+                (bytes-length payload))
+               'status)
+     "available")
     (start-download! data-dir)
     (check-equal? (wait-for-phase! '("error") 15000) "error")
     (check-true (string-contains?
@@ -323,10 +350,12 @@
   (parameterize ([current-update-version "0.0.0"]
                  [current-update-settings #f])
     (reset-update-state!)
-    (install-candidate!
-     (candidate-for
-      "http://127.0.0.1:9/fulcrum-9.9.9-macos-arm64.zip"
-      (make-string 64 #\0) 1000))
+    (check-equal?
+     (hash-ref (check-with-artifact!
+                "http://127.0.0.1:9/fulcrum-9.9.9-macos-arm64.zip"
+                (make-string 64 #\0) 1000)
+               'status)
+     "available")
     (start-download! data-dir)
     (check-equal? (wait-for-phase! '("error") 15000) "error")
     (check-false
