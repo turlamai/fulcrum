@@ -32,7 +32,7 @@ env:
   # branded-DMG signature preservation, macOS update rollback safety and
   # the unprivileged RPM packaging fixes (#431/#433) that the previous pin
   # 7f34eee8 carried.
-  RIVET_PIN: 4a248bbb7d9c051c6d35d7bd4d7931f0eee9ee27
+  RIVET_PIN: 33de65ccb5d72f9ac38ff982aa4495467f89f213
 permissions:
   contents: write
   actions: read
@@ -162,7 +162,7 @@ jobs:
             rpm desktop-file-utils
       - name: Set up embeddable Racket CS (Linux)
         if: matrix.platform == 'linux'
-        uses: turlamai/rivet/.github/actions/setup-embed-racket@4a248bbb7d9c051c6d35d7bd4d7931f0eee9ee27
+        uses: turlamai/rivet/.github/actions/setup-embed-racket@33de65ccb5d72f9ac38ff982aa4495467f89f213
       # Installed after the embeddable runtime so Rivet's catalog closure and
       # Fulcrum's SQLite dependency (db-lib) resolve against the minimal build.
       - name: Install Rivet (catalog)
