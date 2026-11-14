@@ -10,10 +10,10 @@
 ;; updated only for rotation), and rotation via `current-update-key-id`
 ;; (ship a client trusting the next key before signing with it).
 ;;
-;; The family pattern (taskly/rivet): the backend verifies and downloads the
-;; signed update artifact; the native host owns installation. A check fetches
-;; and verifies the signed channel manifest; the artifact download runs on a
-;; background thread with progress published to a state box that the UI polls
+;; The family pattern: the backend verifies and downloads the signed update
+;; artifact through rivet's managed updater (candidate selection, download
+;; worker, watchdog, cancellation, terminal state); the native host owns
+;; installation. Progress is published to a state box that the UI polls
 ;; through the `update-state` RPC (RVT1 events are thread-local, so a
 ;; background thread cannot emit them directly). The feed serves installers —
 ;; macOS zip (portable bundle), Windows MSI, and Linux tar.gz + AppImage — per
@@ -24,10 +24,11 @@
 ;; Fulcrum-specific rules: the 4-hour silent-check throttle and the sticky
 ;; rollout bucket live in the typed settings store (keys `update-last-check`
 ;; and `update-rollout-bucket`, managed by the backend); downloads land under
-;; <data-dir>/updates and no store file is ever touched.
+;; <data-dir>/updates and no store file is ever touched. `verified-install-metadata`
+;; is the host handoff ticket built from the authenticated candidate, never
+;; from a UI-supplied path or digest.
 
 (require crypto
-         net/base64
          net/uri-codec
          net/url
          rivet/distribution
@@ -50,8 +51,6 @@
          update-state-snapshot
          reset-update-state!
          set-update-error!
-         install-candidate!
-         peek-candidate
          pending-artifact-size
          appimage-self-update?
          package-managed-linux?
@@ -104,25 +103,13 @@
        (hex->bytes current-update-public-key-hex)
        #t))
 
-;; The manifest verifier takes a parsed key object, not raw DER — this
-;; conversion is what stands between an update check and a contract
-;; violation at ed25519-verify (every 0.4.x check failed exactly there).
-;; Lazy on purpose: FFI at module-import time kills embedded apps at
-;; startup (the landmine rivet/distribution/crypto.rkt documents), so the
-;; parse happens at check time like taskly's embedded-public-key; a
-;; failure there surfaces as an honest "update check failed" instead of a
-;; dead app. bytes->ed25519-public-key pins the libcrypto factory
-;; explicitly and exists since rivet 2e1924c — the RIVET_PIN snapshot.
-(define (current-update-public-key)
-  (bytes->ed25519-public-key (hex->bytes current-update-public-key-hex)))
-
 ;; ---------- platform identity ----------
 
 ;; platform-symbol and architecture-symbol come from `rivet/distribution` —
-;; rivet b99c4d9 (#258) centralized the release-target vocabulary the
-;; release tooling emits into manifests. The provide list above re-exports
-;; the imported bindings; carrying local copies would collide with the
-;; shared names in any module requiring both.
+;; rivet centralized the release-target vocabulary the release tooling
+;; emits into manifests. The provide list above re-exports the imported
+;; bindings; carrying local copies would collide with the shared names in
+;; any module requiring both.
 
 ;; The feed serves installers, and the release pipeline pins versioned,
 ;; architecture-suffixed names (fulcrum-<version>-macos-arm64.zip,
@@ -148,46 +135,65 @@
                  raw
                  seen))])))
 
-
 ;; ---------- shared update state (UI-visible) ----------
 
 ;; phase: idle | checking | downloading | downloaded | error
-(define update-state
-  (box (hasheq 'phase "idle"
-               'percent 0
-               'message #f
-               'downloadedPath #f
-               'availableVersion #f)))
+(define (idle-snapshot)
+  (hasheq 'phase "idle"
+          'percent 0
+          'message #f
+          'downloadedPath #f
+          'availableVersion #f))
 
-(define candidate-box (box #f))
-(define worker-thread-box (box #f))
-
-;; Download watchdog bounds. rivet's copy loop waits on read-bytes-avail!
-;; with no timeout, so a connection that stalls without RST/FIN parks the
-;; worker thread forever — visibly "stuck at 100%" (all bytes had arrived;
-;; the loop was still waiting for EOF). Two finite bounds keep the phase
-;; machine honest: no byte progress for the stall limit, or wall clock past
-;; the total limit, breaks the worker (rivet's partial-file cleanup runs,
-;; and the worker reports phase=error itself) so the UI always gets a
-;; terminal state.
-(define download-stall-limit-seconds 120)
-(define download-total-limit-seconds (* 30 60))
-(define last-progress-seconds (box 0))
+(define update-state (box (idle-snapshot)))
+(define updater-box (box #f))
+(define download-root-box (box #f))
 
 (define (state-set! key value)
   (set-box! update-state (hash-set (unbox update-state) key value)))
 
+;; The managed phases include transport/selection outcomes the UI treats as
+;; idle: `available` carries its signal in availableVersion, `up-to-date`
+;; means there is nothing to do, and `cancelled` returns the controls to
+;; idle. Anything else passes through unchanged.
+(define (managed-state->product state)
+  (define phase (hash-ref state 'phase "idle"))
+  (define mapped-phase
+    (case phase
+      [("available" "up-to-date" "cancelled") "idle"]
+      [else phase]))
+  (define idle? (string=? mapped-phase "idle"))
+  (hasheq 'phase mapped-phase
+          'percent (if idle? 0 (hash-ref state 'percent 0))
+          'message (let ([message (and (not idle?)
+                                       (hash-ref state 'message #f))])
+                     (if message message #f))
+          'downloadedPath (let ([path (hash-ref state 'downloadedPath #f)])
+                            (if path path #f))
+          'availableVersion (let ([version (hash-ref state 'availableVersion #f)])
+                              (if version version #f))))
+
 (define (update-state-snapshot)
-  (unbox update-state))
+  (define product (unbox update-state))
+  (define instance (unbox updater-box))
+  (cond
+    [(not instance) product]
+    ;; A backend-side start failure (already running, no candidate)
+    ;; outranks the managed snapshot until the next check clears it.
+    [(equal? (hash-ref product 'phase "idle") "error") product]
+    [else (managed-state->product (updater-state instance))]))
 
 (define (reset-update-state!)
-  (set-box! candidate-box #f)
-  (set-box! update-state
-            (hasheq 'phase "idle"
-                    'percent 0
-                    'message #f
-                    'downloadedPath #f
-                    'availableVersion #f)))
+  ;; Dropping an instance while its worker runs would orphan the download;
+  ;; land it on the terminal cancelled phase first.
+  (define instance (unbox updater-box))
+  (when (and instance (equal? (hash-ref (updater-state instance) 'phase)
+                              "downloading"))
+    (updater-cancel! instance)
+    (updater-wait instance 5.0))
+  (set-box! updater-box #f)
+  (set-box! download-root-box #f)
+  (set-box! update-state (idle-snapshot)))
 
 ;; Pre-spawn download failures (already running, no candidate) surface
 ;; through the state instead of an RPC error, so host UIs have a single
@@ -196,25 +202,25 @@
   (state-set! 'phase "error")
   (state-set! 'message message))
 
-;; Test seam: the offline download test injects a candidate built over a
-;; local HTTP artifact instead of one selected from a signed manifest.
-(define (install-candidate! candidate)
-  (set-box! candidate-box candidate))
-
-(define (peek-candidate)
-  (unbox candidate-box))
+;; The authenticated candidate from the managed updater; #f before a check
+;; selects one. It survives a failed/cancelled download for an explicit
+;; retry and a new check clears it first.
+(define (pending-candidate)
+  (define instance (unbox updater-box))
+  (and instance (updater-candidate instance)))
 
 ;; Byte size of the pending candidate's artifact, for row subtitles.
 (define (pending-artifact-size)
-  (define candidate (unbox candidate-box))
+  (define candidate (pending-candidate))
   (and candidate
        (update-artifact-size (update-candidate-artifact candidate))))
 
 ;; Host handoff ticket: never trust a path or digest supplied by the UI.
 ;; The ticket comes exclusively from the currently selected, signed manifest
-;; candidate after the backend completed size/SHA-256 verification and atomically
-;; renamed its .partial file to the downloadable final path. Only expose it
-;; while the verified download is committed; a fresh update check resets it.
+;; candidate after the backend completed size/SHA-256 verification and
+;; atomically renamed its .partial file to the downloadable final path. Only
+;; expose it while the verified download is committed; a fresh update check
+;; resets it.
 (define (appimage-self-update?)
   (and (eq? (platform-symbol) 'linux)
        (eq? (current-install-kind) 'appimage)))
@@ -228,7 +234,7 @@
 
 (define (verified-install-metadata)
   (define snapshot (update-state-snapshot))
-  (define candidate (peek-candidate))
+  (define candidate (pending-candidate))
   (and candidate
        (string=? (hash-ref snapshot 'phase "idle") "downloaded")
        (let ([path (hash-ref snapshot 'downloadedPath #f)])
@@ -279,180 +285,96 @@
       ;; the release channel manifest currently rolls out to 100.
       (modulo (integer-bytes->integer (crypto-random-bytes 4) #t #t) 100)))
 
+;; ---------- install kind ----------
+
+;; AppImage is the one Linux install shape Rivet can update atomically in
+;; place. The release feed also retains tar.gz for the existing
+;; portable/manual flow, so only an actual AppImage process opts into the
+;; AppImage artifact. deb/rpm ownership stays with the package manager and
+;; non-AppImage installs keep the existing selection path.
+(define (update-install-kind)
+  (and (eq? (platform-symbol) 'linux)
+       (eq? (current-install-kind) 'appimage)
+       'appimage))
+
+;; ---------- managed updater ----------
+
+(define (manifest-url base-url)
+  (string-append (regexp-replace* #rx"/+$" base-url "") "/update-manifest.json"))
+
+(define (make-fulcrum-updater base-url)
+  (make-updater
+   #:application-id "site.jrtx.fulcrum"
+   #:current-version (current-update-version)
+   #:channel 'stable
+   #:platform (platform-symbol)
+   ;; Family architecture vocabulary (rivet's own release flow and the
+   ;; signed manifest both speak arm64/x64); a mismatch selects nothing.
+   #:architecture (architecture-symbol)
+   #:install-kind (update-install-kind)
+   ;; The feed carries exactly one installable per platform/arch — no
+   ;; component discriminator.
+   #:component #f
+   ;; DER bytes: decoded lazily during the check, so a bad key surfaces as
+   ;; an honest "update check failed" instead of killing module load.
+   #:public-key (hex->bytes current-update-public-key-hex)
+   #:key-id update-key-id
+   #:manifest-url (manifest-url base-url)
+   #:data-directory (data-dir)
+   #:destination
+   (lambda (candidate)
+     (destination-path (or (unbox download-root-box) (data-dir)) candidate))
+   #:rollout-bucket (rollout-bucket)
+   #:maximum-manifest-bytes (* 4 1024 1024)
+   #:maximum-download-bytes maximum-download-bytes))
+
 ;; ---------- check ----------
+
+(define (download-running?)
+  (define instance (unbox updater-box))
+  (and instance
+       (equal? (hash-ref (updater-state instance) 'phase) "downloading")))
 
 ;; Returns a plain hasheq describing the outcome; the backend maps it onto
 ;; the typed UpdateCheck record. Throttling is the backend's job (the
 ;; update-check RPC persists `update-last-check`).
 (define (perform-check! base-url)
-  (reset-update-state!)
-  (state-set! 'phase "checking")
-  (with-handlers
-      ([exn:fail?
-        (lambda (e)
-          (state-set! 'phase "error")
-          (state-set! 'message (exn-message e))
-          (hasheq 'status "error" 'message (exn-message e)))])
-    (cond
-      [(not (fulcrum-update-configured?))
-       (state-set! 'phase "idle")
-       (hasheq 'status "error"
-               'message "updates unavailable: developer build (no update key configured)")]
-      [(or (not base-url) (string=? (string-trim base-url) ""))
-       (state-set! 'phase "idle")
-       (hasheq 'status "error"
-               'message "updates unavailable: no update base URL configured")]
-      [else
-       (define manifest
-         (fetch-update-manifest
-          (string-append (regexp-replace* #rx"/+$" base-url "") "/update-manifest.json")
-          (current-update-public-key)
-          #:key-id update-key-id
-          #:maximum-bytes (* 4 1024 1024)))
-       (define config
-         (updater-config "site.jrtx.fulcrum"
-                         (current-update-version)
-                         'stable
-                         (platform-symbol)
-                         ;; Family architecture vocabulary (rivet's own
-                         ;; release flow and taskly's updater both speak
-                         ;; arm64/x64); the signed manifest must use the
-                         ;; same symbols or `select-update` matches nothing.
-                         (architecture-symbol)
-                         (current-update-public-key)
-                         update-key-id
-                         (rollout-bucket)
-                         maximum-download-bytes
-                         ;; The feed carries exactly one installable per
-                         ;; platform/arch — no component discriminator.
-                         #f))
-       ;; AppImage is the one Linux install shape Rivet can update atomically
-       ;; in place. The release feed also retains tar.gz for the existing
-       ;; portable/manual flow, so only an actual AppImage process opts into
-       ;; the AppImage artifact. deb/rpm ownership stays with the package
-       ;; manager and non-AppImage installs keep the existing selection path.
-       (define install-kind
-         (and (eq? (platform-symbol) 'linux)
-              (eq? (current-install-kind) 'appimage)
-              'appimage))
-       (define candidate
-         (select-update config manifest #:install-kind install-kind))
-       (cond
-         [candidate
-          (set-box! candidate-box candidate)
-          (define inner (update-candidate-manifest candidate))
-          (state-set! 'phase "idle")
-          (state-set! 'availableVersion (update-manifest-version inner))
-          (hasheq 'status "available"
-                  'currentVersion (current-update-version)
-                  'availableVersion (update-manifest-version inner)
-                  'build (update-manifest-build inner)
-                  'publishedAt (update-manifest-published-at inner)
-                  'installer (symbol->string
-                              (update-artifact-installer
-                               (update-candidate-artifact candidate)))
-                  'sizeBytes (update-artifact-size
-                              (update-candidate-artifact candidate)))]
-         [else
-          (state-set! 'phase "idle")
-          (state-set! 'availableVersion #f)
-          (hasheq 'status "up-to-date"
-                  'currentVersion (current-update-version))])])))
+  (cond
+    ;; Keep the running transfer (and its instance) instead of orphaning
+    ;; the worker; the UI can retry the check once the download ends.
+    [(download-running?)
+     (hasheq 'status "error"
+             'message "an update download is already running")]
+    [else
+     (reset-update-state!)
+     (cond
+       [(not (fulcrum-update-configured?))
+        (hasheq 'status "error"
+                'message "updates unavailable: developer build (no update key configured)")]
+       [(or (not base-url) (string=? (string-trim base-url) ""))
+        (hasheq 'status "error"
+                'message "updates unavailable: no update base URL configured")]
+       [else
+        (with-handlers
+            ([exn:fail?
+              (lambda (e)
+                (state-set! 'phase "error")
+                (state-set! 'message (exn-message e))
+                (hasheq 'status "error" 'message (exn-message e)))])
+          (define instance (make-fulcrum-updater base-url))
+          (set-box! updater-box instance)
+          (updater-check! instance))])]))
 
 ;; ---------- download ----------
 
 (define (destination-path data-dir candidate)
   (build-path data-dir "updates" (artifact-file-name candidate)))
 
-;; Copy with progress; same redirect-following and limit enforcement as
-;; rivet's download-update but publishes integer percent changes to the
-;; state box while streaming. Release asset URLs redirect to the CDN, so
-;; follow redirections like rivet's own downloader does (the
-;; 302-into-an-empty-body trap, rivet#153). The limit is enforced during
-;; the copy too: a server sending more than the signed size must not be
-;; able to fill the disk before the post-download verify runs.
-;; rivet's download-update owns the whole artifact path — redirect-following
-;; fetch (the rivet#153 302 shape), signed-size cap, .partial cleanup on
-;; any failure, SHA-256 + size verification against the signed manifest,
-;; atomic rename — so the wrapper only maps its byte progress onto the
-;; integer percent the UI polls, and feeds the watchdog's stall clock on
-;; every report.
-(define (download-with-progress! config candidate destination)
-  (define total (update-artifact-size (update-candidate-artifact candidate)))
-  (download-update
-   config candidate destination
-   #:on-progress
-   (lambda (done)
-     (set-box! last-progress-seconds (current-seconds))
-     (state-set! 'percent
-                 (if (> total 0)
-                     (min 100 (quotient (* done 100) total))
-                     0)))))
-
 ;; Runs on a backend worker thread; the host follows progress via the
-;; update-state RPC. Never raises: failures surface through the phase.
+;; update-state RPC. Failures surface through the phase.
 (define (start-download! data-dir)
-  (define worker (unbox worker-thread-box))
-  (when (and worker (thread-running? worker))
-    (error 'start-download! "an update download is already running"))
-  (define candidate (unbox candidate-box))
-  (unless candidate
+  (define instance (unbox updater-box))
+  (unless (and instance (pending-candidate))
     (error 'start-download! "no update is available; run a check first"))
-  (state-set! 'phase "downloading")
-  (state-set! 'percent 0)
-  (state-set! 'message #f)
-  (state-set! 'availableVersion
-              (update-manifest-version (update-candidate-manifest candidate)))
-  (define config
-    (updater-config "site.jrtx.fulcrum"
-                    (current-update-version)
-                    'stable
-                    (platform-symbol)
-                    (architecture-symbol)
-                    (current-update-public-key)
-                    update-key-id
-                    (rollout-bucket)
-                    maximum-download-bytes
-                    #f))
-  (define destination (destination-path data-dir candidate))
-  (set-box! last-progress-seconds (current-seconds))
-  (define worker-thread
-    (thread
-     (lambda ()
-       ;; The watchdog breaks a stalled worker; exn:break is not an
-       ;; exn:fail, so it needs its own arm — either way rivet's partial
-       ;; cleanup removes the .partial and the phase lands on error
-       ;; (never mid-flight).
-       (with-handlers
-           ([(lambda (e) (or (exn:fail? e) (exn:break? e)))
-             (lambda (e)
-               (state-set! 'phase "error")
-               (state-set! 'message
-                           (if (exn:break? e)
-                               "update download stalled or timed out"
-                               (exn-message e))))])
-         (define path
-           (download-with-progress! config candidate destination))
-         (state-set! 'phase "downloaded")
-         (state-set! 'percent 100)
-         (state-set! 'downloadedPath (path->string path))))))
-  (set-box! worker-thread-box worker-thread)
-  ;; Watchdog: exits once the worker finishes on its own; otherwise a stall
-  ;; (no byte progress) or the total wall-clock limit breaks the worker so
-  ;; phase never rests on "downloading" indefinitely.
-  (define download-started (current-seconds))
-  (thread
-   (lambda ()
-     (let loop ()
-       (cond
-         [(sync/timeout download-stall-limit-seconds
-                        (thread-dead-evt worker-thread))
-          (void)]
-         [(> (- (current-seconds) (unbox last-progress-seconds))
-             download-stall-limit-seconds)
-          (break-thread worker-thread)]
-         [(> (- (current-seconds) download-started)
-             download-total-limit-seconds)
-          (break-thread worker-thread)]
-         [else (loop)]))))
-  (void))
+  (set-box! download-root-box data-dir)
+  (updater-download! instance))
