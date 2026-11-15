@@ -2137,7 +2137,8 @@ void MainWindow::RevealSensitiveSelection() {
 
 void MainWindow::ApplyReveal(rivet_app::ResultRow const& row,
                              std::string const& raw) {
-  for (auto& r : rows_) {
+  auto rows = rows_;
+  for (auto& r : rows) {
     if (r.id == row.id && r.arg == row.arg && r.title == row.title) {
       auto text = raw;
       std::replace(text.begin(), text.end(), '\n', ' ');
@@ -2148,9 +2149,12 @@ void MainWindow::ApplyReveal(rivet_app::ResultRow const& row,
       break;
     }
   }
-  // Rebuild the one row's content by repopulating the list; the selection
-  // preserves by id/arg and the raw text lives in host memory only.
-  ApplyResults(rows_, actions_mode_);
+  // Hand ApplyResults a mutated copy: rows_identical() compares the incoming
+  // rows against the on-screen rows_, so passing rows_ itself (mutated in
+  // place) would read as "no change" and skip the rebuild — the reveal then
+  // never reached the screen. The copy differs, forcing the rebuild; the
+  // selection preserves by id/arg and the raw text lives in host memory only.
+  ApplyResults(std::move(rows), actions_mode_);
 }
 
 void MainWindow::UpdatePanelHeight() {
