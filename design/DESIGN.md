@@ -84,3 +84,17 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 
 差异声明纪律：宿主特例必须先写进本节才能实现；未声明的宿主差异按违约处理
 （案例：taskly 漂移台账 D8）。
+
+
+## 2026-11-15 · 原型交互补齐
+
+入口为 prototype/panel.html。搜索框可输入、筛选样例；上下键选择、Enter 操作、Esc 返回/清空、⌘/Ctrl+K 操作页、⌘/Ctrl+, 设置。其他 HTML 保留多状态对照用途，不代表后台 AI/系统集成已经接通。
+
+根级 index.html 只负责首次进入主界面；页面切换直接到目标界面，不再保留页面目录。原型运行脚本 prototype-runtime.js / prototype-flow.js 只表达浏览器内的交互合同；正式产品业务仍由既定引擎实现。真实设备、模型和发布服务均未连接。凭据演示不保存密钥，破坏性示例与派发保留确认和取消。
+
+这些是可评审的增量改动，未替用户勾选满意度、HIG 最终验收或设计冻结条件。
+
+
+## Prototype source checkpoint — 2026-11-15
+
+`index.html` opens the primary prototype directly. Screen-directory launchers have been removed. All local scripts, styles and referenced assets needed by this checkpoint are versioned under this directory; OpenDesign metadata is excluded. This is an editable prototype checkpoint, not a claim that the native product or external services implement these interactions.
