@@ -130,6 +130,52 @@ try {
         throw "$($_.Exception.Message); status=$statusText"
     }
 
+    # Packaged Windows regression: typing (not pasting) a real file-search
+    # query must return a file row, not just unrelated fuzzy app rows. The
+    # fixture is in Downloads, a documented search root, and is always
+    # removed even on failure.
+    $fixtureDir = Join-Path $env:USERPROFILE 'Downloads'
+    New-Item -ItemType Directory -Force -Path $fixtureDir | Out-Null
+    $fixtureName = "fulcrum-typed-find-$PID.txt"
+    $fixturePath = Join-Path $fixtureDir $fixtureName
+    $initialPanelHeight = $window.Current.BoundingRectangle.Height
+    try {
+        Set-Content -LiteralPath $fixturePath -Value 'packaged search fixture' -Encoding utf8
+        $query.SetFocus()
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        # SendKeys traverses the real TextChanged path for each character.
+        [System.Windows.Forms.SendKeys]::SendWait("find fulcrum-typed-find-$PID")
+        [void](Wait-Until 'typed filename query in QueryBox' {
+            $pattern = $query.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+            if (([System.Windows.Automation.ValuePattern]$pattern).Current.Value -eq
+                "find fulcrum-typed-find-$PID") { return $true }
+            return $false
+        })
+        [void](Wait-Until 'typed find returns a real file result' {
+            $list = Find-ById $window 'ResultsList'
+            if ($list -and (Find-ByNameFragment $list $fixtureName)) { return $true }
+            return $false
+        } -TimeoutSeconds 75)
+        $fileSearchPanelHeight = $window.Current.BoundingRectangle.Height
+        if ([Math]::Abs($fileSearchPanelHeight - $initialPanelHeight) -gt 3) {
+            throw "launcher height jumped while searching files: $initialPanelHeight to $fileSearchPanelHeight"
+        }
+    } catch {
+        Save-AccessibilitySnapshot $window (Join-Path $output 'file-search-failure-accessibility.json')
+        throw
+    } finally {
+        Remove-Item -LiteralPath $fixturePath -Force -ErrorAction SilentlyContinue
+    }
+
+    # Return to calculator before its existing clipboard/activation assertion.
+    $query.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('^a')
+    [System.Windows.Forms.SendKeys]::SendWait('12*12')
+    [void](Wait-Until 'calculator result restored after file search' {
+        $list = Find-ById $window 'ResultsList'
+        if ($list -and (Find-ByNameFragment $list '144')) { return $true }
+        return $false
+    })
     Save-AccessibilitySnapshot $window (Join-Path $output 'accessibility.json')
 
     $query.SetFocus()
@@ -358,8 +404,8 @@ try {
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('set:QueryBox=12*12','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:five-native-tabs','settings:commands-editor','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','five native Settings destinations and visible Commands editor','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
+        actions = @('set:QueryBox=12*12','typed-find:Downloads-file','frame:steady-height','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:five-native-tabs','settings:commands-editor','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','typed find returns a real Downloads file row from the packaged Windows host','window frame does not change height between calculator and file search','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','five native Settings destinations and visible Commands editor','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
     $env:FULCRUM_DATA_DIR = $savedData
