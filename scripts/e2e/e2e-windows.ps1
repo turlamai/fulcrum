@@ -320,6 +320,48 @@ try {
         }
         return $false
     })
+    # Native workflow edit/move regression: each click must persist through
+    # the Racket backend and change the real step list, not merely text on
+    # the Settings page. This also catches stale-trace display after edits.
+    $editStep = Wait-Until 'native workflow Edit button' {
+        Find-ByName $settingsWindow 'Edit'
+    }
+    ([System.Windows.Automation.InvokePattern]$editStep.GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    ([System.Windows.Automation.ValuePattern]$workflowStepBox.GetCurrentPattern(
+        [System.Windows.Automation.ValuePattern]::Pattern)).SetValue('upper')
+    $saveStep = Find-ById $settingsWindow 'workflow-add-step'
+    ([System.Windows.Automation.InvokePattern]$saveStep.GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    [void](Wait-Until 'step edit persisted as upper' {
+        if (Find-ByNameFragment $settingsWindow "$workflowName · Step 1: upper") {
+            return $true
+        }
+        return $false
+    })
+    ([System.Windows.Automation.ValuePattern]$workflowStepBox.GetCurrentPattern(
+        [System.Windows.Automation.ValuePattern]::Pattern)).SetValue('trim')
+    ([System.Windows.Automation.InvokePattern]$workflowAdd.GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    [void](Wait-Until 'second workflow step persisted' {
+        if (Find-ByNameFragment $settingsWindow "$workflowName · Step 2: trim") {
+            return $true
+        }
+        return $false
+    })
+    $arrowCondition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::NameProperty, '↑')
+    $upButtons = $settingsWindow.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants, $arrowCondition)
+    if ($upButtons.Count -lt 2) {
+        throw 'expected move-up buttons for both workflow steps'
+    }
+    ([System.Windows.Automation.InvokePattern]$upButtons.GetAt(1).GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    [void](Wait-Until 'workflow reorder persisted after moving second step up' {
+        return ((Find-ByNameFragment $settingsWindow "$workflowName · Step 1: trim") -and
+                (Find-ByNameFragment $settingsWindow "$workflowName · Step 2: upper"))
+    })
     $generalTab = Find-ById $settingsWindow 'settings-sidebar-general'
     $generalSelection = [System.Windows.Automation.SelectionItemPattern]$generalTab.GetCurrentPattern(
         [System.Windows.Automation.SelectionItemPattern]::Pattern)
