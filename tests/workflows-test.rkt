@@ -87,6 +87,77 @@
      (check-true (workflow-delete! store "safe"))
      (check-false (workflow-delete! store "safe")))))
 
+
+(test-case "batch line transforms handle CRLF, filtering, stable dedup and sorting"
+  (with-store
+   (lambda (store path)
+     (workflow-create! store "batch")
+     (for ([step (in-list '("lines trim"
+                            "lines drop #"
+                            "lines unique"
+                            "lines sort"
+                            "lines take 3"
+                            "copy"))])
+       (workflow-add-step! store "batch" step))
+     (define input "pear \r\n apple\r\npear\r\n# hidden\r\n plum")
+     (define dry
+       (workflow-execute! store "batch" input #:dry-run? #t))
+     (check-equal? (workflow-outcome-status dry) "ok")
+     (check-equal? (workflow-outcome-text dry) "apple\npear\nplum")
+     (check-false (workflow-outcome-action dry))
+     (define run (workflow-execute! store "batch" input))
+     (check-equal? (workflow-outcome-action run) 'copy)
+     (check-equal? (workflow-outcome-text run) "apple\npear\nplum")
+     (check-equal? (length (workflow-outcome-trace run)) 6)
+     (check-false (string-contains? (format "~s" (workflow-outcome-trace run))
+                                    "pear"))
+     (define restored (make-workflow-store path))
+     (check-equal? (length (workflow-steps (workflow-ref restored "batch"))) 6))))
+
+(test-case "line-mode subsets and failure recovery are explicitly traced"
+  (with-store
+   (lambda (store _)
+     (workflow-create! store "subset")
+     (workflow-add-step! store "subset" "lines upper")
+     (workflow-add-step! store "subset" "lines keep OK")
+     (workflow-add-step! store "subset" "lines nonempty")
+     (workflow-add-step! store "subset" "lines lower")
+     (workflow-add-step! store "subset" "require all-ok else fallback")
+     (workflow-add-step! store "subset" "copy")
+     (define result
+       (workflow-execute! store "subset" "ok\nmissing\nok"))
+     (check-equal? (workflow-outcome-text result) "fallback")
+     (check-equal? (workflow-outcome-action result) 'copy)
+     (check-equal? (third (list-ref (workflow-outcome-trace result) 4))
+                   "recovered")
+     (check-false (string-contains?
+                   (format "~s" (workflow-outcome-trace result))
+                   "fallback"))
+     (workflow-create! store "strict")
+     (workflow-add-step! store "strict" "require must-exist")
+     (workflow-add-step! store "strict" "copy")
+     (check-equal?
+      (workflow-outcome-status (workflow-execute! store "strict" "absent"))
+      "failed"))))
+
+(test-case "batch and fallback grammar rejects invalid bounds or executable text"
+  (with-store
+   (lambda (store _)
+     (for ([bad (in-list '("lines take 0" "lines take 1001"
+                           "lines take 1.5" "lines keep"
+                           "lines drop" "lines eval" "require x else"))])
+       (check-exn exn:fail? (lambda () (parse-workflow-step bad))))
+     (workflow-create! store "limit")
+     (workflow-add-step! store "limit" "lines unique")
+     (workflow-add-step! store "limit" "copy")
+     (check-equal?
+      (workflow-outcome-status
+       (workflow-execute! store "limit" (make-string 8193 #\a)))
+      "failed")
+     (check-equal? (workflow-outcome-status
+                    (workflow-execute! store "limit" "one\ntwo"))
+                   "ok"))))
+
 (test-case "malformed persisted store is read-only, not overwritten"
   (with-store
    (lambda (_store path)
