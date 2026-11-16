@@ -26,12 +26,14 @@ final class SettingsModel: ObservableObject {
     @Published var bindingError: String?
 
     private let api: FulcrumAPI
+    let workflowEditor: WorkflowEditorModel
     /// Host side effects that must follow a write (language table, the
     /// snippet expansion engine); theme and hotkey arrive via State pushes.
     private let onChanged: (String, String) -> Void
 
     init(api: FulcrumAPI, onChanged: @escaping (String, String) -> Void) {
         self.api = api
+        self.workflowEditor = WorkflowEditorModel(api: api)
         self.onChanged = onChanged
     }
 
@@ -347,7 +349,7 @@ private struct GlobalHotkeySetting: View {
 }
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, features, ai, commands, sync
+    case general, features, ai, commands, workflows, sync
 
     var id: Self { self }
     // The i18n key backing the sidebar title; rendered through the view's
@@ -358,6 +360,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .features: return "settings.nav.features"
         case .ai: return "settings.nav.ai"
         case .commands: return "settings.nav.commands"
+        case .workflows: return "settings.nav.workflows"
         case .sync: return "settings.nav.sync"
         }
     }
@@ -367,6 +370,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .features: return "square.grid.2x2"
         case .ai: return "sparkles"
         case .commands: return "keyboard"
+        case .workflows: return "square.stack.3d.up"
         case .sync: return "arrow.triangle.2.circlepath"
         }
     }
@@ -396,7 +400,8 @@ struct SettingsView: View {
                     Button {
                         selection = section
                     } label: {
-                        Label(t(section.titleKey), systemImage: section.icon)
+                        Label(section == .workflows ? "Workflows" : t(section.titleKey),
+                              systemImage: section.icon)
                             .foregroundStyle(selection == section
                                              ? FulcrumTheme.accentText(scheme)
                                              : Color.primary)
@@ -421,6 +426,7 @@ struct SettingsView: View {
                     case .features: featuresTab
                     case .ai: aiTab
                     case .commands: commandsTab
+                    case .workflows: WorkflowEditorView(model: model.workflowEditor)
                     case .sync: syncTab
                     }
                 }
