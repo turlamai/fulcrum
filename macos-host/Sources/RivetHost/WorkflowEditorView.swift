@@ -11,6 +11,7 @@ final class WorkflowEditorModel: ObservableObject {
     @Published var trace: [ResultRow] = []
     @Published var nameDraft = ""
     @Published var stepDraft = ""
+    @Published var editingIndex: Int?
     @Published var inputDraft = ""
     @Published var notice = "Create a workflow or select one to edit its steps."
     @Published var busy = false
@@ -73,6 +74,8 @@ final class WorkflowEditorModel: ObservableObject {
 
     func select(_ name: String) {
         selected = name
+        editingIndex = nil
+        stepDraft = ""
         stepPage = 1
         tracePage = 1
         Task { await refreshDetail() }
@@ -145,6 +148,63 @@ final class WorkflowEditorModel: ObservableObject {
             await refreshDetail()
             notice = "Step not confirmed. Check the grammar, step count and terminal copy/paste rule."
         }
+    }
+
+    func beginEditing(step: ResultRow) {
+        let label = step.title.split(separator: " ").last.map(String.init) ?? ""
+        guard let index = Int(label), index > 0 else {
+            notice = "Invalid step index."
+            return
+        }
+        editingIndex = index
+        stepDraft = step.subtitle
+        notice = "Editing step \(index). Save to validate; Cancel to discard."
+    }
+
+    func saveStep() async {
+        guard let name = selected else { return }
+        guard let index = editingIndex else { await append(); return }
+        let replacement = stepDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !replacement.isEmpty else { notice = "Enter a step expression."; return }
+        guard await action("workflow.edit", name + separator + "\(index) " + replacement) != nil
+        else { return }
+        let targetPage = max(1, (index + 4) / 5)
+        stepPage = targetPage
+        await refreshDetail()
+        let actual = steps.first { $0.title.hasSuffix("Step \(index)") }?.subtitle
+        if actual == replacement {
+            editingIndex = nil
+            stepDraft = ""
+            notice = "Step updated."
+        } else {
+            notice = "Step edit was not confirmed; verify grammar and terminal copy/paste ordering."
+        }
+    }
+
+    func move(step: ResultRow, by offset: Int) async {
+        guard let name = selected else { return }
+        let label = step.title.split(separator: " ").last.map(String.init) ?? ""
+        guard let index = Int(label), index > 0 else {
+            notice = "Invalid step index."
+            return
+        }
+        let target = index + offset
+        guard let count = await totalSteps(for: name),
+              target >= 1 && target <= count else {
+            notice = "Cannot move beyond the first or last step."
+            return
+        }
+        guard await action("workflow.move",
+                           name + separator + "\(index) \(target)") != nil else { return }
+        stepPage = max(1, (target + 4) / 5)
+        editingIndex = nil
+        await refreshDetail()
+        notice = "Move requested. Terminal copy/paste must remain last."
+    }
+
+    func cancelEditing() {
+        editingIndex = nil
+        stepDraft = ""
     }
 
     func remove(step: ResultRow) async {
@@ -275,6 +335,12 @@ struct WorkflowEditorView: View {
                                         .textSelection(.enabled)
                                 }
                                 Spacer()
+                                Button("Edit") { model.beginEditing(step: row) }
+                                    .accessibilityIdentifier("workflow-edit-step")
+                                Button("↑") { Task { await model.move(step: row, by: -1) } }
+                                    .accessibilityIdentifier("workflow-move-up")
+                                Button("↓") { Task { await model.move(step: row, by: 1) } }
+                                    .accessibilityIdentifier("workflow-move-down")
                                 Button("Remove") { Task { await model.remove(step: row) } }
                                     .accessibilityIdentifier("workflow-remove-step")
                             }
@@ -290,9 +356,15 @@ struct WorkflowEditorView: View {
                             TextField("trim, lines unique, require text…",
                                       text: $model.stepDraft)
                                 .accessibilityIdentifier("workflow-step-expression")
-                            Button("Add step") { Task { await model.append() } }
+                            Button(model.editingIndex == nil ? "Add step" : "Save step") {
+                                Task { await model.saveStep() }
+                            }
                                 .disabled(model.busy || model.stepDraft.isEmpty)
-                                .accessibilityIdentifier("workflow-add-step")
+                                .accessibilityIdentifier("workflow-save-step")
+                            if model.editingIndex != nil {
+                                Button("Cancel") { model.cancelEditing() }
+                                    .accessibilityIdentifier("workflow-cancel-edit")
+                            }
                         }
                         Divider()
                         Text("Input").font(.headline)
