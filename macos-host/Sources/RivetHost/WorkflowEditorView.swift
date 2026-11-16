@@ -24,19 +24,48 @@ final class WorkflowEditorModel: ObservableObject {
 
     init(api: FulcrumAPI) { self.api = api }
 
+    private func savedRows(page: Int) async throws -> [ResultRow] {
+        try await api.search("wf list \(page)")
+    }
+
+    // A workflow can be on any of ten list pages; querying only page one
+    // falsely reported a successfully created name as rejected.
+    private func pageContaining(_ target: String) async -> Int? {
+        for candidate in 1...10 {
+            guard let rows = try? await savedRows(page: candidate) else { return nil }
+            let saved = rows.filter { $0.kind == "Workflow" && $0.badge == "Saved" }
+            if saved.contains(where: { $0.title == "Workflow · \(target)" }) {
+                return candidate
+            }
+            if saved.count < 5 { return nil }
+        }
+        return nil
+    }
+
+    private func totalSteps(for name: String) async -> Int? {
+        var total = 0
+        for candidate in 1...4 {
+            guard let rows = try? await api.search("wf show \(name) \(candidate)")
+            else { return nil }
+            let count = rows.filter { $0.kind == "Workflow" && $0.badge == "Step" }.count
+            total += count
+            if count < 5 { break }
+        }
+        return total
+    }
+
     func refresh() async {
+        let currentPage = page
         do {
-            let found = try await api.search("wf list \(page)")
-            let newNames = found.filter { $0.kind == "Workflow" && $0.badge == "Saved" }
+            let found = try await savedRows(page: currentPage)
+            guard page == currentPage else { return }
+            names = found.filter { $0.kind == "Workflow" && $0.badge == "Saved" }
                 .compactMap { row -> String? in
                     let prefix = "Workflow · "
                     return row.title.hasPrefix(prefix)
                         ? String(row.title.dropFirst(prefix.count)) : nil
                 }
-            names = newNames
-            if let selected, !selected.isEmpty {
-                await refreshDetail()
-            }
+            if selected != nil { await refreshDetail() }
         } catch {
             notice = "Could not load workflows: \(error.localizedDescription)"
         }
@@ -50,10 +79,14 @@ final class WorkflowEditorModel: ObservableObject {
     }
 
     func refreshDetail() async {
-        guard let selected else { steps = []; trace = []; return }
+        guard let name = selected else { steps = []; trace = []; return }
+        let currentStepPage = stepPage
+        let currentTracePage = tracePage
         do {
-            let stepRows = try await api.search("wf show \(selected) \(stepPage)")
-            let traceRows = try await api.search("wf trace \(selected) \(tracePage)")
+            let stepRows = try await api.search("wf show \(name) \(currentStepPage)")
+            let traceRows = try await api.search("wf trace \(name) \(currentTracePage)")
+            guard selected == name && stepPage == currentStepPage &&
+                    tracePage == currentTracePage else { return }
             steps = stepRows.filter { $0.kind == "Workflow" && $0.badge == "Step" }
             trace = traceRows.filter { $0.kind == "Workflow" && $0.badge == "Trace" }
         } catch {
@@ -61,85 +94,119 @@ final class WorkflowEditorModel: ObservableObject {
         }
     }
 
-    private func action(_ id: String, _ arg: String) async -> Bool {
-        guard !busy else { return false }
+    private func action(_ id: String, _ arg: String) async -> String? {
+        guard !busy else { notice = "Another workflow operation is in progress."; return nil }
         busy = true
         defer { busy = false }
         do {
-            let result = try await api.runAction(id: id, arg: arg)
-            return result == "stay" || result == "copied"
+            return try await api.runAction(id: id, arg: arg)
         } catch {
             notice = "Workflow request failed: \(error.localizedDescription)"
-            return false
+            return nil
         }
     }
 
     func create() async {
         let draft = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = draft.lowercased()
         guard !draft.isEmpty else { notice = "Enter a workflow name."; return }
-        guard await action("workflow.create", draft) else { return }
-        page = 1
+        if let existingPage = await pageContaining(name) {
+            page = existingPage
+            await refresh()
+            select(name)
+            notice = "This workflow already exists."
+            return
+        }
+        guard await action("workflow.create", draft) != nil else { return }
+        guard let savedPage = await pageContaining(name) else {
+            notice = "Not created. Names must begin with a letter and use only a-z, 0-9, - or _."
+            return
+        }
+        page = savedPage
         await refresh()
-        // Backend actions return "stay" even on validation errors; read back
-        // the authoritative store instead of claiming an unverified save.
-        let created = names.contains(draft.lowercased())
-        notice = created ? "Workflow created." : "Not created. Use a lowercase name beginning with a letter; check for duplicates."
-        if created { nameDraft = ""; select(draft.lowercased()) }
+        nameDraft = ""
+        select(name)
+        notice = "Workflow created."
     }
 
     func append() async {
-        guard let selected else { return }
+        guard let name = selected else { return }
         let text = stepDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { notice = "Enter a step expression."; return }
-        let previous = steps.count
-        guard await action("workflow.add", selected + separator + text) else { return }
-        // Reload the last page for validation even when the visible page is full.
-        stepPage = 1
-        await refreshDetail()
-        notice = steps.count > previous ? "Step added." :
-            "Step request sent. Check its syntax and the step list; use next page when full."
-        if steps.count > previous { stepDraft = "" }
+        let before = await totalSteps(for: name)
+        guard await action("workflow.add", name + separator + text) != nil else { return }
+        let after = await totalSteps(for: name)
+        if let before, let after, after > before {
+            stepPage = max(1, (after + 4) / 5)
+            await refreshDetail()
+            stepDraft = ""
+            notice = "Step added."
+        } else {
+            await refreshDetail()
+            notice = "Step not confirmed. Check the grammar, step count and terminal copy/paste rule."
+        }
     }
 
     func remove(step: ResultRow) async {
-        guard let selected else { return }
-        // Backend row title has a canonical 1-based global index.
+        guard let name = selected else { return }
         let label = step.title.split(separator: " ").last.map(String.init) ?? ""
-        guard Int(label) != nil else { notice = "Invalid step index."; return }
-        guard await action("workflow.remove", selected + separator + label) else { return }
-        await refreshDetail()
-        notice = "Step removal requested; inspect the updated step list."
+        guard let index = Int(label), index > 0 else {
+            notice = "Invalid step index."
+            return
+        }
+        let before = await totalSteps(for: name)
+        guard await action("workflow.remove", name + separator + label) != nil else { return }
+        let after = await totalSteps(for: name)
+        if let before, let after, after < before {
+            stepPage = min(stepPage, max(1, (after + 4) / 5))
+            await refreshDetail()
+            notice = "Step removed."
+        } else {
+            await refreshDetail()
+            notice = "Step removal not confirmed; inspect the list."
+        }
     }
 
     func delete() async {
-        guard let selected else { return }
-        guard await action("workflow.delete", selected) else { return }
-        self.selected = nil
+        guard let name = selected else { return }
+        guard await action("workflow.delete", name) != nil else { return }
+        guard await pageContaining(name) == nil else {
+            notice = "Delete was not confirmed; the definition still exists."
+            return
+        }
+        selected = nil
         steps = []
         trace = []
         page = 1
         await refresh()
-        notice = "Deletion requested; verify that the name is no longer listed."
+        notice = "Workflow deleted."
     }
 
     func dryRun() async {
-        guard let selected else { return }
-        guard await action("workflow.dry", selected + separator + inputDraft) else { return }
+        guard let name = selected else { return }
+        guard await action("workflow.dry", name + separator + inputDraft) != nil else { return }
         tracePage = 1
         await refreshDetail()
-        notice = "Dry run complete or rejected. Inspect the redacted trace; no clipboard side effects."
+        if trace.contains(where: { $0.subtitle.hasPrefix("Status: failed") }) {
+            notice = "Dry run stopped on a failed step. No clipboard action was performed."
+        } else {
+            notice = "Dry run requested. Inspect the redacted trace; no clipboard side effects."
+        }
     }
 
     func copyResult() async {
-        guard let selected else { return }
+        guard let name = selected else { return }
         guard steps.last?.subtitle == "copy" else {
-            notice = "For safety, run from this window only when the final step is copy. Use the launcher for paste."
+            notice = "Only workflows ending in copy can run from Settings; launch paste workflows from the launcher."
             return
         }
-        guard await action("workflow.run", selected + separator + inputDraft) else { return }
+        guard let result = await action("workflow.run", name + separator + inputDraft)
+        else { return }
         tracePage = 1
         await refreshDetail()
-        notice = "Execution requested. The final copy step delivers the result to the system clipboard."
+        notice = result == "copied"
+            ? "Workflow completed; result copied to the system clipboard."
+            : "Workflow did not confirm a copy. Inspect the redacted trace."
     }
 
     func nextList() { page += 1; Task { await refresh() } }
@@ -148,6 +215,7 @@ final class WorkflowEditorModel: ObservableObject {
     func previousSteps() { stepPage = max(1, stepPage - 1); Task { await refreshDetail() } }
     func nextTrace() { tracePage += 1; Task { await refreshDetail() } }
     func previousTrace() { tracePage = max(1, tracePage - 1); Task { await refreshDetail() } }
+
 }
 
 struct WorkflowEditorView: View {
