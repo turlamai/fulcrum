@@ -145,9 +145,9 @@ add link yt https://youtube.com/search?q={query}
 
 之后 `yt lofi` 就打开 YouTube 搜索。`{query}` 被替换成关键词后面的内容。输入 `quicklinks` 可以查看和删除。
 
-### Workflow Pro 工作流运行预览（仅开发分支，尚未正式发布）
+### Workflow Pro 原生管理界面预览（仅开发分支，尚未正式发布）
 
-Workflow Pro 的第一阶段提供**真实、本地、多步骤执行器**，但仍是开发预览：这不是[设计原型](../design/prototype/workflow.html)中的可视化编辑器，也尚未进入已发布安装包。本阶段不启用收费、试用或激活门禁，现有免费搜索、片段和插件能力保持不变。
+这一开发分支在 macOS（SwiftUI）、Windows（WinUI 3）和 Linux（GTK4）的「设置 → Workflows」加入了**原生工作流管理/调试页**，底层共用本地 Racket 执行器。可以通过界面新建、选择和删除工作流，添加/移除有序步骤，输入多行文本、试运行并查看脱敏轨迹，而不必逐条敲命令。但这还不是[设计探索稿](../design/prototype/workflow.html)的图形拖拽编排画布，也尚未进入已发布的安装包。本阶段不启用收费、试用或激活门禁，现有免费搜索、片段和插件能力保持不变。
 
 在启动器中逐行输入，**每行都按 Enter 执行**：
 
@@ -164,7 +164,7 @@ wf trace brief
 
 `wf` 或 `workflow list` 列出工作流；`wf show brief` 查看步骤，`wf remove brief 2` 移除第二步，`wf delete brief` 删除定义。步骤支持 `trim`、`upper`、`lower`、`prefix TEXT`、`suffix TEXT`、`replace OLD => NEW`、`require TEXT`、`ifcontains TEXT ? upper : lower`（两个分支也可用 `keep` 或 `trim`），最后可选择 `copy` 或 `paste`。条件分支选择一项变换；`require TEXT` 不满足时停止，后续动作不会执行。`require TEXT else FALLBACK` 在条件不满足时使用预设回退内容并继续执行，脱敏轨迹记为 `recovered`。批量文本步骤按行工作：`lines trim`（逐行去空白）、`lines upper` / `lines lower`（大小写）、`lines nonempty`（过滤空行）、`lines unique`（保留首次出现项）、`lines sort`（不区分大小写排序）、`lines keep TEXT` / `lines drop TEXT`（按大小写敏感的子串保留/删除行）、`lines take N`（取前 1～1000 行）。CRLF 自动规范化为 LF，输入仍只在本机处理。例如依次使用 `wf add brief lines unique`、`wf add brief lines sort`，最后添加 `copy`。这些步骤不支持执行任意脚本。处理**多行文本**时，先复制文本，再主动输入 `wf dry sorted @clipboard` 或 `wf run sorted @clipboard`（`sorted` 是工作流名称）。该命令只读取 Fulcrum 剪贴板历史中**最近记录**的文本，不会因为旧记录被置顶而读取它；设置中必须启用剪贴板历史。检测到疑似凭据的剪贴板内容时拒绝执行，工作流定义和轨迹均不会保存输入或输出。若希望把 `@clipboard` 当作普通文字处理，请输入 `@@clipboard`。试运行不会复制/粘贴；正式执行也只有在工作流最后设置 `copy`/`paste` 时才会触发相应操作。复制/粘贴使用现有跨平台原生事件，不调用任意命令。
 
-`wf dry` 只预演，不复制或粘贴；执行失败会指出步骤，`wf trace` 只显示步骤编号、操作和状态，不显示输入和输出。定义只保存在本机 `workflows.json`，重启后仍在；运行轨迹只保留在内存，重启即清除。输入最长 8192 字符、中间输出最长 65536 字符，单个工作流最多 20 步、总数最多 50 个。**尚未提供**可视化编辑器、定时/自动触发、AI/网络步骤或任意 Shell 执行。
+`wf dry` 只预演，不复制或粘贴；执行失败会指出步骤，`wf trace` 只显示步骤编号、操作和状态，不显示输入和输出。定义只保存在本机 `workflows.json`，重启后仍在；运行轨迹只保留在内存，重启即清除。输入最长 8192 字符、中间输出最长 65536 字符，单个工作流最多 20 步、总数最多 50 个。**尚未提供**图形拖拽编排画布、定时/自动触发、AI/网络步骤或任意 Shell 执行。原生管理页用每页 5 条的分页展示全部定义、步骤和脱敏轨迹。在设置页仅允许最后一步为 `copy` 的工作流直接执行；`paste` 工作流需从启动器执行，以保证粘贴目标是预期的前台应用。删除需要主动确认。当前编辑反馈以重新读取的列表与轨迹为准，若后台拒绝步骤，应检查刷新结果。
 
 ### 窗口管理
 
