@@ -98,7 +98,7 @@
        => (lambda (m) (hasheq 'op "replace"
                               'from (cadr m) 'to (caddr m)))]
       [(regexp-match
-        #px"^ifcontains (.+) \? (keep|trim|upper|lower) : (keep|trim|upper|lower)$"
+        #px"^ifcontains (.+) \\? (keep|trim|upper|lower) : (keep|trim|upper|lower)$"
         text)
        => (lambda (m) (hasheq 'op "ifcontains"
                               'text (cadr m) 'yes (caddr m)
@@ -146,7 +146,7 @@
                 (hash-set! items name (workflow name steps))
                 #t))))
      (if all-valid?
-         (values items #f)
+         (values (make-immutable-hash (hash->list items)) #f)
          (values (hash) "invalid or duplicated workflow definition"))]
     [else (values (hash) "unreadable or unsupported workflows.json")]))
  
