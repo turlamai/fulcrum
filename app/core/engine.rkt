@@ -45,7 +45,8 @@
          "store.rkt"
          "snippets.rkt"
          "syscmd.rkt"
-         "websearch.rkt")
+         "websearch.rkt"
+         "workflows.rkt")
 
 (provide (struct-out engine)
          (struct-out result)
@@ -69,7 +70,7 @@
   #:transparent)
 
 (struct engine
-  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop)
+  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop workflows)
   #:mutable)
 
 ;; Prepared application rows: the fuzzy fields are immutable per rebuild,
@@ -1099,6 +1100,7 @@
                   #:snippet-store [snippet-store #f]
                   #:quicklink-store [quicklink-store #f]
                   #:bindings-store [bindings-store #f]
+                  #:workflow-store [workflow-store #f]
                   #:plugin-manager [plugin-manager #f]
                   #:max-results [max-results 12]
                   #:file-index-path [file-index-path #f]
@@ -1109,6 +1111,7 @@
         #:plugin-manager (or/c plugin-manager? #f))
        (#:quicklink-store (or/c quicklink-store? #f)
         #:bindings-store (or/c bindings-store? #f)
+        #:workflow-store (or/c workflow-store? #f)
         #:max-results (and/c exact-integer? (>=/c 1) (<=/c 50))
         #:file-index-path (or/c path-string? #f)
         #:file-catalog-roots (listof path-string?)
@@ -1132,7 +1135,8 @@
           file-catalog-nudge
           #f
           #f
-          (box #f)))
+          (box #f)
+          workflow-store))
 
 (define (engine-rebuild-index! engine)
   (define apps (discover-applications))
@@ -1164,6 +1168,7 @@
    ((gallery-provider engine) query)
    ((window-provider engine) query)
    ((files-provider engine) query)
+   ((workflow-provider engine) query)
    ((emoji-provider engine) query)))
 
 (define/contract (engine-search engine query)
