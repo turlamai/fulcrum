@@ -2994,7 +2994,7 @@ void settings_build() {
                                   "workflow-input-multiline", -1);
   auto* wf_run_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   auto* wf_dry = gtk_button_new_with_label("Dry run");
-  g_signal_connect(wf_dry, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+  g_signal_connect(wf_dry, "clicked", G_CALLBACK((+[](GtkButton*, gpointer) {
     if (!g_settings_form || g_settings_form->workflow_selected.empty()) return;
     auto* buffer = gtk_text_view_get_buffer(
         GTK_TEXT_VIEW(g_settings_form->workflow_input));
@@ -3006,11 +3006,11 @@ void settings_build() {
     g_settings_form->workflow_trace_page = 1;
     workflow_action("workflow.dry", g_settings_form->workflow_selected +
         std::string(1, '\x1F') + input);
-  }), nullptr);
+  })), nullptr);
   auto* wf_run_copy = gtk_button_new_with_label("Run to clipboard");
   gtk_widget_set_sensitive(wf_run_copy, FALSE);
   g_settings_form->workflow_run_copy = wf_run_copy;
-  g_signal_connect(wf_run_copy, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+  g_signal_connect(wf_run_copy, "clicked", G_CALLBACK((+[](GtkButton*, gpointer) {
     if (!g_settings_form || g_settings_form->workflow_selected.empty() ||
         !g_settings_form->workflow_copy_safe) return;
     auto* buffer = gtk_text_view_get_buffer(
@@ -3023,7 +3023,7 @@ void settings_build() {
     g_settings_form->workflow_trace_page = 1;
     workflow_action("workflow.run", g_settings_form->workflow_selected +
         std::string(1, '\x1F') + input);
-  }), nullptr);
+  })), nullptr);
   auto* wf_confirm = gtk_check_button_new_with_label("Confirm delete");
   g_settings_form->workflow_delete_confirm = wf_confirm;
   auto* wf_delete = gtk_button_new_with_label("Delete");
@@ -3433,12 +3433,12 @@ void workflow_load_detail() {
             [](gpointer p) {
               delete static_cast<std::pair<std::string, std::string>*>(p);
             });
-        g_signal_connect(remove, "clicked", G_CALLBACK(+[](GtkButton*,
+        g_signal_connect(remove, "clicked", G_CALLBACK((+[](GtkButton*,
                                                             gpointer data) {
           auto* a = static_cast<std::pair<std::string, std::string>*>(data);
           workflow_action("workflow.remove", a->first +
                           std::string(1, '\x1F') + a->second);
-        }), action);
+        })), action);
         gtk_box_append(GTK_BOX(line), remove);
         gtk_box_append(GTK_BOX(g_settings_form->workflow_steps), line);
         if (row[2] == "copy") g_settings_form->workflow_copy_safe = true;
