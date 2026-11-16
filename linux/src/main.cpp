@@ -1733,20 +1733,10 @@ struct Launcher {
     update_panel_height();
   }
 
-  // Design v2 panel sizing: 680 wide, height grows with the result count
-  // — 240 empty, capped at 12 visible rows / 640 points — plus the
-  // overlays that are up. The top edge stays anchored for GTK too (the
-  // WM picks the edge; most gravity setups keep the title edge).
+  // The launcher uses one fixed geometry; result and overlay updates
+  // must not ask the window manager to resize the visible search panel.
   void update_panel_height() {
-    if (window == nullptr) return;
-    int const row_count = std::clamp(static_cast<int>(rows.size()), 0, 12);
-    double h = 49.0 + row_count * 46.0 + 16.0 + 31.0 + 4.0;
-    if (actions_mode) h += 30.0;
-    if (ai_panel != nullptr && gtk_widget_get_visible(ai_panel)) h += 175.0;
-    if (detail_panel != nullptr && gtk_widget_get_visible(detail_panel))
-      h += 185.0;
-    h = std::clamp(h, 240.0, 640.0);
-    gtk_window_set_default_size(window, 680, static_cast<int>(h));
+    // No-op: initial GTK window size is set once at creation.
   }
 
   struct AppImageTicket {
@@ -3674,9 +3664,9 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* window = gtk_application_window_new(app);
   launcher.window = GTK_WINDOW(window);
   gtk_window_set_title(launcher.window, "Fulcrum");
-  // Design v2: the height is dynamic (240 empty .. 640 with 12 rows);
+  // Stable 680 x 640 panel; the result list scrolls when needed.
   // this is only the empty-state first paint before results arrive.
-  gtk_window_set_default_size(launcher.window, 680, 240);
+  gtk_window_set_default_size(launcher.window, 680, 640);
   gtk_window_set_resizable(launcher.window, FALSE);
   // Chromeless like the other hosts: the panel content IS the window, and
   // the stylesheet rounds it. Close still hides (below) via Esc / the tray.
