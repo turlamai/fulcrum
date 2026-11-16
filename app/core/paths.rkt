@@ -19,6 +19,7 @@
          clipboard-path
          snippets-path
          quicklinks-path
+         workflows-path
          ai-keys-path
          ai-memory-path
          recents-path
@@ -81,6 +82,11 @@
 
 (define (quicklinks-path)
   (build-path (data-dir) "quicklinks.json"))
+
+;; User-authored workflow definitions, local-only in the initial preview.
+;; Input/output values and run traces are never persisted here.
+(define (workflows-path)
+  (build-path (data-dir) "workflows.json"))
 
 ;; BYOK AI API keys. Deliberately NOT mirrored to the sync root: the sync
 ;; directory is a cloud folder, and this file holds secrets.

@@ -45,7 +45,8 @@
          "store.rkt"
          "snippets.rkt"
          "syscmd.rkt"
-         "websearch.rkt")
+         "websearch.rkt"
+         "workflows.rkt")
 
 (provide (struct-out engine)
          (struct-out result)
@@ -69,7 +70,7 @@
   #:transparent)
 
 (struct engine
-  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop)
+  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop workflows)
   #:mutable)
 
 ;; Prepared application rows: the fuzzy fields are immutable per rebuild,
@@ -1099,6 +1100,7 @@
                   #:snippet-store [snippet-store #f]
                   #:quicklink-store [quicklink-store #f]
                   #:bindings-store [bindings-store #f]
+                  #:workflow-store [workflow-store #f]
                   #:plugin-manager [plugin-manager #f]
                   #:max-results [max-results 12]
                   #:file-index-path [file-index-path #f]
@@ -1109,6 +1111,7 @@
         #:plugin-manager (or/c plugin-manager? #f))
        (#:quicklink-store (or/c quicklink-store? #f)
         #:bindings-store (or/c bindings-store? #f)
+        #:workflow-store (or/c workflow-store? #f)
         #:max-results (and/c exact-integer? (>=/c 1) (<=/c 50))
         #:file-index-path (or/c path-string? #f)
         #:file-catalog-roots (listof path-string?)
@@ -1132,7 +1135,8 @@
           file-catalog-nudge
           #f
           #f
-          (box #f)))
+          (box #f)
+          workflow-store))
 
 (define (engine-rebuild-index! engine)
   (define apps (discover-applications))
@@ -1146,6 +1150,200 @@
 (define/contract (engine-app-count engine)
   (-> engine? exact-nonnegative-integer?)
   (hash-count (engine-apps-index engine)))
+
+;; ---- Workflow Pro developer preview -------------------------------------
+;;
+;; All hosts already render action rows and honor native copy/paste events,
+;; so this first executable slice shares one backend-owned DSL. No new RVT1
+;; schema, host-specific executor or paid gate is introduced.
+(define workflow-field-separator "\u001F")
+
+(define (workflow-row id title subtitle [arg ""] [badge ""] [priority 350])
+  (result id title subtitle "Workflow" arg "workflow" "" badge
+          "wf workflow automation" priority))
+
+(define (workflow-split-command text)
+  (define fields (string-split (string-trim text)))
+  (if (null? fields)
+      (values "" "")
+      (values (car fields)
+              (string-trim
+               (substring (string-trim text) (string-length (car fields)))))))
+
+(define (workflow-provider engine)
+  (lambda (query)
+    (define store (engine-workflows engine))
+    (define q (string-trim query))
+    (define lower (string-downcase q))
+    (define prefix-length
+      (cond
+        [(or (string=? lower "wf")
+             (string-prefix? lower "wf ")) 2]
+        [(or (string=? lower "workflow")
+             (string-prefix? lower "workflow ")) 8]
+        [else #f]))
+    (if (or (not store) (not prefix-length))
+        '()
+        (let* ([rest (string-trim (substring q prefix-length))]
+               [commands
+                (call-with-values
+                 (lambda () (workflow-split-command rest)) list)]
+               [verb (string-downcase (car commands))]
+               [args (cadr commands)])
+          (define (one id title subtitle [arg ""] [badge ""])
+            (list (workflow-row id title subtitle arg badge)))
+          (define-values (name tail) (workflow-split-command args))
+          (define slug (string-downcase name))
+          (cond
+            [(workflow-store-load-error? store)
+             (one "noop" "Workflow definitions need repair"
+                  (workflow-store-load-error? store) "" "Read-only")]
+            [(member verb '("" "list"))
+             (define entries (workflow-list store))
+             (if (null? entries)
+                 (one "noop" "No workflows yet"
+                      "Type wf create <name> to start · wf help for commands"
+                      "" "Empty")
+                 (for/list ([w (in-list entries)])
+                   (workflow-row "noop"
+                                 (format "Workflow · ~a" (workflow-name w))
+                                 (format "~a steps · run with wf run ~a <input>"
+                                         (length (workflow-steps w))
+                                         (workflow-name w))
+                                 "" "Saved")))]
+            [(string=? verb "help")
+             (list
+              (workflow-row "noop" "wf create <name> · wf list"
+                            "Create or list saved local workflows")
+              (workflow-row "noop" "wf add <name> <step>"
+                            "trim, upper, lower, prefix TEXT, suffix TEXT, replace OLD => NEW")
+              (workflow-row "noop" "wf add <name> ifcontains TEXT ? upper : lower"
+                            "Conditionally transform, or require TEXT to stop on failure")
+              (workflow-row "noop" "wf add <name> copy"
+                            "Finish by copying; paste is an opt-in alternative")
+              (workflow-row "noop" "wf dry <name> <input> · wf run <name> <input>"
+                            "Preview without effects, or run through native copy/paste")
+              (workflow-row "noop" "wf show/trace/delete <name> · wf remove <name> <index>"
+                            "Inspect, debug, delete or change the ordered steps"))]
+            [(string=? verb "create")
+             (one "workflow.create"
+                  (format "Create workflow · ~a" slug)
+                  "Save a new empty workflow (add steps before running)"
+                  slug "Create")]
+            [(string=? verb "add")
+             (one "workflow.add"
+                  (format "Append step to ~a" slug)
+                  (if (string=? tail "") "Type a supported step after the name"
+                      tail)
+                  (string-append slug workflow-field-separator tail)
+                  "Append")]
+            [(string=? verb "remove")
+             (one "workflow.remove"
+                  (format "Remove step ~a from ~a" tail slug)
+                  "1-based index · subsequent steps keep their order"
+                  (string-append slug workflow-field-separator tail)
+                  "Remove")]
+            [(string=? verb "delete")
+             (one "workflow.delete"
+                  (format "Delete workflow · ~a" slug)
+                  "This deletes its definition, not your text files"
+                  slug "Delete")]
+            [(member verb '("run" "dry"))
+             (one (if (string=? verb "dry") "workflow.dry" "workflow.run")
+                  (format "~a workflow · ~a"
+                          (if (string=? verb "dry") "Dry-run" "Run") slug)
+                  "Input is used only for this invocation; no payload is logged"
+                  (string-append slug workflow-field-separator tail)
+                  (if (string=? verb "dry") "Preview" "Run"))]
+            [(string=? verb "show")
+             (define w (workflow-ref store slug))
+             (if (not w)
+                 (one "noop" (format "No workflow named ~a" slug)
+                      "Create it with wf create <name>" "" "Missing")
+                 (if (null? (workflow-steps w))
+                     (one "noop" (format "~a has no steps" slug)
+                          "Add steps using wf add <name> <step>")
+                     (for/list ([step (in-list (workflow-steps w))]
+                                [index (in-naturals 1)])
+                       (workflow-row "noop"
+                                     (format "~a · Step ~a" slug index)
+                                     (workflow-step-label step)
+                                     "" "Step"))))]
+            [(string=? verb "trace")
+             (define trace (workflow-last-trace store slug))
+             (if (null? trace)
+                 (one "noop" (format "No recent trace for ~a" slug)
+                      "Run or dry-run the workflow first" "" "No trace")
+                 (for/list ([entry (in-list trace)])
+                   (workflow-row "noop"
+                                 (format "~a · Step ~a · ~a" slug
+                                         (first entry) (second entry))
+                                 (format "Status: ~a (input/output hidden)"
+                                         (third entry)) "" "Trace")))]
+            [else
+             (one "noop" "Workflow commands"
+                  "Type wf help · workflow definitions run locally")])))))
+
+(define (workflow-action engine id arg)
+  (define store (engine-workflows engine))
+  (define (status message)
+    ;; "stay" keeps the launcher visible long enough for feedback/errors.
+    (cons "stay" (list (cons 'notify message))))
+  (if (not store)
+      (status "Workflow store unavailable")
+      (with-handlers ([exn:fail? (lambda (e)
+                                   (status (format "Workflow: ~a"
+                                                   (exn-message e))))])
+        (define fields
+          (string-split arg workflow-field-separator #:trim? #f))
+        (cond
+          [(string=? id "workflow.create")
+           (define w (workflow-create! store arg))
+           (status (format "Created ~a · now use wf add ~a <step>"
+                           (workflow-name w) (workflow-name w)))]
+          [(string=? id "workflow.delete")
+           (status (if (workflow-delete! store arg)
+                       (format "Deleted workflow ~a" arg)
+                       (format "No workflow named ~a" arg)))]
+          [(member id '("workflow.add" "workflow.remove"
+                        "workflow.run" "workflow.dry"))
+           (unless (= (length fields) 2)
+             (raise-user-error 'workflow "invalid action payload"))
+           (define name (first fields))
+           (define tail (second fields))
+           (cond
+             [(string=? id "workflow.add")
+              (define w (workflow-add-step! store name tail))
+              (status (format "Added step ~a to ~a"
+                              (length (workflow-steps w))
+                              (workflow-name w)))]
+             [(string=? id "workflow.remove")
+              (define index (string->number tail))
+              (unless (exact-positive-integer? index)
+                (raise-user-error 'workflow "step index must be a positive integer"))
+              (define w (workflow-remove-step! store name index))
+              (status (format "Removed step ~a from ~a; ~a remain"
+                              index (workflow-name w)
+                              (length (workflow-steps w))))]
+             [else
+              (define dry? (string=? id "workflow.dry"))
+              (define outcome (workflow-execute! store name tail
+                                                 #:dry-run? dry?))
+              (cond
+                [(string=? (workflow-outcome-status outcome) "failed")
+                 (status (workflow-outcome-message outcome))]
+                [dry?
+                 (status (workflow-outcome-message outcome))]
+                [(eq? (workflow-outcome-action outcome) 'copy)
+                 (cons "copied"
+                       (list (cons 'copy-to-clipboard
+                                   (workflow-outcome-text outcome))))]
+                [(eq? (workflow-outcome-action outcome) 'paste)
+                 (cons "copied"
+                       (list (cons 'paste-to-frontmost
+                                   (workflow-outcome-text outcome))))]
+                [else (status (workflow-outcome-message outcome))])])]
+          [else (status "Unknown workflow action")]))))
 
 (define (all-provider-results engine query)
   (append
@@ -1164,6 +1362,7 @@
    ((gallery-provider engine) query)
    ((window-provider engine) query)
    ((files-provider engine) query)
+   ((workflow-provider engine) query)
    ((emoji-provider engine) query)))
 
 (define/contract (engine-search engine query)
@@ -1356,6 +1555,8 @@
     [(string=? id "link.save") (finish (link-save!-from-payload engine arg))]
     [(string=? id "link.delete") (finish (link-delete!-action engine arg))]
     [(string=? id "web.open") (finish (web-open! arg))]
+    [(string-prefix? id "workflow.")
+     (finish (workflow-action engine id arg))]
     [(string=? id "noop")
      (finish (cons "not available on this platform" '()))]
     [(string=? id "file.open")
