@@ -20,7 +20,7 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 ## 设计原则（HIG 内核）
 
 - **一框即一切**：query 是唯一输入面——apps、`find` 文件、`!bang` 网页、`ai` 问答、`add snippet`、`gallery` 插件都从同一框到达；没有模式切换，就没有学习成本。
-- **结果列表是主角**：680×460 面板里 chrome 只有 query、发丝线、footer 三件；行高 44 保副标题可读，图标 tile 与 badge 只为扫读服务，装饰不与结果争注意力。
+- **结果列表是主角**：680×640 稳定面板里 chrome 只有 query、发丝线、footer 三件；行高 44 保副标题可读，图标 tile 与 badge 只为扫读服务，装饰不与结果争注意力。
 - **键盘即语法**：↑↓ 选择、↵ 执行、Tab 补全、⌘K 次级操作、Esc 阶梯（actions → detail → AI → 清 query → 隐藏）三平台语义一致（⌘K/Ctrl+K 按平台惯例）；hint bar 常驻，高频操作永远有可见快捷键提示。组合态（preedit 未上屏）下 Enter / ↑↓ / Tab 归输入法；⌘K 进入 actions 后 Esc 按 item id 回到原行，不取第一行。
 - **反馈及时**：AI 流式有 running（▍ 光标 + 转轮）/done（已复制提示）/error 三态；更新、设置、插件动作的反馈写进 status line，永不静默。
 - **原生材质，家族皮肤**：blur/acrylic/vibrancy 是平台机制，玻璃底 + amber 家族色是契约；无 compositor 的 Linux 会话用 ≥98% 不透明底——清晰优先于透明。
@@ -41,7 +41,7 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 | `--danger` | 仅错误与破坏性操作（源自系统红） |
 
 - alpha 层级对应实现：SwiftUI `.opacity(0.08/0.12/0.14)` · GTK `alpha(#D97706, …)` · XAML `#14/#1F/#24`（pressed 另有 `#2E/#38`）。dark 态沿用同一 alpha（GTK shared_css 已验证）。
-- **尺寸**：面板 680 宽、高随结果数增长（240–640，12 行封顶；设置「Maximum results」上限与可视行数一致）· 设置窗 720×520 · 圆角 12（窗）/ 8（行）/ 6（tile）· 行高 ≥44 · 图标 tile 28。
+- **尺寸**：面板 680×640 固定（小屏幕允许按工作区限制；列表滚动，最大 12 行；搜索时不随结果数伸缩）· 设置窗 720×520 · 圆角 12（窗）/ 8（行）/ 6（tile）· 行高 ≥44 · 图标 tile 28。
 - **图标**：全站功能图标统一为 2px stroke、round join/cap 的线性家族；不再用 `❝`/`✦`/`=`/`>_` 等文字字符充当图标。评审稿中的应用行用中性 app 类别字形，宿主实现替换为真实 dock 图标，不伪造品牌 mark。
 - **命中高亮**：query 命中字符用 `--accent-text` + 650 字重（颜色 + 字重双线索），不铺底色；命中发生在副标题或来源时，高亮落在对应字段，行语法不变。
 - **字号**：query 19 medium · 行标题 13 medium · 行副标题 11.5 · badge 10 semibold · hint/status 11 · AI/详情正文 12.5。
@@ -50,7 +50,7 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 
 ## 组件词汇
 
-`Panel`（680×460 玻璃面板）· `QueryField`（19px + 放大镜，唯一输入面）· `ResultRow`（icon tile + 标题/副标题 + 尾部 badge；↵ chip 仅选中行）· `KindIcon`（28px amber tile + 语义图标；app 行用真实应用图标，Calculator 与 AI 永不共用字形）· `AiStreamPanel`（running/done/error 三态，由 `ai-stream` State 驱动，打字不中断）· `DetailPanel`（FPP2 插件详情：text + metadata 键值）· `HintBar`（footer 快捷键提示，随 Esc 阶梯换文案）· `StatusLine`（动作反馈落点）· `SettingsWindow`（侧栏五区 + 原生表单）· `CommandBindingRow`（alias + 录制热键）· Workflow 探索稿专用：`StepCard`（单步：触发/输入/条件/动作）· `RunTrace`（调试运行轨迹）。
+`Panel`（680×640 稳定玻璃面板）· `QueryField`（19px + 放大镜，唯一输入面）· `ResultRow`（icon tile + 标题/副标题 + 尾部 badge；↵ chip 仅选中行）· `KindIcon`（28px amber tile + 语义图标；app 行用真实应用图标，Calculator 与 AI 永不共用字形）· `AiStreamPanel`（running/done/error 三态，由 `ai-stream` State 驱动，打字不中断）· `DetailPanel`（FPP2 插件详情：text + metadata 键值）· `HintBar`（footer 快捷键提示，随 Esc 阶梯换文案）· `StatusLine`（动作反馈落点）· `SettingsWindow`（侧栏五区 + 原生表单）· `CommandBindingRow`（alias + 录制热键）· Workflow 探索稿专用：`StepCard`（单步：触发/输入/条件/动作）· `RunTrace`（调试运行轨迹）。
 
 ## 不变式
 
