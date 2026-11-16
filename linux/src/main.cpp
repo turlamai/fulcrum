@@ -3665,7 +3665,6 @@ void on_activate(GtkApplication* app, gpointer) {
   launcher.window = GTK_WINDOW(window);
   gtk_window_set_title(launcher.window, "Fulcrum");
   // Stable 680 x 640 panel; the result list scrolls when needed.
-  // this is only the empty-state first paint before results arrive.
   gtk_window_set_default_size(launcher.window, 680, 640);
   gtk_window_set_resizable(launcher.window, FALSE);
   // Chromeless like the other hosts: the panel content IS the window, and
