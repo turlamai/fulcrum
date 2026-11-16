@@ -1157,6 +1157,19 @@
 ;; so this first executable slice shares one backend-owned DSL. No new RVT1
 ;; schema, host-specific executor or paid gate is introduced.
 (define workflow-field-separator "\u001F")
+;; A native workflow editor pages through existing search rows. Five is the
+;; minimum configurable result cap, so all 50 names and 20 steps remain
+;; reachable without changing generated RVT1 clients.
+(define workflow-page-size 5)
+
+(define (workflow-page items page)
+  (define requested (string->number page))
+  (define index (if (and (exact-positive-integer? requested)
+                         (<= requested 1000))
+                    (sub1 requested) 0))
+  (drop (take items (min (length items)
+                         (* workflow-page-size (add1 index))))
+        (min (length items) (* workflow-page-size index))))
 
 (define (workflow-row id title subtitle [arg ""] [badge ""] [priority 350])
   (result id title subtitle "Workflow" arg "workflow" "" badge
@@ -1199,7 +1212,7 @@
              (one "noop" "Workflow definitions need repair"
                   (workflow-store-load-error? store) "" "Read-only")]
             [(member verb '("" "list"))
-             (define entries (workflow-list store))
+             (define entries (workflow-page (workflow-list store) args))
              (if (null? entries)
                  (one "noop" "No workflows yet"
                       "Type wf create <name> to start · wf help for commands"
@@ -1267,8 +1280,14 @@
                  (if (null? (workflow-steps w))
                      (one "noop" (format "~a has no steps" slug)
                           "Add steps using wf add <name> <step>")
-                     (for/list ([step (in-list (workflow-steps w))]
-                                [index (in-naturals 1)])
+                     (for/list ([step (in-list (workflow-page
+                                               (workflow-steps w) tail))]
+                                [index (in-naturals
+                                        (let ([page (string->number tail)])
+                                          (if (and (exact-positive-integer? page)
+                                                   (<= page 1000))
+                                              (add1 (* workflow-page-size (sub1 page)))
+                                              1)))])
                        (workflow-row "noop"
                                      (format "~a · Step ~a" slug index)
                                      (workflow-step-label step)
@@ -1278,7 +1297,7 @@
              (if (null? trace)
                  (one "noop" (format "No recent trace for ~a" slug)
                       "Run or dry-run the workflow first" "" "No trace")
-                 (for/list ([entry (in-list trace)])
+                 (for/list ([entry (in-list (workflow-page trace tail))])
                    (workflow-row "noop"
                                  (format "~a · Step ~a · ~a" slug
                                          (first entry) (second entry))
