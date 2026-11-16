@@ -9,6 +9,7 @@
 
 (require json
          racket/file
+         racket/list
          racket/match
          racket/path
          racket/string
