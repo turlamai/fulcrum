@@ -50,6 +50,7 @@
 
 (define plain-ops '("trim" "upper" "lower" "copy" "paste"))
 (define branches '("keep" "trim" "upper" "lower"))
+(define line-ops '("trim" "upper" "lower" "unique" "sort" "nonempty"))
 
 (define (terminal-step? step)
   (member (hash-ref step 'op "") '("copy" "paste")))
@@ -65,6 +66,18 @@
                 [(string=? op "replace")
                  (and (bounded-text? (hash-ref step 'from #f))
                       (bounded-text? (hash-ref step 'to #f) #t))]
+                [(string=? op "require-or")
+                 (and (bounded-text? (hash-ref step 'text #f))
+                      (bounded-text? (hash-ref step 'fallback #f) #t))]
+                [(string=? op "lines")
+                 (define mode (hash-ref step 'mode #f))
+                 (and (string? mode)
+                      (or (member mode line-ops)
+                          (and (member mode '("keep" "drop"))
+                               (bounded-text? (hash-ref step 'text #f)))
+                          (and (string=? mode "take")
+                               (exact-integer? (hash-ref step 'count #f))
+                               (<= 1 (hash-ref step 'count) 1000))))]
                 [(string=? op "ifcontains")
                  (and (bounded-text? (hash-ref step 'text #f))
                       (member (hash-ref step 'yes #f) branches)
@@ -92,8 +105,19 @@
        => (lambda (m) (hasheq 'op "prefix" 'text (cadr m)))]
       [(regexp-match #px"^suffix (.+)$" text)
        => (lambda (m) (hasheq 'op "suffix" 'text (cadr m)))]
+      [(regexp-match #px"^require (.+) else (.+)$" text)
+       => (lambda (m) (hasheq 'op "require-or"
+                              'text (cadr m) 'fallback (caddr m)))]
       [(regexp-match #px"^require (.+)$" text)
        => (lambda (m) (hasheq 'op "require" 'text (cadr m)))]
+      [(regexp-match #px"^lines (trim|upper|lower|unique|sort|nonempty)$" plain)
+       => (lambda (m) (hasheq 'op "lines" 'mode (cadr m)))]
+      [(regexp-match #px"^lines (keep|drop) (.+)$" text)
+       => (lambda (m) (hasheq 'op "lines"
+                              'mode (cadr m) 'text (caddr m)))]
+      [(regexp-match #px"^lines take ([0-9]+)$" text)
+       => (lambda (m) (hasheq 'op "lines" 'mode "take"
+                              'count (string->number (cadr m))))]
       [(regexp-match #px"^replace (.+) => (.*)$" text)
        => (lambda (m) (hasheq 'op "replace"
                               'from (cadr m) 'to (caddr m)))]
@@ -107,7 +131,7 @@
   (unless (and parsed (valid-step? parsed))
     (raise-user-error
      'workflow-step
-     "invalid step: use trim/upper/lower, prefix TEXT, suffix TEXT, replace OLD => NEW, require TEXT, ifcontains TEXT ? upper : keep, copy or paste"))
+     "invalid step: use trim/upper/lower, prefix/suffix TEXT, replace OLD => NEW, require TEXT [else FALLBACK], lines trim/upper/lower/unique/sort/nonempty/keep TEXT/drop TEXT/take N, ifcontains TEXT ? upper : keep, copy or paste"))
   parsed)
 
 (define (workflow-step-label step)
@@ -120,6 +144,16 @@
     [(string=? op "ifcontains")
      (format "ifcontains ~a ? ~a : ~a"
              (hash-ref step 'text) (hash-ref step 'yes) (hash-ref step 'no))]
+    [(string=? op "require-or")
+     (format "require ~a else ~a"
+             (hash-ref step 'text) (hash-ref step 'fallback))]
+    [(string=? op "lines")
+     (define mode (hash-ref step 'mode))
+     (cond [(member mode '("keep" "drop"))
+            (format "lines ~a ~a" mode (hash-ref step 'text))]
+           [(string=? mode "take")
+            (format "lines take ~a" (hash-ref step 'count))]
+           [else (format "lines ~a" mode)])]
     [else op]))
 
 (define (read-workflows path)
@@ -265,6 +299,33 @@
     [(string=? op "lower") (string-downcase value)]
     [else (error 'workflow "unknown pure transform")]))
 
+;; Platform-independent line transformations. Preserve line order for
+;; filters/deduplication and normalize CRLF before splitting so persisted
+;; workflow definitions behave identically on macOS, Windows and Linux.
+(define (transform-lines step input)
+  (define mode (hash-ref step 'mode))
+  (define lines (string-split (string-replace input "\r\n" "\n")
+                              "\n" #:trim? #f))
+  (define transformed
+    (cond
+      [(string=? mode "trim") (map string-trim lines)]
+      [(string=? mode "upper") (map string-upcase lines)]
+      [(string=? mode "lower") (map string-downcase lines)]
+      [(string=? mode "nonempty")
+       (filter (lambda (line) (not (string=? (string-trim line) ""))) lines)]
+      [(string=? mode "unique") (remove-duplicates lines string=?)]
+      [(string=? mode "sort") (sort lines string-ci<?)]
+      [(string=? mode "keep")
+       (filter (lambda (line)
+                 (string-contains? line (hash-ref step 'text))) lines)]
+      [(string=? mode "drop")
+       (filter (lambda (line)
+                 (not (string-contains? line (hash-ref step 'text)))) lines)]
+      [(string=? mode "take")
+       (take lines (min (hash-ref step 'count) (length lines)))]
+      [else (error 'workflow "unvalidated line transform")]))
+  (string-join transformed "\n"))
+
 (define (execute-steps steps input dry?)
   (let loop ([rest steps] [index 1] [value input]
              [action #f] [trace '()])
@@ -299,6 +360,12 @@
                (values (string-replace value (hash-ref step 'from)
                                        (hash-ref step 'to)) action "ok")]
               [(string=? op "require") (values value action "ok")]
+              [(string=? op "require-or")
+               (if (string-contains? value (hash-ref step 'text))
+                   (values value action "ok")
+                   (values (hash-ref step 'fallback) action "recovered"))]
+              [(string=? op "lines")
+               (values (transform-lines step value) action "ok")]
               [(string=? op "ifcontains")
                (define yes? (string-contains? value (hash-ref step 'text)))
                (values (apply-text-transform
