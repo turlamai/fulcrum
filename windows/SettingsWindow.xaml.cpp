@@ -558,7 +558,8 @@ void SettingsWindow::LoadWorkflowList() {
             w->workflow_selected_ = name;
             w->workflow_step_page_ = 1;
             w->workflow_trace_page_ = 1;
-            w->WorkflowDeleteConfirm().IsChecked(false);
+            w->WorkflowDeleteConfirm().IsChecked(
+                winrt::box_value(false).as<winrt::Windows::Foundation::IReference<bool>>());
             w->LoadWorkflowDetail();
           }
         });
@@ -681,7 +682,8 @@ void SettingsWindow::WorkflowCommand(std::string id, std::string arg) {
              : to_wide(error));
         if (error.empty() && id == "workflow.delete") {
           w->workflow_selected_.clear();
-          w->WorkflowDeleteConfirm().IsChecked(false);
+          w->WorkflowDeleteConfirm().IsChecked(
+                winrt::box_value(false).as<winrt::Windows::Foundation::IReference<bool>>());
           w->workflow_list_page_ = 1;
           w->workflow_step_page_ = 1;
           w->workflow_trace_page_ = 1;
