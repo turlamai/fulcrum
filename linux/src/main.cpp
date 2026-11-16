@@ -2358,6 +2358,21 @@ struct SettingsForm {
   GtkWidget* stack{nullptr};
   GtkWidget* commands_list{nullptr};
   GtkWidget* commands_message{nullptr};
+  GtkWidget* workflow_list{nullptr};
+  GtkWidget* workflow_steps{nullptr};
+  GtkWidget* workflow_trace{nullptr};
+  GtkWidget* workflow_name{nullptr};
+  GtkWidget* workflow_step{nullptr};
+  GtkWidget* workflow_input{nullptr};
+  GtkWidget* workflow_selected_label{nullptr};
+  GtkWidget* workflow_status{nullptr};
+  GtkWidget* workflow_delete_confirm{nullptr};
+  GtkWidget* workflow_run_copy{nullptr};
+  std::string workflow_selected;
+  int workflow_list_page{1};
+  int workflow_step_page{1};
+  int workflow_trace_page{1};
+  bool workflow_copy_safe{false};
   std::vector<std::unique_ptr<SettingBinding>> bindings;
   // Keep backend-defined localized labels alive across language changes.
   std::vector<std::tuple<GtkLabel*, std::string, std::string>> localized_labels;
@@ -2374,6 +2389,9 @@ struct SettingsForm {
 SettingsForm* g_settings_form = nullptr;
 
 void settings_load();
+void workflow_load_list();
+void workflow_load_detail();
+void workflow_action(std::string id, std::string arg);
 
 void settings_show_error(std::string const& message) {
   if (g_settings_form == nullptr) return;
