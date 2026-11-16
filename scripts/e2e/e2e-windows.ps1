@@ -269,9 +269,16 @@ try {
     $workflowSelection = [System.Windows.Automation.SelectionItemPattern]$workflowTab.GetCurrentPattern(
         [System.Windows.Automation.SelectionItemPattern]::Pattern)
     $workflowSelection.Select()
+    # A StackPanel is a layout element, so WinUI does not guarantee it
+    # participates in the UIA control tree. Assert real, focusable child
+    # controls rather than depending on container AutomationId exposure.
     [void](Wait-Until 'visible native Workflow editor' {
-        $editor = Find-ById $settingsWindow 'workflow-editor'
-        if ($editor -and -not $editor.Current.IsOffscreen) { return $editor }
+        $createField = Find-ById $settingsWindow 'workflow-create-name'
+        $createButton = Find-ById $settingsWindow 'workflow-create'
+        if ($createField -and -not $createField.Current.IsOffscreen -and
+            $createButton -and -not $createButton.Current.IsOffscreen) {
+            return $createField
+        }
         return $null
     })
     $workflowName = "citest$PID"
@@ -298,8 +305,7 @@ try {
     ([System.Windows.Automation.InvokePattern]$workflowAdd.GetCurrentPattern(
         [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
     [void](Wait-Until 'saved workflow Step 1 from the native editor' {
-        $editor = Find-ById $settingsWindow 'workflow-editor'
-        if (Find-ByNameFragment $editor "$workflowName · Step 1") { return $true }
+        if (Find-ByNameFragment $settingsWindow "$workflowName · Step 1") { return $true }
         return $false
     })
     $workflowInput = Find-ById $settingsWindow 'workflow-input'
@@ -309,8 +315,7 @@ try {
     ([System.Windows.Automation.InvokePattern]$workflowDry.GetCurrentPattern(
         [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
     [void](Wait-Until 'redacted native workflow debug trace' {
-        $editor = Find-ById $settingsWindow 'workflow-editor'
-        if (Find-ByNameFragment $editor 'Status: ok (input/output hidden)') {
+        if (Find-ByNameFragment $settingsWindow 'Status: ok (input/output hidden)') {
             return $true
         }
         return $false
