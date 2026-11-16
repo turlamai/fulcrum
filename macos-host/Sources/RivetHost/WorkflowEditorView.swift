@@ -52,10 +52,10 @@ final class WorkflowEditorModel: ObservableObject {
     func refreshDetail() async {
         guard let selected else { steps = []; trace = []; return }
         do {
-            async let stepResults = api.search("wf show \(selected) \(stepPage)")
-            async let traceResults = api.search("wf trace \(selected) \(tracePage)")
-            steps = try await stepResults.filter { $0.kind == "Workflow" && $0.badge == "Step" }
-            trace = try await traceResults.filter { $0.kind == "Workflow" && $0.badge == "Trace" }
+            let stepRows = try await api.search("wf show \(selected) \(stepPage)")
+            let traceRows = try await api.search("wf trace \(selected) \(tracePage)")
+            steps = stepRows.filter { $0.kind == "Workflow" && $0.badge == "Step" }
+            trace = traceRows.filter { $0.kind == "Workflow" && $0.badge == "Trace" }
         } catch {
             notice = "Could not load steps or trace: \(error.localizedDescription)"
         }
@@ -77,7 +77,6 @@ final class WorkflowEditorModel: ObservableObject {
     func create() async {
         let draft = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !draft.isEmpty else { notice = "Enter a workflow name."; return }
-        let before = try? await api.search("wf list 1")
         guard await action("workflow.create", draft) else { return }
         page = 1
         await refresh()
@@ -86,7 +85,6 @@ final class WorkflowEditorModel: ObservableObject {
         let created = names.contains(draft.lowercased())
         notice = created ? "Workflow created." : "Not created. Use a lowercase name beginning with a letter; check for duplicates."
         if created { nameDraft = ""; select(draft.lowercased()) }
-        _ = before
     }
 
     func append() async {
@@ -232,7 +230,7 @@ struct WorkflowEditorView: View {
                         Text("Input").font(.headline)
                         TextEditor(text: $model.inputDraft)
                             .frame(height: 65)
-                            .border(.quaternary)
+                            .border(Color.secondary.opacity(0.2))
                             .accessibilityIdentifier("workflow-input")
                         HStack {
                             Button("Dry run") { Task { await model.dryRun() } }
