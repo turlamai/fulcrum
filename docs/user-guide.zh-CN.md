@@ -145,6 +145,27 @@ add link yt https://youtube.com/search?q={query}
 
 之后 `yt lofi` 就打开 YouTube 搜索。`{query}` 被替换成关键词后面的内容。输入 `quicklinks` 可以查看和删除。
 
+### Workflow Pro 工作流运行预览（仅开发分支，尚未正式发布）
+
+Workflow Pro 的第一阶段提供**真实、本地、多步骤执行器**，但仍是开发预览：这不是[设计原型](../design/prototype/workflow.html)中的可视化编辑器，也尚未进入已发布安装包。本阶段不启用收费、试用或激活门禁，现有免费搜索、片段和插件能力保持不变。
+
+在启动器中逐行输入，**每行都按 Enter 执行**：
+
+```text
+wf create brief
+wf add brief trim
+wf add brief ifcontains https ? upper : lower
+wf add brief prefix Result:
+wf add brief copy
+wf dry brief https://example.test
+wf run brief https://example.test
+wf trace brief
+```
+
+`wf` 或 `workflow list` 列出工作流；`wf show brief` 查看步骤，`wf remove brief 2` 移除第二步，`wf delete brief` 删除定义。步骤支持 `trim`、`upper`、`lower`、`prefix TEXT`、`suffix TEXT`、`replace OLD => NEW`、`require TEXT`、`ifcontains TEXT ? upper : lower`（两个分支也可用 `keep` 或 `trim`），最后可选择 `copy` 或 `paste`。条件分支选择一项变换；`require` 不满足时会停止，后续动作不执行。复制/粘贴使用现有跨平台原生事件，不调用任意命令。
+
+`wf dry` 只预演，不复制或粘贴；执行失败会指出步骤，`wf trace` 只显示步骤编号、操作和状态，不显示输入和输出。定义只保存在本机 `workflows.json`，重启后仍在；运行轨迹只保留在内存，重启即清除。输入最长 8192 字符、中间输出最长 65536 字符，单个工作流最多 20 步、总数最多 50 个。**尚未提供**可视化编辑器、定时/自动触发、AI/网络步骤或任意 Shell 执行。
+
 ### 窗口管理
 
 输入 `window` 或命令名的一部分。**左半屏**、**右半屏**、**最大化**、**近最大化**、**居中**、**还原**——作用于你召唤 Fulcrum 之前最前面的那个窗口。
