@@ -17,7 +17,11 @@
   (lambda ()
     (parameterize ([current-environment-variables env])
       (define store (make-workflow-store (build-path dir "workflows.json")))
-      (define engine (make-engine #:workflow-store store #:plugin-manager #f))
+      (define engine
+        (make-engine #:clipboard-store #f
+                     #:snippet-store #f
+                     #:plugin-manager #f
+                     #:workflow-store store))
       (define (action-for query)
         (define row (for/first ([r (in-list (engine-search engine query))]
                                 #:when (string-prefix? (car r) "workflow."))
