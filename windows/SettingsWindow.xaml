@@ -329,8 +329,10 @@
                                 <TextBox x:Name="WorkflowStepBox" Width="300"
                                          PlaceholderText="trim, lines unique, require text…"
                                          AutomationProperties.AutomationId="workflow-step-expression" />
-                                <Button Content="Add step" Click="WorkflowAdd_Click"
+                                <Button x:Name="WorkflowAddButton" Content="Add step" Click="WorkflowAdd_Click"
                                         AutomationProperties.AutomationId="workflow-add-step" />
+                                <Button Content="Cancel edit" Click="WorkflowCancelEdit_Click"
+                                        AutomationProperties.AutomationId="workflow-cancel-edit" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
