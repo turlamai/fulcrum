@@ -1225,8 +1225,8 @@
                             "Batch transforms; also lines keep/drop TEXT, lines take N")
               (workflow-row "noop" "wf add <name> copy"
                             "Finish by copying; paste is an opt-in alternative")
-              (workflow-row "noop" "wf dry <name> <input> · wf run <name> <input>"
-                            "Preview without effects, or run through native copy/paste")
+              (workflow-row "noop" "wf dry/run <name> <input> or @clipboard"
+                            "Explicit recent clipboard text; credentials refused")
               (workflow-row "noop" "wf show/trace/delete <name> · wf remove <name> <index>"
                             "Inspect, debug, delete or change the ordered steps"))]
             [(string=? verb "create")
@@ -1288,6 +1288,29 @@
              (one "noop" "Workflow commands"
                   "Type wf help · workflow definitions run locally")])))))
 
+;; Typed multi-line input cannot reliably enter the single-line native
+;; launchers. @clipboard is an explicit source token only for run/dry; it
+;; reads the last recorded clipboard entry (not the pinned-first UI order).
+;; Never read credentials or implicitly trigger network/shell execution.
+(define (workflow-input engine input)
+  (cond
+    [(string=? input "@@clipboard") "@clipboard"]
+    [(string=? input "@clipboard")
+     (define clip (engine-clipboard engine))
+     (unless clip
+       (raise-user-error 'workflow
+                         "clipboard history is disabled; enable it in Settings"))
+     (define latest (clipboard-latest clip))
+     (unless latest
+       (raise-user-error 'workflow
+                         "clipboard history is empty; copy text first"))
+     (when (or (clipboard-item-sensitive? latest)
+               (sensitive-text? (clipboard-item-text latest)))
+       (raise-user-error 'workflow
+                         "latest clipboard text looks like a credential; source refused"))
+     (clipboard-item-text latest)]
+    [else input]))
+
 (define (workflow-action engine id arg)
   (define store (engine-workflows engine))
   (define (status message)
@@ -1331,8 +1354,10 @@
                               (length (workflow-steps w))))]
              [else
               (define dry? (string=? id "workflow.dry"))
-              (define outcome (workflow-execute! store name tail
-                                                 #:dry-run? dry?))
+              (define outcome
+                (workflow-execute! store name
+                                   (workflow-input engine tail)
+                                   #:dry-run? dry?))
               (cond
                 [(string=? (workflow-outcome-status outcome) "failed")
                  (status (workflow-outcome-message outcome))]
