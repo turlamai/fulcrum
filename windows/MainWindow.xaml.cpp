@@ -1719,15 +1719,15 @@ void MainWindow::DismissDetailPanel() {
 }
 
 void MainWindow::RefreshForRevision() {
-  // Backend-side data changed (file-catalog progress, FPP2 daemon pushes):
-  // re-run the query the user is looking at, debounced. The initial catalog
-  // build nudges about once a second; repainting per push tore the list
-  // down mid-keystroke. The generation bump drops any in-flight paint so
-  // only the post-quiet re-run lands.
-  // Let a pending user edit query observe the new catalog revision too.
+  // Catalog batches nudge roughly every 750 ms. A 400-ms revision
+  // timer started another query BEFORE the prior Windows PowerShell search
+  // returned; each new generation discarded the prior answer, so typing
+  // 'find <name>' could display no files for the entire catalog crawl.
+  // Wait for a genuine quiet period (> the batch cadence), and never
+  // invalidate an in-flight answer to the SAME on-screen query here.
+  // Only a user edit should invalidate its prior query immediately.
   if (query_timer_.IsRunning()) return;
-  search_generation_ += 1;
-  revision_timer_.Interval(std::chrono::milliseconds{400});
+  revision_timer_.Interval(std::chrono::milliseconds{1200});
   revision_timer_.Stop();
   revision_timer_.Start();
 }
