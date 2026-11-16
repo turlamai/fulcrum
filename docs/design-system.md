@@ -8,7 +8,7 @@ This file is the value baseline for the v2 design language (`design/DESIGN.md` r
 
 | Token | Baseline | Implementation |
 | --- | --- | --- |
-| Panel size | 680 wide; height grows with results, 240–640, capped at 12 visible rows | Resize per result count on all hosts; the settings “Maximum results” upper bound agrees with the visible-row cap |
+| Panel size | 680 × 640 stable launcher (clamped to monitor work area where supported); up to 12 results | Fixed frame during typing, indexing and overlays; scroll results instead of resizing the window |
 | Search typography | 19 medium | SwiftUI / XAML / GTK CSS |
 | Row title | 13 medium | Unified: Windows was 13.5/600, GTK 13/600 — converge to 13 medium |
 | Row subtitle | 11.5 | Mute tier; GTK was 11 — converge to 11.5 |

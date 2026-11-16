@@ -94,8 +94,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   // Reveal lives in host memory until the next result rebuild.
   void RevealSensitiveSelection();
   void ApplyReveal(rivet_app::ResultRow const& row, std::string const& raw);
-  // Design v2 panel sizing: 680 wide, height grows with the result count
-  // (240 empty, 12 rows / 640 max) plus the overlays that are up.
+  // Stable 680 x 640 search panel, clamped to the monitor on summon.
   void UpdatePanelHeight();
   // IME composition guard: true while the thread's IMM32 context reports
   // an open composition string (docs/cross-platform-interaction.md).
@@ -139,6 +138,10 @@ struct MainWindow : MainWindowT<MainWindow> {
   // Fires 400ms after the last revision push: re-runs the visible query.
   void OnRevisionTimerTick(winrt::Windows::Foundation::IInspectable const&,
                            winrt::Windows::Foundation::IInspectable const&);
+  // User edits wait for a short quiet period; TextChanged invalidates
+  // the previous generation immediately to prevent stale search paints.
+  void OnQueryTimerTick(winrt::Windows::Foundation::IInspectable const&,
+                        winrt::Windows::Foundation::IInspectable const&);
   // The ↵ chip on each row is visible only while that row is selected;
   // the chips are stored parallel to rows_.
   void UpdateEnterChips();
@@ -190,6 +193,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   // The initial catalog build nudges about once a second; repainting per
   // push tore the list down mid-keystroke (the jumping launcher).
   winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer revision_timer_{nullptr};
+  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer query_timer_{nullptr};
   std::uint64_t hotkey_atom_{0};
   std::atomic<bool> clipboard_listener_installed_{false};
   std::wstring last_recorded_clipboard_;

@@ -8,7 +8,7 @@
 
 ;; Static gate for the design v2 baseline (commit 0ca2178, issue #220):
 ;; IME composition guard, focus contract, hit highlighting, masked
-;; sensitive clipboard rows and the dynamic panel height must exist on all
+;; sensitive clipboard rows and a stable panel height must exist on all
 ;; three hosts. The packaged acceptances exercise the pixels; this file
 ;; locks the source contract on every CI platform, like the other
 ;; *-contract tests.
@@ -90,12 +90,16 @@
 (check-true (string-contains? zh "\"sensitiveBadge\"")
             "zh carries the Sensitive badge string")
 
-;; --- dynamic panel height (12-row cap) ---
-(check-true (string-contains? macos "updatePanelHeight")
-            "macOS resizes the panel with results")
-(check-true (string-contains? windows "UpdatePanelHeight")
-            "Windows resizes the panel with results")
-(check-true (string-contains? linux "update_panel_height")
-            "GTK resizes the panel with results")
+;; --- stable launcher size (12-row result cap) ---
+(check-true (string-contains? macos "width: 680, height: 640")
+            "macOS creates the launcher at its steady height")
+(check-true (string-contains? windows "constexpr int kWindowHeight = 640")
+            "WinUI uses a steady height instead of the 240-point first paint")
+(check-true (string-contains? linux "gtk_window_set_default_size(launcher.window, 680, 640)")
+            "GTK creates the launcher at its steady height")
+(check-false (string-contains? windows "row_count * 46.0")
+             "WinUI must not resize on search row churn")
+(check-false (string-contains? linux "row_count * 46.0")
+             "GTK must not resize on search row churn")
 (check-true (string-contains? settings "(<= v 12)")
-            "max-results tops out at the 12-row visual cap")
+            "max-results still tops out at 12")

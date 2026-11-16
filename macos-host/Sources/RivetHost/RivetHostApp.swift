@@ -404,7 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: panel
 
     private func installPanel(model: LauncherModel) {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 640),
                             styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
                             backing: .buffered, defer: false)
         panel.titleVisibility = .hidden
@@ -437,27 +437,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onHide = { [weak self] in self?.hidePanel() }
     }
 
-    /// Design v2 panel sizing: 680 wide, height grows with the result
-    /// count — 240 empty, capped at 12 visible rows / 640 points — and
-    /// grows further while the AI stream, the plugin detail panel or the
-    /// actions mode bar are up. The top edge stays anchored (drop-down
-    /// convention); only the bottom edge moves.
+    /// Keep the launcher at 680 x 640 while results, actions, AI and
+    /// detail panels change. Search edits must never move the bottom edge.
     func updatePanelHeight(rowCount: Int, modebar: Bool, ai: Bool, detail: Bool) {
-        guard let panel else { return }
-        let rows = max(0, min(rowCount, 12))
-        var height: CGFloat = 49 + CGFloat(rows) * 46 + 16 + 31 + 4
-        if modebar { height += 30 }
-        if ai { height += 175 }
-        if detail { height += 185 }
-        height = min(640, max(240, height))
-        var frame = panel.frame
-        let content = panel.contentRect(forFrameRect: frame)
-        let newContent = NSRect(x: content.minX, y: content.minY,
-                                width: 680, height: height)
-        let newFrame = panel.frameRect(forContentRect: newContent)
-        frame.origin.y += frame.height - newFrame.height
-        frame.size = newFrame.size
-        panel.setFrame(frame, display: true)
+        // Geometry remains fixed; the results area scrolls.
+        // Preserve the signature for the existing view state callbacks.
     }
 
     private func centerOnActiveScreen(_ panel: NSPanel) {

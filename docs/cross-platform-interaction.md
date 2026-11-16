@@ -6,7 +6,7 @@ but those mechanisms must not change what the launcher does.
 
 This file is aligned to the v2 design baseline (`design/DESIGN.md`, commit
 `0ca2178`): accent split into fill vs text tokens, neutral hover, dynamic
-panel height, hit highlighting, the IME composition guard, the focus contract
+stable panel height, hit highlighting, the IME composition guard, the focus contract
 and masked sensitive clipboard rows.
 
 ## Required launcher behavior
@@ -38,8 +38,9 @@ the panel has been active once, otherwise the summon operation can erase itself.
 
 ## Shared visual and language grammar
 
-- The panel is 680 wide with a height that grows with results (240–640, capped
-  at 12 visible rows), uses the amber family — `#D97706` for fills and
+- The panel holds a stable 680 × 640 frame (clamped for the monitor where
+  supported), and scrolls when its up-to-12 result rows or overlays need more
+  room. Changes in search results must not resize it. It uses the amber family — `#D97706` for fills and
   `#9A4B06`/`#F0A64B` (light/dark) for text and icons — 44-point result rows, an
   inset rounded selection, a leading semantic icon and a trailing badge/Enter
   chip. Values live in [design-system.md](design-system.md).

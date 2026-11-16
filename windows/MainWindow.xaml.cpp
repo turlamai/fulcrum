@@ -45,9 +45,9 @@ constexpr int kTrayMenuUpdates = 5;
 constexpr int kHotkeyIdPrimary = 0xF11C;  // Alt+Space
 constexpr int kHotkeyIdFallback = 0xF11D; // Ctrl+Alt+Space
 constexpr int kWindowWidth = 680;  // WinUI device-independent pixels (96 DPI)
-// Design v2: the panel's height is dynamic (240 empty .. 640 with 12 rows);
-// this is only the empty-state first paint before results arrive.
-constexpr int kWindowHeight = 240;
+// Stable launcher geometry: results must not resize the visible window.
+// position_launcher clamps to the active monitor's work area.
+constexpr int kWindowHeight = 640;
 
 // WinUI lays out in DIPs, but SetWindowPos receives physical pixels. Use
 // the target monitor's effective DPI, not the DPI of the monitor where the
@@ -955,6 +955,12 @@ MainWindow::MainWindow() {
   revision_timer_ = DispatcherQueue().CreateTimer();
   revision_timer_.IsRepeating(false);
   revision_timer_.Tick({this, &MainWindow::OnRevisionTimerTick});
+  // Windows previously launched one backend file search and PowerShell
+  // process per typed character. Coalesce edits before dispatching RPCs.
+  query_timer_ = DispatcherQueue().CreateTimer();
+  query_timer_.IsRepeating(false);
+  query_timer_.Interval(std::chrono::milliseconds{150});
+  query_timer_.Tick({this, &MainWindow::OnQueryTimerTick});
   // i18n tables before any UI string is composed: the staged shared/i18n
   // JSON when packaged, the embedded fallback otherwise.
   load_i18n(executable_path().parent_path());
@@ -1713,18 +1719,26 @@ void MainWindow::DismissDetailPanel() {
 }
 
 void MainWindow::RefreshForRevision() {
-  // Backend-side data changed (file-catalog progress, FPP2 daemon pushes):
-  // re-run the query the user is looking at, debounced. The initial catalog
-  // build nudges about once a second; repainting per push tore the list
-  // down mid-keystroke. The generation bump drops any in-flight paint so
-  // only the post-quiet re-run lands.
-  search_generation_ += 1;
-  revision_timer_.Interval(std::chrono::milliseconds{400});
+  // Catalog batches nudge roughly every 750 ms. A 400-ms revision
+  // timer started another query BEFORE the prior Windows PowerShell search
+  // returned; each new generation discarded the prior answer, so typing
+  // 'find <name>' could display no files for the entire catalog crawl.
+  // Wait for a genuine quiet period (> the batch cadence), and never
+  // invalidate an in-flight answer to the SAME on-screen query here.
+  // Only a user edit should invalidate its prior query immediately.
+  if (query_timer_.IsRunning()) return;
+  revision_timer_.Interval(std::chrono::milliseconds{1200});
   revision_timer_.Stop();
   revision_timer_.Start();
 }
 
 void MainWindow::OnRevisionTimerTick(
+    winrt::Windows::Foundation::IInspectable const&,
+    winrt::Windows::Foundation::IInspectable const&) {
+  SearchAsync(std::wstring(QueryBox().Text()));
+}
+
+void MainWindow::OnQueryTimerTick(
     winrt::Windows::Foundation::IInspectable const&,
     winrt::Windows::Foundation::IInspectable const&) {
   SearchAsync(std::wstring(QueryBox().Text()));
@@ -1778,7 +1792,11 @@ void MainWindow::PullHostSettings() {
 void MainWindow::QueryBox_TextChanged(
     winrt::Windows::Foundation::IInspectable const&,
     Microsoft::UI::Xaml::Controls::TextChangedEventArgs const&) {
-  SearchAsync(std::wstring(QueryBox().Text()));
+  // Invalidate any previous response immediately, even during debounce.
+  // Coalescing edits prevents overlapping PowerShell searches for prefixes.
+  search_generation_.fetch_add(1);
+  query_timer_.Stop();
+  query_timer_.Start();
 }
 
 void MainWindow::QueryBox_KeyDown(
@@ -1935,8 +1953,9 @@ winrt::fire_and_forget MainWindow::SearchAsync(std::wstring const& query) {
     });
   } catch (std::exception const& e) {
     auto message = std::string(e.what());
-    dispatcher.TryEnqueue([weak, message = std::move(message)] {
+    dispatcher.TryEnqueue([weak, message = std::move(message), generation] {
       if (auto window = weak.get()) {
+        if (generation != window->search_generation_.load()) return;
         window->SetStatusError(to_wide(message));
         if (!window->startup_presented_) {
           window->startup_presented_ = true;
@@ -2158,28 +2177,9 @@ void MainWindow::ApplyReveal(rivet_app::ResultRow const& row,
 }
 
 void MainWindow::UpdatePanelHeight() {
-  // Design v2: 680 wide; height grows with the result count — 240 empty,
-  // 12 visible rows / 640 max — plus the overlays that are up. The top
-  // edge stays put; only the bottom edge moves.
-  int const rows = std::clamp(static_cast<int>(rows_.size()), 0, 12);
-  double h = 49.0 + rows * 46.0 + 16.0 + 31.0 + 4.0;
-  if (actions_mode_) {
-    h += 30.0;
-  }
-  if (AiPanel().Visibility() == winrt::Microsoft::UI::Xaml::Visibility::Visible) {
-    h += 175.0;
-  }
-  if (DetailPanel().Visibility() ==
-      winrt::Microsoft::UI::Xaml::Visibility::Visible) {
-    h += 185.0;
-  }
-  h = std::clamp(h, 240.0, 640.0);
-  UINT const dpi = ::GetDpiForWindow(WindowHandle());
-  if (auto appWindow = AppWindow()) {
-    appWindow.Resize(
-        {::MulDiv(kWindowWidth, static_cast<int>(dpi), 96),
-         ::MulDiv(static_cast<int>(h), static_cast<int>(dpi), 96)});
-  }
+  // Stable 680 x 640 panel. Geometry is set on summon by
+  // position_launcher(), with a monitor work-area clamp. Row, action,
+  // detail and AI updates never resize the visible launcher.
 }
 
 void MainWindow::MoveSelection(int delta) {
