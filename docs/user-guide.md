@@ -189,6 +189,27 @@ add link yt https://youtube.com/search?q={query}
 Now `yt lofi` opens YouTube search. `{query}` is replaced by what you
 type after the keyword. Query `quicklinks` to manage them.
 
+### Workflow Pro runtime preview (source branch; not a paid release)
+
+The initial Workflow Pro implementation is a **developer preview** of a real, local-only multi-step executor. It is not the native visual editor shown in the [workflow design prototype](../design/prototype/workflow.html), and it is not available in previously published installers. There is **no trial, activation or payment gate** in this slice; all existing search, snippets, plugins and other free capabilities are unchanged.
+
+You can author a workflow entirely from the launcher. Type each line below and press **Enter** before continuing:
+
+```text
+wf create brief
+wf add brief trim
+wf add brief ifcontains https ? upper : lower
+wf add brief prefix Result:
+wf add brief copy
+wf dry brief https://example.test
+wf run brief https://example.test
+wf trace brief
+```
+
+`wf` or `workflow list` shows saved workflows; `wf show brief` lists steps, `wf remove brief 2` removes the second step, and `wf delete brief` deletes its definition. The supported step grammar is `trim`, `upper`, `lower`, `prefix TEXT`, `suffix TEXT`, `replace OLD => NEW`, `require TEXT`, `ifcontains TEXT ? upper : lower` (branches may also use `keep` or `trim`), and a final `copy` or `paste` step. The condition chooses one transformation; `require` stops execution on failure. Steps execute sequentially; the final copy/paste uses the same native event mechanism as existing launcher actions.
+
+`wf dry` executes transformations and conditions **without** copying or pasting anything. A failed step stops the workflow and explains which step failed. `wf trace` lists step number, operation and outcome, without the input or output text. Definitions live only in the local `workflows.json` store and survive restarts; run traces remain in memory and disappear on restart. Inputs are limited to 8,192 characters, intermediate output to 65,536 characters, and definitions to 20 steps and 50 workflows. Arbitrary shell commands, automatic schedules, network/AI execution and a visual editor are **not** supported yet.
+
 ### Manage windows
 
 Type `window` or parts of a command name. **Left Half**, **Right
