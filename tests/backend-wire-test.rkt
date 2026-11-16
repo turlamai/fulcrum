@@ -53,6 +53,8 @@
 (define snippets-path (get "app/core/paths.rkt" 'snippets-path))
 (define make-clipboard (get "app/core/clipboard.rkt" 'make-clipboard-store))
 (define make-snippets (get "app/core/snippets.rkt" 'make-snippet-store))
+(define make-workflows (get "app/core/workflows.rkt" 'make-workflow-store))
+(define workflows-path* (get "app/core/paths.rkt" 'workflows-path))
 (define make-engine (get "app/core/engine.rkt" 'make-engine))
 (define rebuild (get "app/core/engine.rkt" 'engine-rebuild-index!))
 (define app-count* (get "app/core/engine.rkt" 'engine-app-count))
@@ -63,6 +65,7 @@
 (define eng (make-engine
              #:clipboard-store (make-clipboard (clipboard-path))
              #:snippet-store (make-snippets (snippets-path))
+             #:workflow-store (make-workflows (workflows-path*))
              #:bindings-store (make-bindings (bindings-path))
              #:plugin-manager (make-plugin-manager*
                                (build-path root "plugins"))))
@@ -201,6 +204,44 @@
                (and (pair? e) (string=? (car e) "copy-to-clipboard")
                     (string=? (cadr e) "144")))
              #t)
+        #t)
+
+;; Workflow authoring/execution uses the SAME search and run-action RPC
+;; on macOS, Windows and Linux. No generated host client change is needed.
+(define-values (wf-create-val wf-create-error _wf-create-events)
+  (call-rpc 600 (list "run-action" "workflow.create" "wiretest")))
+(check! "workflow create over RVT1" (list wf-create-val wf-create-error)
+        '("stay" #f))
+(for ([step (in-list '("trim" "ifcontains secret ? lower : upper" "copy"))]
+      [request-id (in-naturals 601)])
+  (define-values (wf-step-val wf-step-error _wf-step-events)
+    (call-rpc request-id (list "run-action" "workflow.add"
+                               (string-append "wiretest" "\u001F" step))))
+  (check! (format "workflow step ~a added" step)
+          (list wf-step-val wf-step-error) '("stay" #f)))
+(define-values (wf-rows wf-search-error _wf-search-events)
+  (call-rpc 610 (list "search" "wf run wiretest PRIVATE")))
+(check! "workflow search over RVT1" wf-search-error #f)
+(define wf-run-row
+  (for/first ([row (in-list wf-rows)]
+              #:when (equal? (first row) "workflow.run"))
+    row))
+(check! "workflow produces a runnable row" (and wf-run-row #t) #t)
+(define-values (wf-run-value wf-run-error wf-run-events)
+  (call-rpc 611 (list "run-action" (first wf-run-row)
+                      (list-ref wf-run-row 4))))
+(check! "workflow run sends copy event" (list wf-run-value wf-run-error)
+        '("copied" #f))
+(check! "workflow copied the transformed payload"
+        (and (for/or ([evt (in-list wf-run-events)])
+               (and (pair? evt) (equal? (first evt) "copy-to-clipboard")
+                    (equal? (second evt) "PRIVATE")))
+             #t) #t)
+(define-values (wf-trace-rows wf-trace-error _wf-trace-events)
+  (call-rpc 612 (list "search" "wf trace wiretest")))
+(check! "workflow trace search no error" wf-trace-error #f)
+(check! "workflow trace redacts payload"
+        (not (string-contains? (format "~s" wf-trace-rows) "PRIVATE"))
         #t)
 
 ;; URL safety enforced over the wire
