@@ -42,6 +42,7 @@
                 <NavigationViewItem x:Name="NavFeatures" Content="Features" Tag="features" AutomationProperties.AutomationId="settings-sidebar-features" />
                 <NavigationViewItem x:Name="NavAi" Content="AI" Tag="ai" AutomationProperties.AutomationId="settings-sidebar-ai" />
                 <NavigationViewItem x:Name="NavCommands" Content="Commands" Tag="commands" AutomationProperties.AutomationId="settings-sidebar-commands" />
+                <NavigationViewItem x:Name="NavWorkflows" Content="Workflows" Tag="workflows" AutomationProperties.AutomationId="settings-sidebar-workflows" />
                 <NavigationViewItem x:Name="NavSync" Content="Sync &amp; Updates" Tag="sync" AutomationProperties.AutomationId="settings-sidebar-sync" />
             </NavigationView.MenuItems>
             <ScrollViewer>
@@ -284,6 +285,84 @@
                             <TextBlock Text="Loading commands…" />
                         </StackPanel>
                     </Border>
+                </StackPanel>
+
+                <!-- Native Workflow editor: all operations use the existing
+                     search/run-action RVT1 API. No local workflow interpreter. -->
+                <StackPanel x:Name="WorkflowsSection" Visibility="Collapsed"
+                            AutomationProperties.AutomationId="workflow-editor">
+                    <TextBlock Text="Workflow editor" Style="{StaticResource SectionTitle}" />
+                    <TextBlock Style="{StaticResource Hint}" Text="Create, edit and debug local workflows. Steps are validated by the shared backend; traces never show input or output." />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox x:Name="WorkflowNameBox" PlaceholderText="new-name"
+                                         Width="160" AutomationProperties.AutomationId="workflow-create-name" />
+                                <Button Content="Create" Click="WorkflowCreate_Click"
+                                        AutomationProperties.AutomationId="workflow-create" />
+                                <Button Content="Refresh" Click="WorkflowRefresh_Click"
+                                        AutomationProperties.AutomationId="workflow-refresh" />
+                            </StackPanel>
+                            <StackPanel x:Name="WorkflowListRows" Spacing="4">
+                                <TextBlock Text="Loading workflows…" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Previous" Click="WorkflowPrevious_Click"
+                                        AutomationProperties.AutomationId="workflow-list-previous" />
+                                <TextBlock x:Name="WorkflowListPage" Text="Page 1" VerticalAlignment="Center" />
+                                <Button Content="Next" Click="WorkflowNext_Click"
+                                        AutomationProperties.AutomationId="workflow-list-next" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock x:Name="WorkflowSelectedText" Text="Select a workflow"
+                               FontWeight="SemiBold" Margin="0,12,0,6" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel Spacing="8">
+                            <StackPanel x:Name="WorkflowStepRows" Spacing="6" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Previous steps" Click="WorkflowStepPrevious_Click" />
+                                <TextBlock x:Name="WorkflowStepPage" Text="Steps page 1" VerticalAlignment="Center" />
+                                <Button Content="Next steps" Click="WorkflowStepNext_Click" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox x:Name="WorkflowStepBox" Width="300"
+                                         PlaceholderText="trim, lines unique, require text…"
+                                         AutomationProperties.AutomationId="workflow-step-expression" />
+                                <Button Content="Add step" Click="WorkflowAdd_Click"
+                                        AutomationProperties.AutomationId="workflow-add-step" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="Input (multiple lines supported)" Margin="0,12,0,4" FontWeight="SemiBold" />
+                    <TextBox x:Name="WorkflowInputBox" AcceptsReturn="True" TextWrapping="Wrap"
+                             Height="74" PlaceholderText="@clipboard to use recent local clipboard text"
+                             AutomationProperties.AutomationId="workflow-input" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,8">
+                        <Button Content="Dry run" Click="WorkflowDry_Click"
+                                AutomationProperties.AutomationId="workflow-dry-run" />
+                        <Button x:Name="WorkflowRunCopyButton" Content="Run to clipboard"
+                                IsEnabled="False" Click="WorkflowRun_Click"
+                                AutomationProperties.AutomationId="workflow-run-copy" />
+                        <CheckBox x:Name="WorkflowDeleteConfirm" Content="Confirm delete" />
+                        <Button Content="Delete" Click="WorkflowDelete_Click"
+                                AutomationProperties.AutomationId="workflow-delete" />
+                    </StackPanel>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Redacted debug trace" FontWeight="SemiBold" />
+                            <StackPanel x:Name="WorkflowTraceRows" Spacing="5" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Previous trace" Click="WorkflowTracePrevious_Click" />
+                                <TextBlock x:Name="WorkflowTracePage" Text="Trace page 1" VerticalAlignment="Center" />
+                                <Button Content="Next trace" Click="WorkflowTraceNext_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock x:Name="WorkflowStatusText" Style="{StaticResource Hint}"
+                               Text="Workflow actions remain local and are not scheduled."
+                               AutomationProperties.AutomationId="workflow-status"
+                               TextWrapping="Wrap" />
                 </StackPanel>
 
                 <StackPanel x:Name="SyncSection" Visibility="Collapsed">
