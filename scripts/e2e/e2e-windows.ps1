@@ -248,9 +248,8 @@ try {
         }
         return $null
     }
-    # Validate all five Settings destinations, then prove the Commands tab
-    # reveals actual bindings controls, not a decorative sidebar entry.
-    foreach ($section in @('general','features','ai','commands','sync')) {
+    # Validate all six native Settings destinations and their real editors.
+    foreach ($section in @('general','features','ai','commands','workflows','sync')) {
         [void](Wait-Until "settings sidebar $section" {
             Find-ById $settingsWindow "settings-sidebar-$section"
         })
@@ -263,6 +262,58 @@ try {
         $title = Find-ById $settingsWindow 'settings-commands-title'
         if ($title -and -not $title.Current.IsOffscreen) { return $title }
         return $null
+    })
+    # Native Workflow editor acceptance: create a persistent definition,
+    # select it, add a real backend-validated step and dry-run with no effects.
+    $workflowTab = Find-ById $settingsWindow 'settings-sidebar-workflows'
+    $workflowSelection = [System.Windows.Automation.SelectionItemPattern]$workflowTab.GetCurrentPattern(
+        [System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $workflowSelection.Select()
+    [void](Wait-Until 'visible native Workflow editor' {
+        $editor = Find-ById $settingsWindow 'workflow-editor'
+        if ($editor -and -not $editor.Current.IsOffscreen) { return $editor }
+        return $null
+    })
+    $workflowName = "citest$PID"
+    $workflowNameBox = Wait-Until 'native workflow create field' {
+        Find-ById $settingsWindow 'workflow-create-name'
+    }
+    $workflowNamePattern = [System.Windows.Automation.ValuePattern]$workflowNameBox.GetCurrentPattern(
+        [System.Windows.Automation.ValuePattern]::Pattern)
+    $workflowNamePattern.SetValue($workflowName)
+    $workflowCreate = Find-ById $settingsWindow 'workflow-create'
+    ([System.Windows.Automation.InvokePattern]$workflowCreate.GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    $workflowRow = Wait-Until 'workflow persisted and shown by native list' {
+        Find-ByName $settingsWindow $workflowName
+    }
+    ([System.Windows.Automation.InvokePattern]$workflowRow.GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    $workflowStepBox = Wait-Until 'native workflow step editor' {
+        Find-ById $settingsWindow 'workflow-step-expression'
+    }
+    ([System.Windows.Automation.ValuePattern]$workflowStepBox.GetCurrentPattern(
+        [System.Windows.Automation.ValuePattern]::Pattern)).SetValue('trim')
+    $workflowAdd = Find-ById $settingsWindow 'workflow-add-step'
+    ([System.Windows.Automation.InvokePattern]$workflowAdd.GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    [void](Wait-Until 'saved workflow Step 1 from the native editor' {
+        $editor = Find-ById $settingsWindow 'workflow-editor'
+        if (Find-ByNameFragment $editor "$workflowName · Step 1") { return $true }
+        return $false
+    })
+    $workflowInput = Find-ById $settingsWindow 'workflow-input'
+    ([System.Windows.Automation.ValuePattern]$workflowInput.GetCurrentPattern(
+        [System.Windows.Automation.ValuePattern]::Pattern)).SetValue('  accepted  ')
+    $workflowDry = Find-ById $settingsWindow 'workflow-dry-run'
+    ([System.Windows.Automation.InvokePattern]$workflowDry.GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+    [void](Wait-Until 'redacted native workflow debug trace' {
+        $editor = Find-ById $settingsWindow 'workflow-editor'
+        if (Find-ByNameFragment $editor 'Status: ok (input/output hidden)') {
+            return $true
+        }
+        return $false
     })
     $generalTab = Find-ById $settingsWindow 'settings-sidebar-general'
     $generalSelection = [System.Windows.Automation.SelectionItemPattern]$generalTab.GetCurrentPattern(
@@ -404,7 +455,7 @@ try {
     [ordered]@{
         platform = 'windows'
         artifact = $executable.FullName
-        actions = @('set:QueryBox=12*12','typed-find:Downloads-file','frame:steady-height','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:five-native-tabs','settings:commands-editor','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
+        actions = @('set:QueryBox=12*12','typed-find:Downloads-file','frame:steady-height','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:six-native-tabs-and-workflow-editor','settings:commands-editor','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
         assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','typed find returns a real Downloads file row from the packaged Windows host','window frame does not change height between calculator and file search','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','five native Settings destinations and visible Commands editor','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
