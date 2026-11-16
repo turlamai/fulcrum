@@ -108,6 +108,9 @@
       [(regexp-match #px"^require (.+) else (.+)$" text)
        => (lambda (m) (hasheq 'op "require-or"
                               'text (cadr m) 'fallback (caddr m)))]
+      ;; Do not reinterpret an incomplete failure branch as an ordinary
+      ;; require-text literal: the user explicitly typed the 'else' keyword.
+      [(regexp-match? #px"^require .+ else$" text) #f]
       [(regexp-match #px"^require (.+)$" text)
        => (lambda (m) (hasheq 'op "require" 'text (cadr m)))]
       [(regexp-match #px"^lines (trim|upper|lower|unique|sort|nonempty)$" plain)
