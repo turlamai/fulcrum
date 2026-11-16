@@ -22,6 +22,7 @@
          clipboard-toggle-pin!
          clipboard-clear!
          clipboard-item-ref
+         clipboard-latest
          clipboard-list
          clipboard-search
          clipboard-count
@@ -196,6 +197,17 @@
   (-> clipboard-store? string? (or/c clipboard-item? #f))
   (findf (lambda (i) (string=? (clipboard-item-id i) id))
          (clipboard-store-items store)))
+
+;; Unlike clipboard-list (which deliberately promotes pinned items for the
+;; history UI), an explicit workflow source needs the most recently copied
+;; item, even when an old pinned item is displayed above it.
+(define/contract (clipboard-latest store)
+  (-> clipboard-store? (or/c clipboard-item? #f))
+  (call-with-semaphore
+   (clipboard-store-lock store)
+   (lambda ()
+     (define entries (clipboard-store-items store))
+     (and (pair? entries) (argmax clipboard-item-ts entries)))))
 
 (define/contract (clipboard-list store [n 50])
   (->* (clipboard-store?) (exact-nonnegative-integer?) (listof clipboard-item?))
