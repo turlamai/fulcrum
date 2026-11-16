@@ -106,6 +106,24 @@
       (check-false
        (string-contains? (format "~s" (wf-rows "wf trace sample1 3" "Trace"))
                          "hello"))
+      ;; Edit and move are first-class launcher actions, shared with all
+      ;; three native editors through the same workflow action contract.
+      (check-equal? (car (action-for "wf edit sample1 2 upper")) "stay")
+      (check-equal? (car (action-for "wf move sample1 2 1")) "stay")
+      (check-equal? (list-ref (first (wf-rows "wf show sample1 1" "Step")) 2)
+                    "upper")
+      (check-equal? (workflow-last-trace store "sample1") '())
+      (action-for "wf dry sample1 hello")
+      (check-equal? (length (workflow-last-trace store "sample1")) 12)
+      (check-equal? (car (action-for "wf edit sample1 12 copy")) "stay")
+      (define denied (action-for "wf move sample1 12 1"))
+      (check-equal? (car denied) "stay")
+      (check-true (string-contains?
+                   (format "~s" (cdr denied))
+                   "copy/paste must remain the final step"))
+      (check-equal? (list-ref (last (wf-rows "wf show sample1 3" "Step")) 2)
+                    "copy")
+      (check-equal? (workflow-last-trace store "sample1") '())
       (check-equal? (car (action-for "wf delete daily")) "stay")
       (check-false (workflow-ref store "daily"))))
   (lambda () (delete-directory/files dir)))
