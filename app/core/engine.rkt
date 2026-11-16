@@ -1218,7 +1218,11 @@
               (workflow-row "noop" "wf add <name> <step>"
                             "trim, upper, lower, prefix TEXT, suffix TEXT, replace OLD => NEW")
               (workflow-row "noop" "wf add <name> ifcontains TEXT ? upper : lower"
-                            "Conditionally transform, or require TEXT to stop on failure")
+                            "Conditional transform; require TEXT stops if absent")
+              (workflow-row "noop" "wf add <name> require TEXT else FALLBACK"
+                            "Recover from missing text and continue; trace marks recovered")
+              (workflow-row "noop" "wf add <name> lines trim/unique/sort/nonempty"
+                            "Batch transforms; also lines keep/drop TEXT, lines take N")
               (workflow-row "noop" "wf add <name> copy"
                             "Finish by copying; paste is an opt-in alternative")
               (workflow-row "noop" "wf dry <name> <input> · wf run <name> <input>"
