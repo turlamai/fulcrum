@@ -4,6 +4,7 @@
          racket/list
          racket/string
          rackunit
+         "../app/core/clipboard.rkt"
          "../app/core/engine.rkt"
          "../app/core/workflows.rkt")
 
@@ -17,8 +18,9 @@
   (lambda ()
     (parameterize ([current-environment-variables env])
       (define store (make-workflow-store (build-path dir "workflows.json")))
+      (define clip (make-clipboard-store (build-path dir "clipboard.json")))
       (define engine
-        (make-engine #:clipboard-store #f
+        (make-engine #:clipboard-store clip
                      #:snippet-store #f
                      #:plugin-manager #f
                      #:workflow-store store))
@@ -50,6 +52,34 @@
       (check-equal? (car (action-for "wf remove daily 2")) "stay")
       (check-equal? (length (filter (lambda (r) (equal? (list-ref r 3) "Workflow"))
                                     (engine-search engine "wf show daily"))) 2)
+      ;; A pinned OLD item must not replace the latest clipboard source.
+      (define older (clipboard-record! clip "old pinned text"))
+      (clipboard-toggle-pin! clip (clipboard-item-id older))
+      (sleep 0.01)
+      (clipboard-record! clip " alpha\r\n beta\r\n alpha ")
+      (check-equal? (clipboard-item-text (clipboard-latest clip))
+                    " alpha\r\n beta\r\n alpha ")
+      (check-equal? (car (action-for "wf create batch")) "stay")
+      (for ([step (in-list '("lines trim" "lines unique" "copy"))])
+        (check-equal? (car (action-for (format "wf add batch ~a" step)))
+                      "stay"))
+      (define batch-run (action-for "wf run batch @clipboard"))
+      (check-equal? (car batch-run) "copied")
+      (check-equal? (assoc 'copy-to-clipboard (cdr batch-run))
+                    '(copy-to-clipboard . "alpha\nbeta"))
+      (define batch-dry (action-for "wf dry batch @clipboard"))
+      (check-equal? (car batch-dry) "stay")
+      (check-false (assoc 'copy-to-clipboard (cdr batch-dry)))
+      (clipboard-record! clip "sk-abcdefghijklmnop123456")
+      (define blocked (action-for "wf run batch @clipboard"))
+      (check-equal? (car blocked) "stay")
+      (check-false (assoc 'copy-to-clipboard (cdr blocked)))
+      (check-false (string-contains? (format "~s" blocked)
+                                     "sk-abcdefghijklmnop123456"))
+      (check-equal? (car (action-for "wf run batch @@clipboard")) "copied")
+      (check-equal? (assoc 'copy-to-clipboard
+                           (cdr (action-for "wf run batch @@clipboard")))
+                    '(copy-to-clipboard . "@clipboard"))
       (check-equal? (car (action-for "wf delete daily")) "stay")
       (check-false (workflow-ref store "daily"))))
   (lambda () (delete-directory/files dir)))
