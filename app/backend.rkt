@@ -41,6 +41,7 @@
          (rename-in "core/settings.rkt" [settings-list core:settings-list])
          (rename-in "core/snippets.rkt" [snippet-list core:snippet-list])
          "core/syscmd.rkt"
+         "core/workflows.rkt"
          "update.rkt")
 
 (provide start
@@ -1757,11 +1758,13 @@
                               #:prefs-thunk plugin-prefs-for)))
   (define bindings-store
     (make-bindings-store (bindings-path)))
+  (define wf-store (make-workflow-store (workflows-path)))
   (define engine
     (make-engine #:clipboard-store clip-store
                  #:snippet-store snip-store
                  #:quicklink-store link-store
                  #:bindings-store bindings-store
+                 #:workflow-store wf-store
                  #:plugin-manager plug-mgr
                  #:max-results (settings-get manager 'max-results)
                  #:file-index-path (file-index-path)
