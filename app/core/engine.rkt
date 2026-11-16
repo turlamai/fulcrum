@@ -1240,6 +1240,10 @@
                             "Finish by copying; paste is an opt-in alternative")
               (workflow-row "noop" "wf dry/run <name> <input> or @clipboard"
                             "Explicit recent clipboard text; credentials refused")
+              (workflow-row "noop" "wf edit <name> <index> <step>"
+                            "Replace an existing step using the safe step grammar")
+              (workflow-row "noop" "wf move <name> <from> <to>"
+                            "Reorder steps; copy/paste must remain at the end")
               (workflow-row "noop" "wf show/trace/delete <name> · wf remove <name> <index>"
                             "Inspect, debug, delete or change the ordered steps"))]
             [(string=? verb "create")
@@ -1260,6 +1264,18 @@
                   "1-based index · subsequent steps keep their order"
                   (string-append slug workflow-field-separator tail)
                   "Remove")]
+            [(string=? verb "edit")
+             (one "workflow.edit"
+                  (format "Edit step in ~a" slug)
+                  (if (string=? tail "") "Usage: wf edit NAME INDEX STEP" tail)
+                  (string-append slug workflow-field-separator tail)
+                  "Edit")]
+            [(string=? verb "move")
+             (one "workflow.move"
+                  (format "Move step in ~a" slug)
+                  (if (string=? tail "") "Usage: wf move NAME FROM TO" tail)
+                  (string-append slug workflow-field-separator tail)
+                  "Move")]
             [(string=? verb "delete")
              (one "workflow.delete"
                   (format "Delete workflow · ~a" slug)
@@ -1352,6 +1368,7 @@
                        (format "Deleted workflow ~a" arg)
                        (format "No workflow named ~a" arg)))]
           [(member id '("workflow.add" "workflow.remove"
+                        "workflow.edit" "workflow.move"
                         "workflow.run" "workflow.dry"))
            (unless (= (length fields) 2)
              (raise-user-error 'workflow "invalid action payload"))
@@ -1371,6 +1388,25 @@
               (status (format "Removed step ~a from ~a; ~a remain"
                               index (workflow-name w)
                               (length (workflow-steps w))))]
+             [(string=? id "workflow.edit")
+              (define-values (index-text step-description)
+                (workflow-split-command tail))
+              (define index (string->number index-text))
+              (unless (exact-positive-integer? index)
+                (raise-user-error 'workflow "step index must be a positive integer"))
+              (workflow-edit-step! store name index step-description)
+              (status (format "Updated step ~a in ~a" index name))]
+             [(string=? id "workflow.move")
+              (define indices (string-split tail))
+              (unless (= (length indices) 2)
+                (raise-user-error 'workflow "expected FROM and TO indices"))
+              (define from (string->number (first indices)))
+              (define to (string->number (second indices)))
+              (unless (and (exact-positive-integer? from)
+                           (exact-positive-integer? to))
+                (raise-user-error 'workflow "indices must be positive integers"))
+              (workflow-move-step! store name from to)
+              (status (format "Moved step ~a to ~a in ~a" from to name))]
              [else
               (define dry? (string=? id "workflow.dry"))
               (define outcome
