@@ -55,6 +55,30 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
                    Microsoft::UI::Xaml::Input::KeyRoutedEventArgs const&);
   void SaveKey_Click(winrt::Windows::Foundation::IInspectable const&,
                      Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowCreate_Click(winrt::Windows::Foundation::IInspectable const&,
+                            Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowRefresh_Click(winrt::Windows::Foundation::IInspectable const&,
+                             Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowPrevious_Click(winrt::Windows::Foundation::IInspectable const&,
+                              Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowNext_Click(winrt::Windows::Foundation::IInspectable const&,
+                          Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowStepPrevious_Click(winrt::Windows::Foundation::IInspectable const&,
+                                  Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowStepNext_Click(winrt::Windows::Foundation::IInspectable const&,
+                              Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowAdd_Click(winrt::Windows::Foundation::IInspectable const&,
+                         Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowDry_Click(winrt::Windows::Foundation::IInspectable const&,
+                         Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowRun_Click(winrt::Windows::Foundation::IInspectable const&,
+                         Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowDelete_Click(winrt::Windows::Foundation::IInspectable const&,
+                            Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowTracePrevious_Click(winrt::Windows::Foundation::IInspectable const&,
+                                   Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowTraceNext_Click(winrt::Windows::Foundation::IInspectable const&,
+                               Microsoft::UI::Xaml::RoutedEventArgs const&);
   void UpdateCheck_Click(winrt::Windows::Foundation::IInspectable const&,
                          Microsoft::UI::Xaml::RoutedEventArgs const&);
   void UpdateDownload_Click(winrt::Windows::Foundation::IInspectable const&,
@@ -72,6 +96,9 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
                     std::vector<std::vector<std::string>> bindings);
   void SaveBinding(std::string id, std::string alias, std::string hotkey);
   void ClearBinding(std::string id);
+  void LoadWorkflowList();
+  void LoadWorkflowDetail();
+  void WorkflowCommand(std::string id, std::string arg);
   void NavigateTo(std::string const& section);
   void ApplyLocalization(std::string const& language);
   void SaveKey();
@@ -87,6 +114,11 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   // handlers do not write them straight back.
   bool loading_{false};
   std::map<std::string, std::string> values_;
+  std::string workflow_selected_;
+  int workflow_list_page_{1};
+  int workflow_step_page_{1};
+  int workflow_trace_page_{1};
+  bool workflow_copy_safe_{false};
   // Update-card strings, refreshed by ApplyLocalization so the async
   // status lines read the active language at paint time.
   std::wstring update_checking_;

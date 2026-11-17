@@ -80,6 +80,32 @@
       (check-equal? (assoc 'copy-to-clipboard
                            (cdr (action-for "wf run batch @@clipboard")))
                     '(copy-to-clipboard . "@clipboard"))
+      ;; The native editor pages through all definitions, steps, and traces,
+      ;; even when max-results is configured at its five-row minimum.
+      (for ([i (in-range 1 13)])
+        (check-equal?
+         (car (action-for (format "wf create sample~a" i))) "stay"))
+      (define (wf-rows query badge)
+        (filter (lambda (row) (and (equal? (list-ref row 3) "Workflow")
+                                   (equal? (list-ref row 7) badge)))
+                (engine-search engine query)))
+      ;; daily + batch + twelve sample definitions = fourteen.
+      (check-equal? (length (wf-rows "wf list 1" "Saved")) 5)
+      (check-equal? (length (wf-rows "wf list 2" "Saved")) 5)
+      (check-equal? (length (wf-rows "wf list 3" "Saved")) 4)
+      (for ([i (in-range 12)])
+        (check-equal? (car (action-for "wf add sample1 trim")) "stay"))
+      (check-equal? (length (wf-rows "wf show sample1 1" "Step")) 5)
+      (check-equal? (length (wf-rows "wf show sample1 2" "Step")) 5)
+      (check-equal? (length (wf-rows "wf show sample1 3" "Step")) 2)
+      (check-equal? (list-ref (first (wf-rows "wf show sample1 3" "Step")) 1)
+                    "sample1 · Step 11")
+      (action-for "wf dry sample1 hello")
+      (check-equal? (length (wf-rows "wf trace sample1 1" "Trace")) 5)
+      (check-equal? (length (wf-rows "wf trace sample1 3" "Trace")) 2)
+      (check-false
+       (string-contains? (format "~s" (wf-rows "wf trace sample1 3" "Trace"))
+                         "hello"))
       (check-equal? (car (action-for "wf delete daily")) "stay")
       (check-false (workflow-ref store "daily"))))
   (lambda () (delete-directory/files dir)))

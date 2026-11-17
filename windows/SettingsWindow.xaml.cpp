@@ -164,8 +164,10 @@ void SettingsWindow::NavigateTo(std::string const& section) {
   FeaturesSection().Visibility(section == "features" ? mx::Visibility::Visible : mx::Visibility::Collapsed);
   AiSection().Visibility(section == "ai" ? mx::Visibility::Visible : mx::Visibility::Collapsed);
   CommandsSection().Visibility(section == "commands" ? mx::Visibility::Visible : mx::Visibility::Collapsed);
+  WorkflowsSection().Visibility(section == "workflows" ? mx::Visibility::Visible : mx::Visibility::Collapsed);
   SyncSection().Visibility(section == "sync" ? mx::Visibility::Visible : mx::Visibility::Collapsed);
   if (section == "commands") LoadBindings();
+  if (section == "workflows") { LoadWorkflowList(); LoadWorkflowDetail(); }
 }
 
 void SettingsWindow::Navigation_SelectionChanged(
@@ -516,6 +518,259 @@ void SettingsWindow::ClearBinding(std::string id) {
       }
     });
   }).detach();
+}
+
+// ---- Workflow Pro native editor -------------------------------------------
+//
+// Search and run_action are existing RVT1 endpoints. The backend remains the
+// only workflow interpreter and JSON owner. Calls run on worker threads and
+// return to DispatcherQueue before updating XAML controls.
+void SettingsWindow::LoadWorkflowList() {
+  if (!api_) return;
+  auto dispatcher = DispatcherQueue();
+  auto weak = get_weak();
+  auto api = api_;
+  int const page = workflow_list_page_;
+  std::thread([weak, api, dispatcher, page]() mutable {
+    std::vector<std::vector<std::string>> rows;
+    std::string error;
+    try { rows = api->search("wf list " + std::to_string(page)).get(); }
+    catch (std::exception const& e) { error = e.what(); }
+    catch (...) { error = "Workflow list unavailable"; }
+    dispatcher.TryEnqueue([weak, page, rows = std::move(rows), error]() mutable {
+      auto window = weak.get();
+      if (!window || window->workflow_list_page_ != page) return;
+      auto children = window->WorkflowListRows().Children();
+      children.Clear();
+      unsigned shown = 0;
+      for (auto const& row : rows) {
+        if (row.size() < 8 || row[3] != "Workflow" || row[7] != "Saved")
+          continue;
+        std::string const prefix = "Workflow · ";
+        if (row[1].rfind(prefix, 0) != 0) continue;
+        std::string const name = row[1].substr(prefix.size());
+        mxc::Button entry;
+        entry.Content(winrt::box_value(winrt::hstring(to_wide(name))));
+        entry.HorizontalAlignment(mx::HorizontalAlignment::Stretch);
+        entry.HorizontalContentAlignment(mx::HorizontalAlignment::Left);
+        entry.Click([weak, name](auto const&, auto const&) {
+          if (auto w = weak.get()) {
+            w->workflow_selected_ = name;
+            w->workflow_step_page_ = 1;
+            w->workflow_trace_page_ = 1;
+            w->WorkflowDeleteConfirm().IsChecked(
+                winrt::box_value(false).as<winrt::Windows::Foundation::IReference<bool>>());
+            w->LoadWorkflowDetail();
+          }
+        });
+        children.Append(entry);
+        ++shown;
+      }
+      if (shown == 0) {
+        mxc::TextBlock empty;
+        empty.Text(L"No workflows on this page.");
+        children.Append(empty);
+      }
+      window->WorkflowListPage().Text(
+          winrt::hstring(L"Page " + std::to_wstring(page)));
+      if (!error.empty()) window->WorkflowStatusText().Text(to_wide(error));
+    });
+  }).detach();
+}
+
+void SettingsWindow::LoadWorkflowDetail() {
+  if (!api_) return;
+  if (workflow_selected_.empty()) {
+    WorkflowSelectedText().Text(L"Select a workflow");
+    WorkflowStepRows().Children().Clear();
+    WorkflowTraceRows().Children().Clear();
+    WorkflowRunCopyButton().IsEnabled(false);
+    return;
+  }
+  std::string const name = workflow_selected_;
+  int const step_page = workflow_step_page_;
+  int const trace_page = workflow_trace_page_;
+  WorkflowSelectedText().Text(to_wide(name));
+  auto dispatcher = DispatcherQueue();
+  auto weak = get_weak();
+  auto api = api_;
+  std::thread([weak, api, dispatcher, name, step_page, trace_page]() mutable {
+    std::vector<std::vector<std::string>> steps, traces;
+    std::string error;
+    try {
+      steps = api->search("wf show " + name + " " +
+                          std::to_string(step_page)).get();
+      traces = api->search("wf trace " + name + " " +
+                           std::to_string(trace_page)).get();
+    } catch (std::exception const& e) { error = e.what(); }
+    catch (...) { error = "Workflow detail unavailable"; }
+    dispatcher.TryEnqueue([weak, name, step_page, trace_page,
+                           steps = std::move(steps),
+                           traces = std::move(traces), error]() mutable {
+      auto window = weak.get();
+      if (!window || window->workflow_selected_ != name ||
+          window->workflow_step_page_ != step_page ||
+          window->workflow_trace_page_ != trace_page) return;
+      auto step_children = window->WorkflowStepRows().Children();
+      step_children.Clear();
+      bool copy_safe = false;
+      for (auto const& row : steps) {
+        if (row.size() < 8 || row[3] != "Workflow" || row[7] != "Step")
+          continue;
+        mxc::StackPanel line;
+        line.Orientation(mxc::Orientation::Horizontal);
+        line.Spacing(8);
+        mxc::TextBlock text;
+        text.Text(to_wide(row[1] + ": " + row[2]));
+        text.TextWrapping(mx::TextWrapping::Wrap);
+        text.VerticalAlignment(mx::VerticalAlignment::Center);
+        text.Width(280);
+        line.Children().Append(text);
+        std::string const title = row[1];
+        auto const pos = title.find_last_of(' ');
+        std::string const index = pos == std::string::npos
+                                      ? "" : title.substr(pos + 1);
+        mxc::Button remove;
+        remove.Content(winrt::box_value(L"Remove"));
+        remove.Click([weak, name, index](auto const&, auto const&) {
+          if (auto w = weak.get()) {
+            w->WorkflowCommand("workflow.remove",
+                               name + std::string(1, '\x1F') + index);
+          }
+        });
+        line.Children().Append(remove);
+        step_children.Append(line);
+        if (row[2] == "copy") copy_safe = true;
+      }
+      window->workflow_copy_safe_ = copy_safe;
+      window->WorkflowRunCopyButton().IsEnabled(copy_safe);
+      window->WorkflowStepPage().Text(
+          winrt::hstring(L"Steps page " + std::to_wstring(step_page)));
+      auto trace_children = window->WorkflowTraceRows().Children();
+      trace_children.Clear();
+      for (auto const& row : traces) {
+        if (row.size() < 8 || row[3] != "Workflow" || row[7] != "Trace")
+          continue;
+        mxc::TextBlock line;
+        line.Text(to_wide(row[1] + " · " + row[2]));
+        line.TextWrapping(mx::TextWrapping::Wrap);
+        trace_children.Append(line);
+      }
+      window->WorkflowTracePage().Text(
+          winrt::hstring(L"Trace page " + std::to_wstring(trace_page)));
+      if (!error.empty()) window->WorkflowStatusText().Text(to_wide(error));
+    });
+  }).detach();
+}
+
+void SettingsWindow::WorkflowCommand(std::string id, std::string arg) {
+  if (!api_) return;
+  auto dispatcher = DispatcherQueue();
+  auto weak = get_weak();
+  auto api = api_;
+  WorkflowStatusText().Text(L"Running workflow request…");
+  std::thread([weak, api, dispatcher, id = std::move(id),
+               arg = std::move(arg)]() mutable {
+    std::string status, error;
+    try { status = api->run_action(id, arg).get(); }
+    catch (std::exception const& e) { error = e.what(); }
+    catch (...) { error = "Workflow action failed"; }
+    dispatcher.TryEnqueue([weak, id, status, error] {
+      if (auto w = weak.get()) {
+        w->WorkflowStatusText().Text(error.empty()
+             ? L"Request completed; inspect the updated steps/trace for validation."
+             : to_wide(error));
+        if (error.empty() && id == "workflow.delete") {
+          w->workflow_selected_.clear();
+          w->WorkflowDeleteConfirm().IsChecked(
+                winrt::box_value(false).as<winrt::Windows::Foundation::IReference<bool>>());
+          w->workflow_list_page_ = 1;
+          w->workflow_step_page_ = 1;
+          w->workflow_trace_page_ = 1;
+        }
+        w->LoadWorkflowList();
+        w->LoadWorkflowDetail();
+      }
+    });
+  }).detach();
+}
+
+void SettingsWindow::WorkflowCreate_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  auto name = trimmed(to_utf8(std::wstring(WorkflowNameBox().Text())));
+  if (name.empty()) { WorkflowStatusText().Text(L"Enter a workflow name."); return; }
+  workflow_list_page_ = 1;
+  WorkflowCommand("workflow.create", name);
+}
+
+void SettingsWindow::WorkflowRefresh_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  LoadWorkflowList();
+  LoadWorkflowDetail();
+}
+void SettingsWindow::WorkflowPrevious_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  workflow_list_page_ = std::max(1, workflow_list_page_ - 1);
+  LoadWorkflowList();
+}
+void SettingsWindow::WorkflowNext_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  ++workflow_list_page_;
+  LoadWorkflowList();
+}
+void SettingsWindow::WorkflowStepPrevious_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  workflow_step_page_ = std::max(1, workflow_step_page_ - 1);
+  LoadWorkflowDetail();
+}
+void SettingsWindow::WorkflowStepNext_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  ++workflow_step_page_;
+  LoadWorkflowDetail();
+}
+void SettingsWindow::WorkflowTracePrevious_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  workflow_trace_page_ = std::max(1, workflow_trace_page_ - 1);
+  LoadWorkflowDetail();
+}
+void SettingsWindow::WorkflowTraceNext_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  ++workflow_trace_page_;
+  LoadWorkflowDetail();
+}
+void SettingsWindow::WorkflowAdd_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  if (workflow_selected_.empty()) return;
+  auto step = trimmed(to_utf8(std::wstring(WorkflowStepBox().Text())));
+  if (step.empty()) { WorkflowStatusText().Text(L"Enter a step expression."); return; }
+  WorkflowCommand("workflow.add",
+                  workflow_selected_ + std::string(1, '\x1F') + step);
+}
+void SettingsWindow::WorkflowDry_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  if (workflow_selected_.empty()) return;
+  workflow_trace_page_ = 1;
+  WorkflowCommand("workflow.dry",
+                  workflow_selected_ + std::string(1, '\x1F') +
+                  to_utf8(std::wstring(WorkflowInputBox().Text())));
+}
+void SettingsWindow::WorkflowRun_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  if (workflow_selected_.empty() || !workflow_copy_safe_) return;
+  workflow_trace_page_ = 1;
+  WorkflowCommand("workflow.run",
+                  workflow_selected_ + std::string(1, '\x1F') +
+                  to_utf8(std::wstring(WorkflowInputBox().Text())));
+}
+void SettingsWindow::WorkflowDelete_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  if (workflow_selected_.empty()) return;
+  auto checked = WorkflowDeleteConfirm().IsChecked();
+  if (!checked || !checked.Value()) {
+    WorkflowStatusText().Text(L"Check Confirm delete before deleting.");
+    return;
+  }
+  WorkflowCommand("workflow.delete", workflow_selected_);
 }
 
 void SettingsWindow::SaveKey() {

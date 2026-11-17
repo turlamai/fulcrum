@@ -2358,6 +2358,21 @@ struct SettingsForm {
   GtkWidget* stack{nullptr};
   GtkWidget* commands_list{nullptr};
   GtkWidget* commands_message{nullptr};
+  GtkWidget* workflow_list{nullptr};
+  GtkWidget* workflow_steps{nullptr};
+  GtkWidget* workflow_trace{nullptr};
+  GtkWidget* workflow_name{nullptr};
+  GtkWidget* workflow_step{nullptr};
+  GtkWidget* workflow_input{nullptr};
+  GtkWidget* workflow_selected_label{nullptr};
+  GtkWidget* workflow_status{nullptr};
+  GtkWidget* workflow_delete_confirm{nullptr};
+  GtkWidget* workflow_run_copy{nullptr};
+  std::string workflow_selected;
+  int workflow_list_page{1};
+  int workflow_step_page{1};
+  int workflow_trace_page{1};
+  bool workflow_copy_safe{false};
   std::vector<std::unique_ptr<SettingBinding>> bindings;
   // Keep backend-defined localized labels alive across language changes.
   std::vector<std::tuple<GtkLabel*, std::string, std::string>> localized_labels;
@@ -2374,6 +2389,9 @@ struct SettingsForm {
 SettingsForm* g_settings_form = nullptr;
 
 void settings_load();
+void workflow_load_list();
+void workflow_load_detail();
+void workflow_action(std::string id, std::string arg);
 
 void settings_show_error(std::string const& message) {
   if (g_settings_form == nullptr) return;
@@ -2848,6 +2866,214 @@ void settings_build() {
   gtk_box_append(GTK_BOX(commands), commands_message);
   g_settings_form->commands_message = commands_message;
 
+  // Workflow editor: real GTK controls over the same backend actions that
+  // serve WinUI and SwiftUI. No host-specific JSON editing or evaluator.
+  auto* workflow_page = make_page("workflows", "Workflows");
+  auto* workflows = settings_section(workflow_page, "Workflow editor");
+  settings_hint(workflows,
+                "Local-only steps; the shared backend validates every change. "
+                "Debug traces never expose input or output.");
+  auto* wf_create = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  auto* wf_name = gtk_entry_new();
+  gtk_entry_set_placeholder_text(GTK_ENTRY(wf_name), "new-name");
+  gtk_widget_set_hexpand(wf_name, TRUE);
+  gtk_accessible_update_property(GTK_ACCESSIBLE(wf_name),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "workflow-create-name", -1);
+  g_settings_form->workflow_name = wf_name;
+  auto* wf_create_button = gtk_button_new_with_label("Create");
+  gtk_accessible_update_property(GTK_ACCESSIBLE(wf_create_button),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "workflow-create", -1);
+  g_signal_connect(wf_create_button, "clicked",
+                   G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form) return;
+    std::string name = settings_trimmed(
+        gtk_editable_get_text(GTK_EDITABLE(g_settings_form->workflow_name)));
+    if (name.empty()) {
+      gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
+                         "Enter a workflow name.");
+      return;
+    }
+    g_settings_form->workflow_list_page = 1;
+    workflow_action("workflow.create", name);
+  }), nullptr);
+  auto* wf_refresh = gtk_button_new_with_label("Refresh");
+  g_signal_connect(wf_refresh, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    workflow_load_list(); workflow_load_detail();
+  }), nullptr);
+  gtk_box_append(GTK_BOX(wf_create), wf_name);
+  gtk_box_append(GTK_BOX(wf_create), wf_create_button);
+  gtk_box_append(GTK_BOX(wf_create), wf_refresh);
+  gtk_box_append(GTK_BOX(workflows), wf_create);
+
+  auto* wf_list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  g_settings_form->workflow_list = wf_list;
+  gtk_box_append(GTK_BOX(workflows), wf_list);
+  auto* wf_list_navigation = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  auto* wf_prev = gtk_button_new_with_label("Previous workflows");
+  auto* wf_next = gtk_button_new_with_label("Next workflows");
+  g_signal_connect(wf_prev, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form) return;
+    g_settings_form->workflow_list_page =
+        std::max(1, g_settings_form->workflow_list_page - 1);
+    workflow_load_list();
+  }), nullptr);
+  g_signal_connect(wf_next, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form) return;
+    ++g_settings_form->workflow_list_page;
+    workflow_load_list();
+  }), nullptr);
+  gtk_box_append(GTK_BOX(wf_list_navigation), wf_prev);
+  gtk_box_append(GTK_BOX(wf_list_navigation), wf_next);
+  gtk_box_append(GTK_BOX(workflows), wf_list_navigation);
+
+  auto* wf_selected = gtk_label_new("Select a workflow");
+  gtk_label_set_xalign(GTK_LABEL(wf_selected), 0);
+  gtk_widget_add_css_class(wf_selected, "heading");
+  gtk_box_append(GTK_BOX(workflow_page), wf_selected);
+  g_settings_form->workflow_selected_label = wf_selected;
+  auto* wf_steps_section = settings_section(workflow_page, "Ordered steps");
+  auto* wf_steps = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  g_settings_form->workflow_steps = wf_steps;
+  gtk_box_append(GTK_BOX(wf_steps_section), wf_steps);
+  auto* wf_step_navigation = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  auto* wf_step_prev = gtk_button_new_with_label("Previous steps");
+  auto* wf_step_next = gtk_button_new_with_label("Next steps");
+  g_signal_connect(wf_step_prev, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form) return;
+    g_settings_form->workflow_step_page =
+        std::max(1, g_settings_form->workflow_step_page - 1);
+    workflow_load_detail();
+  }), nullptr);
+  g_signal_connect(wf_step_next, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form) return;
+    ++g_settings_form->workflow_step_page;
+    workflow_load_detail();
+  }), nullptr);
+  gtk_box_append(GTK_BOX(wf_step_navigation), wf_step_prev);
+  gtk_box_append(GTK_BOX(wf_step_navigation), wf_step_next);
+  gtk_box_append(GTK_BOX(wf_steps_section), wf_step_navigation);
+  auto* wf_add = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  auto* wf_step_entry = gtk_entry_new();
+  gtk_entry_set_placeholder_text(GTK_ENTRY(wf_step_entry),
+                                  "trim, lines unique, require text…");
+  gtk_widget_set_hexpand(wf_step_entry, TRUE);
+  g_settings_form->workflow_step = wf_step_entry;
+  gtk_accessible_update_property(GTK_ACCESSIBLE(wf_step_entry),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "workflow-step-expression", -1);
+  auto* wf_add_button = gtk_button_new_with_label("Add step");
+  g_signal_connect(wf_add_button, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form || g_settings_form->workflow_selected.empty()) return;
+    std::string step = settings_trimmed(
+        gtk_editable_get_text(GTK_EDITABLE(g_settings_form->workflow_step)));
+    if (step.empty()) {
+      gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
+                         "Enter a step expression.");
+      return;
+    }
+    workflow_action("workflow.add", g_settings_form->workflow_selected +
+        std::string(1, '\x1F') + step);
+  }), nullptr);
+  gtk_box_append(GTK_BOX(wf_add), wf_step_entry);
+  gtk_box_append(GTK_BOX(wf_add), wf_add_button);
+  gtk_box_append(GTK_BOX(wf_steps_section), wf_add);
+
+  auto* wf_input_section = settings_section(workflow_page, "Input / preview");
+  auto* wf_input_scroller = gtk_scrolled_window_new();
+  gtk_widget_set_size_request(wf_input_scroller, -1, 90);
+  auto* wf_input = gtk_text_view_new();
+  gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(wf_input), GTK_WRAP_WORD_CHAR);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(wf_input_scroller),
+                                 wf_input);
+  gtk_box_append(GTK_BOX(wf_input_section), wf_input_scroller);
+  g_settings_form->workflow_input = wf_input;
+  gtk_accessible_update_property(GTK_ACCESSIBLE(wf_input),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "workflow-input-multiline", -1);
+  auto* wf_run_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  auto* wf_dry = gtk_button_new_with_label("Dry run");
+  g_signal_connect(wf_dry, "clicked", G_CALLBACK((+[](GtkButton*, gpointer) {
+    if (!g_settings_form || g_settings_form->workflow_selected.empty()) return;
+    auto* buffer = gtk_text_view_get_buffer(
+        GTK_TEXT_VIEW(g_settings_form->workflow_input));
+    GtkTextIter start, end;
+    gtk_text_buffer_get_bounds(buffer, &start, &end);
+    gchar* raw = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+    std::string input = raw ? raw : "";
+    g_free(raw);
+    g_settings_form->workflow_trace_page = 1;
+    workflow_action("workflow.dry", g_settings_form->workflow_selected +
+        std::string(1, '\x1F') + input);
+  })), nullptr);
+  auto* wf_run_copy = gtk_button_new_with_label("Run to clipboard");
+  gtk_widget_set_sensitive(wf_run_copy, FALSE);
+  g_settings_form->workflow_run_copy = wf_run_copy;
+  g_signal_connect(wf_run_copy, "clicked", G_CALLBACK((+[](GtkButton*, gpointer) {
+    if (!g_settings_form || g_settings_form->workflow_selected.empty() ||
+        !g_settings_form->workflow_copy_safe) return;
+    auto* buffer = gtk_text_view_get_buffer(
+        GTK_TEXT_VIEW(g_settings_form->workflow_input));
+    GtkTextIter start, end;
+    gtk_text_buffer_get_bounds(buffer, &start, &end);
+    gchar* raw = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+    std::string input = raw ? raw : "";
+    g_free(raw);
+    g_settings_form->workflow_trace_page = 1;
+    workflow_action("workflow.run", g_settings_form->workflow_selected +
+        std::string(1, '\x1F') + input);
+  })), nullptr);
+  auto* wf_confirm = gtk_check_button_new_with_label("Confirm delete");
+  g_settings_form->workflow_delete_confirm = wf_confirm;
+  auto* wf_delete = gtk_button_new_with_label("Delete");
+  g_signal_connect(wf_delete, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form || g_settings_form->workflow_selected.empty()) return;
+    if (!gtk_check_button_get_active(
+            GTK_CHECK_BUTTON(g_settings_form->workflow_delete_confirm))) {
+      gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
+                         "Confirm delete before removing the definition.");
+      return;
+    }
+    workflow_action("workflow.delete", g_settings_form->workflow_selected);
+  }), nullptr);
+  gtk_box_append(GTK_BOX(wf_run_buttons), wf_dry);
+  gtk_box_append(GTK_BOX(wf_run_buttons), wf_run_copy);
+  gtk_box_append(GTK_BOX(wf_run_buttons), wf_confirm);
+  gtk_box_append(GTK_BOX(wf_run_buttons), wf_delete);
+  gtk_box_append(GTK_BOX(wf_input_section), wf_run_buttons);
+  settings_hint(wf_input_section,
+                "@clipboard explicitly reads recent local text. "
+                "Paste workflows must run from the launcher to preserve focus.");
+
+  auto* wf_trace_section = settings_section(workflow_page, "Redacted trace");
+  auto* wf_trace = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  g_settings_form->workflow_trace = wf_trace;
+  gtk_box_append(GTK_BOX(wf_trace_section), wf_trace);
+  auto* wf_trace_nav = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  auto* wf_trace_prev = gtk_button_new_with_label("Previous trace");
+  auto* wf_trace_next = gtk_button_new_with_label("Next trace");
+  g_signal_connect(wf_trace_prev, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form) return;
+    g_settings_form->workflow_trace_page =
+        std::max(1, g_settings_form->workflow_trace_page - 1);
+    workflow_load_detail();
+  }), nullptr);
+  g_signal_connect(wf_trace_next, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form) return;
+    ++g_settings_form->workflow_trace_page;
+    workflow_load_detail();
+  }), nullptr);
+  gtk_box_append(GTK_BOX(wf_trace_nav), wf_trace_prev);
+  gtk_box_append(GTK_BOX(wf_trace_nav), wf_trace_next);
+  gtk_box_append(GTK_BOX(wf_trace_section), wf_trace_nav);
+  auto* wf_status = gtk_label_new("Workflow actions remain local and user-initiated.");
+  gtk_label_set_xalign(GTK_LABEL(wf_status), 0);
+  gtk_label_set_wrap(GTK_LABEL(wf_status), TRUE);
+  gtk_label_set_selectable(GTK_LABEL(wf_status), TRUE);
+  gtk_box_append(GTK_BOX(workflow_page), wf_status);
+  g_settings_form->workflow_status = wf_status;
+
   auto* sync_page = make_page("sync", "Sync & Updates");
   auto* sync = settings_section(sync_page, "Sync & Updates");
   settings_add_text(sync, "Sync folder (beta)", "sync-root", "empty = off");
@@ -3057,6 +3283,219 @@ void settings_load_commands() {
   }).detach();
 }
 
+// ---- Workflow native GTK editor ------------------------------------------
+// Read only display rows through search; mutate only through the existing
+// backend run_action. Keep expensive calls off the GTK UI thread.
+
+using WorkflowWireRows = std::vector<std::vector<std::string>>;
+struct WorkflowListPayload {
+  WorkflowWireRows rows;
+  std::string error;
+  int page{1};
+};
+struct WorkflowDetailPayload {
+  WorkflowWireRows steps;
+  WorkflowWireRows trace;
+  std::string error;
+  std::string name;
+  int step_page{1};
+  int trace_page{1};
+};
+struct WorkflowCommandPayload {
+  std::string id;
+  std::string status;
+  std::string error;
+};
+
+void workflow_clear_rows(GtkWidget* container) {
+  if (!container) return;
+  for (auto* child = gtk_widget_get_first_child(container); child;) {
+    auto* next = gtk_widget_get_next_sibling(child);
+    gtk_box_remove(GTK_BOX(container), child);
+    child = next;
+  }
+}
+
+void workflow_load_list() {
+  auto* api = Launcher::instance().api.get();
+  if (!api || !g_settings_form || !g_settings_form->workflow_list) return;
+  int const page = g_settings_form->workflow_list_page;
+  std::thread([api, page] {
+    auto* payload = new WorkflowListPayload;
+    payload->page = page;
+    try {
+      payload->rows = api->search("wf list " + std::to_string(page)).get();
+    } catch (std::exception const& e) {
+      payload->error = e.what();
+    } catch (...) { payload->error = "Workflow list unavailable"; }
+    g_idle_add([](gpointer data) -> gboolean {
+      std::unique_ptr<WorkflowListPayload> payload(
+          static_cast<WorkflowListPayload*>(data));
+      if (!g_settings_form || !g_settings_form->workflow_list ||
+          payload->page != g_settings_form->workflow_list_page)
+        return G_SOURCE_REMOVE;
+      auto* list = g_settings_form->workflow_list;
+      workflow_clear_rows(list);
+      int count = 0;
+      for (auto const& row : payload->rows) {
+        if (row.size() < 8 || row[3] != "Workflow" || row[7] != "Saved")
+          continue;
+        std::string const prefix = "Workflow · ";
+        if (row[1].rfind(prefix, 0) != 0) continue;
+        std::string name = row[1].substr(prefix.size());
+        auto* button = gtk_button_new_with_label(name.c_str());
+        gtk_widget_set_hexpand(button, TRUE);
+        gtk_widget_set_halign(button, GTK_ALIGN_FILL);
+        auto* owned_name = new std::string(name);
+        g_object_set_data_full(G_OBJECT(button), "workflow-name", owned_name,
+                               [](gpointer p) { delete static_cast<std::string*>(p); });
+        g_signal_connect(button, "clicked", G_CALLBACK(+[](GtkButton*,
+                                                           gpointer user_data) {
+          if (!g_settings_form) return;
+          g_settings_form->workflow_selected =
+              *static_cast<std::string*>(user_data);
+          g_settings_form->workflow_step_page = 1;
+          g_settings_form->workflow_trace_page = 1;
+          gtk_check_button_set_active(
+              GTK_CHECK_BUTTON(g_settings_form->workflow_delete_confirm),
+              FALSE);
+          workflow_load_detail();
+        }), owned_name);
+        gtk_box_append(GTK_BOX(list), button);
+        ++count;
+      }
+      if (count == 0)
+        gtk_box_append(GTK_BOX(list),
+                       gtk_label_new("No workflows on this page."));
+      if (!payload->error.empty())
+        gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
+                           payload->error.c_str());
+      return G_SOURCE_REMOVE;
+    }, payload);
+  }).detach();
+}
+
+void workflow_load_detail() {
+  auto* api = Launcher::instance().api.get();
+  if (!api || !g_settings_form || !g_settings_form->workflow_steps) return;
+  std::string name = g_settings_form->workflow_selected;
+  if (name.empty()) {
+    gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_selected_label),
+                       "Select a workflow");
+    workflow_clear_rows(g_settings_form->workflow_steps);
+    workflow_clear_rows(g_settings_form->workflow_trace);
+    g_settings_form->workflow_copy_safe = false;
+    gtk_widget_set_sensitive(g_settings_form->workflow_run_copy, FALSE);
+    return;
+  }
+  gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_selected_label),
+                     name.c_str());
+  int const step_page = g_settings_form->workflow_step_page;
+  int const trace_page = g_settings_form->workflow_trace_page;
+  std::thread([api, name, step_page, trace_page] {
+    auto* payload = new WorkflowDetailPayload;
+    payload->name = name;
+    payload->step_page = step_page;
+    payload->trace_page = trace_page;
+    try {
+      payload->steps = api->search("wf show " + name + " " +
+                                   std::to_string(step_page)).get();
+      payload->trace = api->search("wf trace " + name + " " +
+                                   std::to_string(trace_page)).get();
+    } catch (std::exception const& e) { payload->error = e.what(); }
+    catch (...) { payload->error = "Workflow detail unavailable"; }
+    g_idle_add([](gpointer data) -> gboolean {
+      std::unique_ptr<WorkflowDetailPayload> payload(
+          static_cast<WorkflowDetailPayload*>(data));
+      if (!g_settings_form || payload->name != g_settings_form->workflow_selected ||
+          payload->step_page != g_settings_form->workflow_step_page ||
+          payload->trace_page != g_settings_form->workflow_trace_page)
+        return G_SOURCE_REMOVE;
+      workflow_clear_rows(g_settings_form->workflow_steps);
+      workflow_clear_rows(g_settings_form->workflow_trace);
+      g_settings_form->workflow_copy_safe = false;
+      for (auto const& row : payload->steps) {
+        if (row.size() < 8 || row[3] != "Workflow" || row[7] != "Step")
+          continue;
+        auto* line = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        auto* label = gtk_label_new((row[1] + " · " + row[2]).c_str());
+        gtk_label_set_xalign(GTK_LABEL(label), 0);
+        gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+        gtk_widget_set_hexpand(label, TRUE);
+        gtk_box_append(GTK_BOX(line), label);
+        auto const last_space = row[1].find_last_of(' ');
+        std::string index = last_space == std::string::npos
+                                ? "" : row[1].substr(last_space + 1);
+        auto* remove = gtk_button_new_with_label("Remove");
+        auto* action = new std::pair<std::string, std::string>(
+            payload->name, std::move(index));
+        g_object_set_data_full(G_OBJECT(remove), "workflow-step-action", action,
+            [](gpointer p) {
+              delete static_cast<std::pair<std::string, std::string>*>(p);
+            });
+        g_signal_connect(remove, "clicked", G_CALLBACK((+[](GtkButton*,
+                                                            gpointer data) {
+          auto* a = static_cast<std::pair<std::string, std::string>*>(data);
+          workflow_action("workflow.remove", a->first +
+                          std::string(1, '\x1F') + a->second);
+        })), action);
+        gtk_box_append(GTK_BOX(line), remove);
+        gtk_box_append(GTK_BOX(g_settings_form->workflow_steps), line);
+        if (row[2] == "copy") g_settings_form->workflow_copy_safe = true;
+      }
+      gtk_widget_set_sensitive(g_settings_form->workflow_run_copy,
+                               g_settings_form->workflow_copy_safe);
+      for (auto const& row : payload->trace) {
+        if (row.size() < 8 || row[3] != "Workflow" || row[7] != "Trace")
+          continue;
+        auto* text = gtk_label_new((row[1] + " · " + row[2]).c_str());
+        gtk_label_set_xalign(GTK_LABEL(text), 0);
+        gtk_label_set_wrap(GTK_LABEL(text), TRUE);
+        gtk_box_append(GTK_BOX(g_settings_form->workflow_trace), text);
+      }
+      if (!payload->error.empty())
+        gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
+                           payload->error.c_str());
+      return G_SOURCE_REMOVE;
+    }, payload);
+  }).detach();
+}
+
+void workflow_action(std::string id, std::string arg) {
+  auto* api = Launcher::instance().api.get();
+  if (!api || !g_settings_form) return;
+  gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
+                     "Running workflow request…");
+  std::thread([api, id = std::move(id), arg = std::move(arg)] {
+    auto* payload = new WorkflowCommandPayload;
+    payload->id = id;
+    try { payload->status = api->run_action(id, arg).get(); }
+    catch (std::exception const& e) { payload->error = e.what(); }
+    catch (...) { payload->error = "Workflow action unavailable"; }
+    g_idle_add([](gpointer data) -> gboolean {
+      std::unique_ptr<WorkflowCommandPayload> payload(
+          static_cast<WorkflowCommandPayload*>(data));
+      if (!g_settings_form) return G_SOURCE_REMOVE;
+      gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
+          payload->error.empty()
+              ? "Request processed; verify saved steps and redacted trace."
+              : payload->error.c_str());
+      if (payload->error.empty() && payload->id == "workflow.delete") {
+        g_settings_form->workflow_selected.clear();
+        g_settings_form->workflow_list_page = 1;
+        g_settings_form->workflow_step_page = 1;
+        g_settings_form->workflow_trace_page = 1;
+        gtk_check_button_set_active(
+            GTK_CHECK_BUTTON(g_settings_form->workflow_delete_confirm),
+            FALSE);
+      }
+      workflow_load_list();
+      workflow_load_detail();
+      return G_SOURCE_REMOVE;
+    }, payload);
+  }).detach();
+}
+
 void show_settings_window() {
   if (Launcher::instance().api == nullptr) {
     Launcher::instance().set_status("Settings open once the backend is ready…");
@@ -3067,6 +3506,8 @@ void show_settings_window() {
   }
   settings_load();
   settings_load_commands();
+  workflow_load_list();
+  workflow_load_detail();
   gtk_window_present(g_settings_form->window);
 }
 
