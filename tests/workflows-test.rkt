@@ -210,14 +210,17 @@
      (check-equal? (workflow-outcome-action
                     (workflow-execute! store "strict" "a")) 'copy))))
 
-(test-case "no-op move retains trace, editing a step clears previous trace"
+(test-case "no-op move retains trace and disk state, edit clears trace"
   (with-store
-   (lambda (store _)
+   (lambda (store path)
      (workflow-create! store "demo")
      (workflow-add-step! store "demo" "trim")
      (workflow-execute! store "demo" " value ")
      (check-equal? (length (workflow-last-trace store "demo")) 1)
+     ;; A no-op must not rewrite the atomic store or invalidate the trace.
+     (define persisted (file->string path))
      (workflow-move-step! store "demo" 1 1)
+     (check-equal? (file->string path) persisted)
      (check-equal? (length (workflow-last-trace store "demo")) 1)
      (workflow-edit-step! store "demo" 1 "upper")
      (check-equal? (workflow-last-trace store "demo") '()))))
