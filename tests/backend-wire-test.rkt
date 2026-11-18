@@ -245,6 +245,51 @@
         (not (string-contains? (format "~s" wf-trace-rows) "PRIVATE"))
         #t)
 
+;; The same RVT1 endpoint supports safe atomic edit/reorder. Mutation
+;; invalidates the previous trace; a failed terminal copy move must not
+;; change the persisted order or emit any clipboard side effect.
+(define-values (wf-edit-val wf-edit-error _wf-edit-events)
+  (call-rpc 619 (list "run-action" "workflow.edit"
+                      (string-append "wiretest" "\u001F" "1 lower"))))
+(check! "workflow edit over RVT1" (list wf-edit-val wf-edit-error)
+        '("stay" #f))
+(define-values (wf-move-val wf-move-error _wf-move-events)
+  (call-rpc 620 (list "run-action" "workflow.move"
+                      (string-append "wiretest" "\u001F" "2 1"))))
+(check! "workflow reorder over RVT1" (list wf-move-val wf-move-error)
+        '("stay" #f))
+(define-values (wf-step-rows wf-steps-error _wf-steps-events)
+  (call-rpc 621 (list "search" "wf show wiretest")))
+(check! "workflow step readback error" wf-steps-error #f)
+(define wf-step-titles
+  (for/list ([row (in-list wf-step-rows)]
+             #:when (equal? (list-ref row 7) "Step"))
+    (list-ref row 2)))
+(check! "step reorder persists with terminal copy last"
+        wf-step-titles '("ifcontains secret ? lower : upper" "lower" "copy"))
+(define-values (wf-denied wf-denied-error wf-denied-events)
+  (call-rpc 622 (list "run-action" "workflow.move"
+                      (string-append "wiretest" "\u001F" "3 1"))))
+(check! "terminal copy reorder refused" (list wf-denied wf-denied-error)
+        '("stay" #f))
+(check! "terminal copy refusal has no copy event"
+        (not (for/or ([evt (in-list wf-denied-events)])
+               (and (pair? evt) (equal? (first evt) "copy-to-clipboard"))))
+        #t)
+(define-values (wf-after-denial _wf-after-denial-error _wf-after-denial-events)
+  (call-rpc 623 (list "search" "wf show wiretest")))
+(check! "failed move leaves persisted steps unchanged"
+        (for/list ([row (in-list wf-after-denial)]
+                   #:when (equal? (list-ref row 7) "Step"))
+          (list-ref row 2))
+        wf-step-titles)
+(define-values (wf-trace-after _wf-trace-after-error _wf-trace-after-events)
+  (call-rpc 624 (list "search" "wf trace wiretest")))
+(check! "workflow edit/reorder invalidates old trace"
+        (for/or ([row (in-list wf-trace-after)])
+          (equal? (list-ref row 7) "No trace"))
+        #t)
+
 ;; URL safety enforced over the wire
 (define-values (evil _ee _eev)
   (call-rpc 10 (list "run-action" "web.open" "file:///etc/passwd")))

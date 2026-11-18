@@ -2363,6 +2363,7 @@ struct SettingsForm {
   GtkWidget* workflow_trace{nullptr};
   GtkWidget* workflow_name{nullptr};
   GtkWidget* workflow_step{nullptr};
+  GtkWidget* workflow_add_button{nullptr};
   GtkWidget* workflow_input{nullptr};
   GtkWidget* workflow_selected_label{nullptr};
   GtkWidget* workflow_status{nullptr};
@@ -2372,6 +2373,7 @@ struct SettingsForm {
   int workflow_list_page{1};
   int workflow_step_page{1};
   int workflow_trace_page{1};
+  int workflow_edit_index{0};
   bool workflow_copy_safe{false};
   std::vector<std::unique_ptr<SettingBinding>> bindings;
   // Keep backend-defined localized labels alive across language changes.
@@ -2964,6 +2966,7 @@ void settings_build() {
                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
                                   "workflow-step-expression", -1);
   auto* wf_add_button = gtk_button_new_with_label("Add step");
+  g_settings_form->workflow_add_button = wf_add_button;
   g_signal_connect(wf_add_button, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
     if (!g_settings_form || g_settings_form->workflow_selected.empty()) return;
     std::string step = settings_trimmed(
@@ -2973,11 +2976,29 @@ void settings_build() {
                          "Enter a step expression.");
       return;
     }
-    workflow_action("workflow.add", g_settings_form->workflow_selected +
-        std::string(1, '\x1F') + step);
+    if (g_settings_form->workflow_edit_index > 0) {
+      workflow_action("workflow.edit", g_settings_form->workflow_selected +
+          std::string(1, '\x1F') +
+          std::to_string(g_settings_form->workflow_edit_index) + " " + step);
+      g_settings_form->workflow_edit_index = 0;
+      gtk_button_set_label(
+          GTK_BUTTON(g_settings_form->workflow_add_button), "Add step");
+    } else {
+      workflow_action("workflow.add", g_settings_form->workflow_selected +
+          std::string(1, '\x1F') + step);
+    }
   }), nullptr);
   gtk_box_append(GTK_BOX(wf_add), wf_step_entry);
   gtk_box_append(GTK_BOX(wf_add), wf_add_button);
+  auto* wf_cancel = gtk_button_new_with_label("Cancel edit");
+  g_signal_connect(wf_cancel, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    if (!g_settings_form) return;
+    g_settings_form->workflow_edit_index = 0;
+    gtk_editable_set_text(GTK_EDITABLE(g_settings_form->workflow_step), "");
+    gtk_button_set_label(
+        GTK_BUTTON(g_settings_form->workflow_add_button), "Add step");
+  }), nullptr);
+  gtk_box_append(GTK_BOX(wf_add), wf_cancel);
   gtk_box_append(GTK_BOX(wf_steps_section), wf_add);
 
   auto* wf_input_section = settings_section(workflow_page, "Input / preview");
@@ -3354,6 +3375,10 @@ void workflow_load_list() {
           if (!g_settings_form) return;
           g_settings_form->workflow_selected =
               *static_cast<std::string*>(user_data);
+          g_settings_form->workflow_edit_index = 0;
+          gtk_editable_set_text(GTK_EDITABLE(g_settings_form->workflow_step), "");
+          gtk_button_set_label(
+              GTK_BUTTON(g_settings_form->workflow_add_button), "Add step");
           g_settings_form->workflow_step_page = 1;
           g_settings_form->workflow_trace_page = 1;
           gtk_check_button_set_active(
@@ -3426,6 +3451,47 @@ void workflow_load_detail() {
         auto const last_space = row[1].find_last_of(' ');
         std::string index = last_space == std::string::npos
                                 ? "" : row[1].substr(last_space + 1);
+        auto* edit = gtk_button_new_with_label("Edit");
+        auto* edit_data = new std::string(index + std::string(1, '\x1F') + row[2]);
+        g_object_set_data_full(G_OBJECT(edit), "workflow-edit-step",
+                               edit_data, [](gpointer p) {
+          delete static_cast<std::string*>(p);
+        });
+        g_signal_connect(edit, "clicked", G_CALLBACK((+[](GtkButton*,
+                                                          gpointer data) {
+          if (!g_settings_form) return;
+          auto const& raw = *static_cast<std::string*>(data);
+          auto sep = raw.find('\x1F');
+          if (sep == std::string::npos) return;
+          try {
+            g_settings_form->workflow_edit_index = std::stoi(raw.substr(0, sep));
+          } catch (...) { return; }
+          gtk_editable_set_text(GTK_EDITABLE(g_settings_form->workflow_step),
+                                raw.substr(sep + 1).c_str());
+          gtk_button_set_label(
+              GTK_BUTTON(g_settings_form->workflow_add_button), "Save step");
+        })), edit_data);
+        gtk_box_append(GTK_BOX(line), edit);
+        for (int delta : {-1, 1}) {
+          auto* move_button = gtk_button_new_with_label(
+              delta < 0 ? "↑" : "↓");
+          int source = 0;
+          try { source = std::stoi(index); } catch (...) { source = 0; }
+          auto* move_data = new std::string(
+              payload->name + std::string(1, '\x1F') +
+              std::to_string(source) + " " + std::to_string(source + delta));
+          g_object_set_data_full(G_OBJECT(move_button), "workflow-move-step",
+                                 move_data, [](gpointer p) {
+            delete static_cast<std::string*>(p);
+          });
+          g_signal_connect(move_button, "clicked",
+                           G_CALLBACK((+[](GtkButton*, gpointer data) {
+            workflow_action("workflow.move", *static_cast<std::string*>(data));
+          })), move_data);
+          gtk_widget_set_sensitive(move_button,
+                                   source > 0 && source + delta > 0);
+          gtk_box_append(GTK_BOX(line), move_button);
+        }
         auto* remove = gtk_button_new_with_label("Remove");
         auto* action = new std::pair<std::string, std::string>(
             payload->name, std::move(index));

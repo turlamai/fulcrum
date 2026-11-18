@@ -19,6 +19,8 @@
          workflow-create!
          workflow-add-step!
          workflow-remove-step!
+         workflow-edit-step!
+         workflow-move-step!
          workflow-delete!
          workflow-execute!
          workflow-last-trace
@@ -253,6 +255,7 @@
        (raise-user-error 'workflow "maximum 20 steps; copy/paste must be the final step"))
      (define w (workflow slug updated))
      (write-next! store (hash-set current slug w))
+     (hash-remove! (workflow-store-traces store) slug)
      w)))
 
 (define (workflow-remove-step! store name index)
@@ -273,6 +276,63 @@
          step))
      (define w (workflow slug updated))
      (write-next! store (hash-set current slug w))
+     (hash-remove! (workflow-store-traces store) slug)
+     w)))
+
+(define (check-step-index! steps index)
+  (unless (and (exact-positive-integer? index)
+               (<= index (length steps)))
+    (raise-user-error 'workflow "step index is out of bounds")))
+
+(define (workflow-edit-step! store name index description)
+  (define new-step (parse-workflow-step description))
+  (define slug (normalize-name name))
+  (call-with-semaphore
+   (workflow-store-lock store)
+   (lambda ()
+     (define current (workflow-store-items store))
+     (define old (hash-ref current slug #f))
+     (unless old (raise-user-error 'workflow "no such workflow"))
+     (define steps (workflow-steps old))
+     (check-step-index! steps index)
+     (define updated
+       (for/list ([step (in-list steps)]
+                  [i (in-naturals 1)])
+         (if (= i index) new-step step)))
+     (unless (valid-steps? updated)
+       (raise-user-error 'workflow
+                         "copy/paste must remain the final step"))
+     (define w (workflow slug updated))
+     (write-next! store (hash-set current slug w))
+     (hash-remove! (workflow-store-traces store) slug)
+     w)))
+
+(define (workflow-move-step! store name from-index to-index)
+  (define slug (normalize-name name))
+  (call-with-semaphore
+   (workflow-store-lock store)
+   (lambda ()
+     (define current (workflow-store-items store))
+     (define old (hash-ref current slug #f))
+     (unless old (raise-user-error 'workflow "no such workflow"))
+     (define steps (workflow-steps old))
+     (check-step-index! steps from-index)
+     (check-step-index! steps to-index)
+     (define moved (list-ref steps (sub1 from-index)))
+     (define remaining
+       (append (take steps (sub1 from-index))
+               (drop steps from-index)))
+     (define updated
+       (append (take remaining (sub1 to-index))
+               (list moved)
+               (drop remaining (sub1 to-index))))
+     (unless (valid-steps? updated)
+       (raise-user-error 'workflow
+                         "copy/paste must remain the final step"))
+     (define w (workflow slug updated))
+     (unless (= from-index to-index)
+       (write-next! store (hash-set current slug w))
+       (hash-remove! (workflow-store-traces store) slug))
      w)))
 
 (define (workflow-delete! store name)

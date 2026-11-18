@@ -158,6 +158,73 @@
                     (workflow-execute! store "limit" "one\ntwo"))
                    "ok"))))
 
+
+(test-case "edit and reorder are atomic, persistent and invalidate old traces"
+  (with-store
+   (lambda (store path)
+     (workflow-create! store "pipeline")
+     (for ([step '("prefix A" "suffix B" "trim" "copy")])
+       (workflow-add-step! store "pipeline" step))
+     (define original (workflow-execute! store "pipeline" "x"))
+     (check-equal? (workflow-outcome-text original) "AxB")
+     (check-equal? (length (workflow-last-trace store "pipeline")) 4)
+     (workflow-move-step! store "pipeline" 1 2)
+     (check-equal? (workflow-last-trace store "pipeline") '())
+     (check-equal?
+      (map workflow-step-label (workflow-steps (workflow-ref store "pipeline")))
+      '("suffix B" "prefix A" "trim" "copy"))
+     (workflow-edit-step! store "pipeline" 2 "prefix Z")
+     (define updated (workflow-execute! store "pipeline" "x"))
+     (check-equal? (workflow-outcome-text updated) "ZxB")
+     (check-equal? (workflow-outcome-action updated) 'copy)
+     (check-equal? (length (workflow-last-trace store "pipeline")) 4)
+     (define reopened (make-workflow-store path))
+     (check-equal?
+      (map workflow-step-label (workflow-steps (workflow-ref reopened "pipeline")))
+      '("suffix B" "prefix Z" "trim" "copy"))
+     (workflow-remove-step! store "pipeline" 3)
+     (check-equal? (workflow-last-trace store "pipeline") '()))))
+
+(test-case "terminal copy/paste invariant holds for edit and move failures"
+  (with-store
+   (lambda (store path)
+     (workflow-create! store "strict")
+     (for ([step '("trim" "upper" "copy")])
+       (workflow-add-step! store "strict" step))
+     (define initial (file->string path))
+     (for ([attempt (list
+                     (lambda () (workflow-edit-step! store "strict" 1 "paste"))
+                     (lambda () (workflow-move-step! store "strict" 3 1))
+                     (lambda () (workflow-move-step! store "strict" 1 3))
+                     (lambda () (workflow-edit-step! store "strict" 4 "trim"))
+                     (lambda () (workflow-move-step! store "strict" 0 1))
+                     (lambda () (workflow-move-step! store "strict" 1 9))
+                     (lambda () (workflow-edit-step! store "strict" 2 "shell uname")))])
+       (check-exn exn:fail? attempt)
+       (check-equal? (file->string path) initial))
+     ;; A change to the terminal step is allowed at its only valid position.
+     (workflow-edit-step! store "strict" 3 "paste")
+     (check-equal? (workflow-outcome-action
+                    (workflow-execute! store "strict" "a")) 'paste)
+     (workflow-edit-step! store "strict" 3 "copy")
+     (check-equal? (workflow-outcome-action
+                    (workflow-execute! store "strict" "a")) 'copy))))
+
+(test-case "no-op move retains trace and disk state, edit clears trace"
+  (with-store
+   (lambda (store path)
+     (workflow-create! store "demo")
+     (workflow-add-step! store "demo" "trim")
+     (workflow-execute! store "demo" " value ")
+     (check-equal? (length (workflow-last-trace store "demo")) 1)
+     ;; A no-op must not rewrite the atomic store or invalidate the trace.
+     (define persisted (file->string path))
+     (workflow-move-step! store "demo" 1 1)
+     (check-equal? (file->string path) persisted)
+     (check-equal? (length (workflow-last-trace store "demo")) 1)
+     (workflow-edit-step! store "demo" 1 "upper")
+     (check-equal? (workflow-last-trace store "demo") '()))))
+
 (test-case "malformed persisted store is read-only, not overwritten"
   (with-store
    (lambda (_store path)

@@ -556,6 +556,9 @@ void SettingsWindow::LoadWorkflowList() {
         entry.Click([weak, name](auto const&, auto const&) {
           if (auto w = weak.get()) {
             w->workflow_selected_ = name;
+            w->workflow_edit_index_ = 0;
+            w->WorkflowStepBox().Text(L"");
+            w->WorkflowAddButton().Content(winrt::box_value(L"Add step"));
             w->workflow_step_page_ = 1;
             w->workflow_trace_page_ = 1;
             w->WorkflowDeleteConfirm().IsChecked(
@@ -624,12 +627,39 @@ void SettingsWindow::LoadWorkflowDetail() {
         text.Text(to_wide(row[1] + ": " + row[2]));
         text.TextWrapping(mx::TextWrapping::Wrap);
         text.VerticalAlignment(mx::VerticalAlignment::Center);
-        text.Width(280);
+        text.Width(185);
         line.Children().Append(text);
         std::string const title = row[1];
         auto const pos = title.find_last_of(' ');
         std::string const index = pos == std::string::npos
                                       ? "" : title.substr(pos + 1);
+        mxc::Button edit;
+        edit.Content(winrt::box_value(L"Edit"));
+        edit.Click([weak, index, description = row[2]](auto const&, auto const&) {
+          if (auto w = weak.get()) {
+            try { w->workflow_edit_index_ = std::stoi(index); }
+            catch (...) { w->WorkflowStatusText().Text(L"Invalid step index."); return; }
+            w->WorkflowStepBox().Text(to_wide(description));
+            w->WorkflowAddButton().Content(winrt::box_value(L"Save step"));
+            w->WorkflowStatusText().Text(L"Edit the expression, then Save step.");
+          }
+        });
+        line.Children().Append(edit);
+        for (int delta : {-1, 1}) {
+          mxc::Button move;
+          move.Content(winrt::box_value(delta < 0 ? L"↑" : L"↓"));
+          move.Click([weak, name, index, delta](auto const&, auto const&) {
+            if (auto w = weak.get()) {
+              int from = 0;
+              try { from = std::stoi(index); } catch (...) { return; }
+              if (from + delta < 1) return;
+              w->WorkflowCommand("workflow.move",
+                  name + std::string(1, '\x1F') +
+                  std::to_string(from) + " " + std::to_string(from + delta));
+            }
+          });
+          line.Children().Append(move);
+        }
         mxc::Button remove;
         remove.Content(winrt::box_value(L"Remove"));
         remove.Click([weak, name, index](auto const&, auto const&) {
@@ -743,9 +773,25 @@ void SettingsWindow::WorkflowAdd_Click(
   if (workflow_selected_.empty()) return;
   auto step = trimmed(to_utf8(std::wstring(WorkflowStepBox().Text())));
   if (step.empty()) { WorkflowStatusText().Text(L"Enter a step expression."); return; }
-  WorkflowCommand("workflow.add",
-                  workflow_selected_ + std::string(1, '\x1F') + step);
+  if (workflow_edit_index_ > 0) {
+    WorkflowCommand("workflow.edit",
+                    workflow_selected_ + std::string(1, '\x1F') +
+                    std::to_string(workflow_edit_index_) + " " + step);
+    workflow_edit_index_ = 0;
+    WorkflowAddButton().Content(winrt::box_value(L"Add step"));
+  } else {
+    WorkflowCommand("workflow.add",
+                    workflow_selected_ + std::string(1, '\x1F') + step);
+  }
 }
+void SettingsWindow::WorkflowCancelEdit_Click(
+    winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
+  workflow_edit_index_ = 0;
+  WorkflowStepBox().Text(L"");
+  WorkflowAddButton().Content(winrt::box_value(L"Add step"));
+  WorkflowStatusText().Text(L"Step editing cancelled.");
+}
+
 void SettingsWindow::WorkflowDry_Click(
     winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
   if (workflow_selected_.empty()) return;

@@ -69,6 +69,8 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
                               Microsoft::UI::Xaml::RoutedEventArgs const&);
   void WorkflowAdd_Click(winrt::Windows::Foundation::IInspectable const&,
                          Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void WorkflowCancelEdit_Click(winrt::Windows::Foundation::IInspectable const&,
+                                Microsoft::UI::Xaml::RoutedEventArgs const&);
   void WorkflowDry_Click(winrt::Windows::Foundation::IInspectable const&,
                          Microsoft::UI::Xaml::RoutedEventArgs const&);
   void WorkflowRun_Click(winrt::Windows::Foundation::IInspectable const&,
@@ -119,6 +121,7 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   int workflow_step_page_{1};
   int workflow_trace_page_{1};
   bool workflow_copy_safe_{false};
+  int workflow_edit_index_{0};
   // Update-card strings, refreshed by ApplyLocalization so the async
   // status lines read the active language at paint time.
   std::wstring update_checking_;
