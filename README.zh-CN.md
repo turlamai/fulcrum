@@ -1,5 +1,7 @@
 # Fulcrum（支点）
 
+**产品：**[产品主页](https://fulcrum.jrtx.site/) · **支持：**[问题与反馈](https://github.com/turlamai/fulcrum/issues) · [当前交付策略](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.zh-CN.md)
+
 一次按键，直达一切。macOS、Windows、Linux 三平台的键盘优先启动器——一个 Racket 大脑，三套第一方原生 UI，全程无 WebView。
 
 [![CI](https://github.com/turlamai/fulcrum/actions/workflows/ci.yml/badge.svg)](https://github.com/turlamai/fulcrum/actions/workflows/ci.yml) ![Windows](https://img.shields.io/badge/Windows-WinUI_3-0078D4?logo=windows11&logoColor=white) ![macOS](https://img.shields.io/badge/macOS-SwiftUI-000000?logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-GTK4-F9A03C?logo=linux&logoColor=white) [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE) [![Version](https://img.shields.io/github/v/release/turlamai/fulcrum?color=C15F3C&label=version)](https://github.com/turlamai/fulcrum/releases/latest)
