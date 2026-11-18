@@ -755,7 +755,21 @@ final class LauncherModel: ObservableObject {
     @Published var rows: [ResultRow] = []
     @Published var selection: String?
     @Published var ready = false
-    @Published var status = I18nService.shared.t("startingStatus")
+    // Every new status cancels the previous expiry. Routine notifications and
+    // search failures cannot leave a stale status line indefinitely.
+    @Published var status = I18nService.shared.t("startingStatus") {
+        didSet {
+            statusExpiryTask?.cancel()
+            guard ready, status != t("readyStatusMac") else { return }
+            let message = status
+            statusExpiryTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard !Task.isCancelled,
+                      let self, self.ready, self.status == message else { return }
+                self.status = self.t("readyStatusMac")
+            }
+        }
+    }
     /// Drives a SwiftUI repaint when the backend-owned language changes.
     @Published private(set) var language = "en"
     /// ⌘K mode: rows currently holds secondary actions for `actionParent`.
@@ -788,6 +802,16 @@ final class LauncherModel: ObservableObject {
     private var backend: EmbeddedRacketBackend?
     private var searchGeneration = 0
     private var searchTask: Task<Void, Never>?
+    private var statusExpiryTask: Task<Void, Never>?
+
+    /// The backend cancels obsolete in-flight search requests by design.
+    /// Cancellation is not an actionable error and must not mask notify text.
+    private static func isExpectedSearchCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        let message = String(describing: error).lowercased()
+        return message.contains("request cancelled")
+            || message.contains("request canceled")
+    }
 
     func setPersistentStatus(_ text: String) {
         status = text
@@ -1138,6 +1162,10 @@ final class LauncherModel: ObservableObject {
                     }
                 }
             } catch {
+                // Discard superseded/cancelled requests even if the engine
+                // completed cancellation before a newer query was issued.
+                guard !Task.isCancelled,
+                      !Self.isExpectedSearchCancellation(error) else { return }
                 await MainActor.run { [weak self] in
                     guard generation == self?.searchGeneration else { return }
                     self?.status = "Search error: \(error)"
