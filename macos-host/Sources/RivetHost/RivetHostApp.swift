@@ -459,7 +459,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let screen = NSScreen.screens.first { $0.frame.contains(pointer) }
             ?? NSScreen.main ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
-        let size = panel.frame.size
+        // AppKit sizes in points, so mixed backing scales need no manual DPI
+        // math; but a small secondary display must still clamp the panel the
+        // way Windows/X11 clamp to the work area (design v2: 680x640).
+        let size = NSSize(width: min(680, visible.width),
+                          height: min(640, visible.height))
+        if panel.frame.size != size {
+            panel.setContentSize(size)
+        }
         let x = max(visible.minX, visible.midX - size.width / 2)
         // AppKit's origin is bottom-left. Place the panel a quarter of the
         // free vertical space below the work area's top, like Windows/X11.

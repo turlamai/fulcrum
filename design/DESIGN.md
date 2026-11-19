@@ -95,6 +95,18 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 - **Linux 片段自动展开**：设置项展示但置灰（`settings.hint.expansion.linux`），保持三端功能地图一致。
 - **Start at login**：三端均为本机原生机制（macOS Login Items / Windows 注册表 Run / Linux autostart desktop），不进同步 schema；错误文案按平台键（`settings.login.failed.*`）。
 
+### 启动窗几何与多显示器（2026-11-19 收口）
+
+统一层：启动窗设计尺寸 680×640（DIP/point/应用像素），结果区滚动、窗体不随结果伸缩；
+每次唤醒跟随**指针所在显示器**，水平居中、垂直置于工作区上方四分之一处，并按该显示器
+工作区钳制（小屏不溢出）。三宿主都不得用主显示器工作区代替指针显示器。
+
+| 平台 | 尺寸换算 | 混合 DPI/分辨率 |
+|---|---|---|
+| macOS | AppKit point，天然与 backing scale 无关 | 系统自动按屏幕缩放；唤醒时按目标屏 visibleFrame 钳制 |
+| Windows | PerMonitorV2；物理像素 = DIP × 目标显示器 DPI/96，每次唤醒重算 | 跨显示器触发 `WM_DPICHANGED`：先让 WinUI 更新渲染缩放，再立即重算 monitor-aware 几何，禁止系统建议矩形二次缩放（否则首次跨屏唤醒尺寸错误） |
+| Linux | GTK 应用像素 × 显示缩放因子 | X11 无逐显示器缩放（工具包限制，全局 Xft.dpi），按指针显示器工作区钳制位置与尺寸；Wayland 由合成器负责放置与逐 surface 缩放，客户端不控制坐标 |
+
 
 ## 2026-11-15 · 原型交互补齐
 

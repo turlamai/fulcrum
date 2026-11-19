@@ -4126,9 +4126,10 @@ void place_panel_on_pointer_monitor(GtkWindow* panel) {
 
   GdkRectangle usable = usable_x11_monitor_area(xdisplay, root, geometry);
   // Reset the preferred dimensions on each summon. Do not strand a tiny
-  // window after switching from a small monitor to a larger one.
+  // window after switching from a small monitor to a larger one. The clamp
+  // uses the design v2 geometry (680x640), not the pre-v2 460 height.
   int const width = std::min(680, usable.width);
-  int const height = std::min(460, usable.height);
+  int const height = std::min(640, usable.height);
   gtk_window_set_default_size(panel, width, height);
   PanelPlacement pos = upper_quarter_placement(usable, width, height);
 

@@ -1318,6 +1318,21 @@ void MainWindow::FinishNativeSetup() {
                           self->HandleHotkeyMessage(msg, wParam, lParam)) {
                         return 0;
                       }
+                      if (msg == WM_DPICHANGED && self != nullptr) {
+                        // Crossing monitors fires WM_DPICHANGED *during*
+                        // position_launcher's SetWindowPos. WinUI then applies
+                        // the system suggested rect — the freshly set physical
+                        // size scaled by the DPI ratio a second time — so the
+                        // first summon on a differently-scaled display came up
+                        // tiny (or huge) and only the second summon, with no
+                        // monitor change left, looked right. Let WinUI update
+                        // its rasterization scale, then re-assert the
+                        // monitor-aware geometry (issue: mixed-DPI desks).
+                        LRESULT const result =
+                            DefSubclassProc(hWnd, msg, wParam, lParam);
+                        position_launcher(hWnd);
+                        return result;
+                      }
                       if (msg == WM_CLIPBOARDUPDATE && self != nullptr) {
                         self->OnClipboardUpdate();
                       }
