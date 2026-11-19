@@ -23,7 +23,7 @@ Filename search is local by default. Content search is a separate, explicit
 mode because it has different latency, privacy and indexing costs. Indexed
 names and paths never enter Fulcrum sync or telemetry.
 
-## Current slice (schema 4)
+## Current slice (schema 5)
 
 `file-index.sqlite3` is a rebuildable local B-tree of file names and paths.
 The first `find` query starts a cancellable background inventory of Desktop,
@@ -32,6 +32,14 @@ It writes bounded batches and tags every row with a root and generation; only
 a successfully completed root scan prunes unseen paths, so cancellation or an
 I/O failure cannot turn a partial scan into mass deletion. Dependency/cache
 trees are excluded. Results returned by a platform search also seed the index.
+
+Schema 5 stores one canonical Windows path spelling: drive and UNC paths
+always use backslashes, so a SYSTEMINDEX `file:` URL and the catalog scan
+agree on one row per file (schema 4 kept both spellings as duplicate rows
+that reconcile could never prune). The version bump rebuilds the cache once.
+Watcher reconciles match roots on separator boundaries, refuse directories
+inside the walker's ignored trees, and adopt or prune platform-learned
+(`root_id 0`) rows under the changed directory.
 
 Exact and filename-prefix queries are merged with fresh platform candidates
 and ranked by the common Racket ranker. Cached candidates rescue a query when

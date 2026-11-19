@@ -4,7 +4,9 @@
 #include "GeneratedBackend.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -58,6 +60,9 @@ public:
   std::mutex batch_mutex_;
   std::set<std::wstring> pending_dirs_;
   std::deque<std::wstring> batch_;
+  // Delete-pending re-check ladder (dir -> due timestamps, ms). Owned by
+  // the reconcile thread alone; no lock needed.
+  std::map<std::wstring, std::vector<std::int64_t>> recheck_;
   HANDLE batch_semaphore_{nullptr};
   std::atomic<bool> stopping_{false};
   std::thread reconcile_thread_;

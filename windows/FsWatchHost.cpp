@@ -3,6 +3,10 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+
 namespace fulcrum::windows {
 namespace {
 
@@ -13,14 +17,21 @@ constexpr DWORD kReadBufferSize = 64 * 1024;
 
 // FILE_NOTIFY_INFORMATION is variable-length; walk it and collect the
 // changed directory for every event (the file's parent directory).
+// All five actions matter: REMOVED is the only notification a pure
+// deletion produces (ignoring it left deleted files searchable until an
+// unrelated change touched the directory), and a cross-directory move
+// delivers RENAMED_NEW_NAME to the destination — the old-name half only
+// reconciles the source.
 void CollectDirectories(std::byte const* buffer, DWORD bytes,
                         std::wstring const& root,
                         std::set<std::wstring>& into) {
   auto const* entry = reinterpret_cast<FILE_NOTIFY_INFORMATION const*>(buffer);
   for (;;) {
     if (entry->Action == FILE_ACTION_ADDED ||
+        entry->Action == FILE_ACTION_REMOVED ||
         entry->Action == FILE_ACTION_MODIFIED ||
-        entry->Action == FILE_ACTION_RENAMED_OLD_NAME) {
+        entry->Action == FILE_ACTION_RENAMED_OLD_NAME ||
+        entry->Action == FILE_ACTION_RENAMED_NEW_NAME) {
       auto const length = entry->FileNameLength / sizeof(WCHAR);
       std::wstring relative(entry->FileName, length);
       std::wstring directory = root;
@@ -194,11 +205,53 @@ void FsWatchHost::EnqueueDirectory(std::wstring const& directory) {
 
 void FsWatchHost::ReconcileLoop() {
   // One reconcile worker: pops directories, dedupes, forwards each to the
-  // backend's fs-reconcile RPC on its own short thread (the RPC can take
-  // hundreds of milliseconds; the worker keeps draining meanwhile).
+  // backend's fs-reconcile RPC (the RPC can take hundreds of milliseconds;
+  // the worker keeps draining meanwhile).
+  using clock = std::chrono::steady_clock;
+  auto const now_ms = [] {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               clock::now().time_since_epoch())
+        .count();
+  };
+  auto const reconcile = [this](std::wstring const& directory) {
+    if (stopping_.load(std::memory_order_acquire) || !api_) {
+      return;
+    }
+    try {
+      (void)api_->fs_reconcile(Utf8FromWide(directory)).get();
+    } catch (...) {
+      // A reconcile failure (backend busy, transient SQLite lock) is
+      // healed by the next change in that directory; never surface it.
+    }
+  };
   while (!stopping_.load(std::memory_order_acquire)) {
-    if (::WaitForSingleObject(batch_semaphore_, 500) != WAIT_OBJECT_0) {
-      continue;
+    // A timeout is not a skip: due delete-pending re-checks below must
+    // fire even when no fresh event batch arrives.
+    (void)::WaitForSingleObject(batch_semaphore_, 500);
+    // Due deferred re-checks first. A Windows delete notification can
+    // fire while the file still sits in delete-pending state (antivirus
+    // or an indexer holds a handle): the immediate reconcile still lists
+    // it, and the vanish after the handle releases carries NO second
+    // notification. The same 2/4/6/8 s ladder the backend's Racket
+    // flusher uses spans that window.
+    auto const now = now_ms();
+    for (auto it = recheck_.begin(); it != recheck_.end();) {
+      auto& deadlines = it->second;
+      auto const due = static_cast<std::size_t>(
+          std::count_if(deadlines.begin(), deadlines.end(),
+                        [now](std::int64_t ms) { return ms <= now; }));
+      if (due == 0) {
+        ++it;
+        continue;
+      }
+      reconcile(it->first);
+      deadlines.erase(deadlines.begin(),
+                      deadlines.begin() + static_cast<std::ptrdiff_t>(due));
+      if (deadlines.empty()) {
+        it = recheck_.erase(it);
+      } else {
+        ++it;
+      }
     }
     for (;;) {
       std::wstring directory;
@@ -209,16 +262,16 @@ void FsWatchHost::ReconcileLoop() {
         }
         directory = std::move(batch_.front());
         batch_.pop_front();
+        // Release the dedupe slot as the directory leaves the batch: a
+        // change arriving during (or after) its reconcile must enqueue
+        // again. Holding the slot forever reconciled every directory at
+        // most once per session and silently dropped every later change.
+        pending_dirs_.erase(directory);
       }
-      if (stopping_.load(std::memory_order_acquire) || !api_) {
-        continue;
-      }
-      try {
-        (void)api_->fs_reconcile(Utf8FromWide(directory)).get();
-      } catch (...) {
-        // A reconcile failure (backend busy, transient SQLite lock) is
-        // healed by the next change in that directory; never surface it.
-      }
+      reconcile(directory);
+      auto const scheduled = now_ms();
+      recheck_[directory] = {scheduled + 2000, scheduled + 4000,
+                             scheduled + 6000, scheduled + 8000};
     }
   }
 }

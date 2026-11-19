@@ -29,26 +29,40 @@
   ;; The limit holds.
   (check-equal? (length (parse-paths "/a/1\n/a/2\n/a/3\n/a/4\n" 3)) 3))
 
-(test-case "Windows Search file: URLs decode to plain paths"
+(test-case "Windows Search file: URLs decode to canonical native paths"
+  ;; SYSTEMINDEX emits forward-slash file: URLs; the catalog scan stores
+  ;; backslashes. One canonical spelling keeps a file from occupying two
+  ;; index rows (duplicate results reconcile could never prune).
   (define parsed
     (parse-paths
      "file:///C:/Users/me/Reports/q3.md\nfile:///C:/Users/me/My%20Notes.md\n"))
   (check-equal? (length parsed) 2)
   (check-equal? (car (car parsed)) "q3.md")
-  (check-equal? (cdr (car parsed)) "C:/Users/me/Reports/q3.md")
-  (check-equal? (cdr (cadr parsed)) "C:/Users/me/My Notes.md"))
+  (check-equal? (cdr (car parsed)) "C:\\Users\\me\\Reports\\q3.md")
+  (check-equal? (cdr (cadr parsed)) "C:\\Users\\me\\My Notes.md"))
 
 
 (test-case "file URL transport keeps arbitrary Windows volumes and UNC authorities"
   ;; Volume labels must never be a fixed list of C:/D:/E:. Indexed
   ;; Windows Search can emit another assigned letter or a network share.
+  ;; Both arrive in the native backslash spelling.
   (check-equal?
    (parse-paths
     "file:///Z:/Work/report.txt\nfile:///Q:/Users/%E6%96%87%E6%A1%A3.txt\nfile://storage.example/Team%20Space/report.txt\n"
     8)
-   '(("report.txt" . "Z:/Work/report.txt")
-     ("文档.txt" . "Q:/Users/文档.txt")
-     ("report.txt" . "//storage.example/Team Space/report.txt"))))
+   '(("report.txt" . "Z:\\Work\\report.txt")
+     ("文档.txt" . "Q:\\Users\\文档.txt")
+     ("report.txt" . "\\\\storage.example\\Team Space\\report.txt"))))
+
+(test-case "two spellings or cases of one Windows path collapse to one hit"
+  (check-equal?
+   (parse-paths
+    "file:///C:/Work/report.txt\nC:\\Work\\report.txt\nc:\\work\\REPORT.txt\n" 8)
+   '(("report.txt" . "C:\\Work\\report.txt")))
+  ;; POSIX paths stay case-sensitive: /a/Report and /a/report are two files.
+  (check-equal?
+   (length (parse-paths "/a/Report.txt\n/a/report.txt\n" 8))
+   2))
 
 (test-case "file URL transport retains POSIX absolute paths"
   (check-equal?
@@ -116,7 +130,7 @@
   (check-equal? (cadr captured) "-NoProfile")
   (check-equal? (file-search-result-status result) 'ok)
   (check-equal? (file-search-result-hits result)
-                '(("obrien.txt" . "C:/Users/me/obrien.txt")))
+                '(("obrien.txt" . "C:\\Users\\me\\obrien.txt")))
   (define script (cadddr captured))
   ;; Local known folders precede the optional, sometimes-hung OLE DB index.
   (check-true (string-contains? script "GetFolderPath('MyDocuments')"))
@@ -446,6 +460,45 @@
       (check-equal? (file-search-result-status offline) 'ok)
       (check-equal? (file-search-result-hits offline)
                     '(("report.md" . "/home/me/report.md"))))
+    (lambda () (delete-directory/files dir))))
+
+(test-case "platform and catalog spellings of one file merge to a single row"
+  ;; The scan stores native backslashes with on-disk case; SYSTEMINDEX can
+  ;; return the same file as a lower-case forward-slash file: URL. Before
+  ;; normalization these were two index rows and two result rows for one
+  ;; file, and reconcile's backslash prefixes never matched the URL row.
+  (define dir (make-temporary-file "fulcrum-merge-dedupe-~a" 'directory))
+  (define index-path (build-path dir "index.sqlite3"))
+  (dynamic-wind
+    void
+    (lambda ()
+      (define (windows-runner output)
+        (lambda (_program _args #:timeout-ms [_timeout-ms 9000]
+                              #:cancel-evt [_cancel-evt never-evt])
+          output))
+      (define powershell
+        (lambda (program) (and (string=? program "powershell.exe") program)))
+      ;; The catalog scan seeds the native spelling.
+      (file-search/status "report" 8 #:os 'windows
+                          #:resolve powershell
+                          #:run (windows-runner "C:\\Work\\report.md\r\n")
+                          #:index-path index-path)
+      ;; The platform stage later returns the same file as a file: URL.
+      (define merged
+        (file-search/status "report" 8 #:os 'windows
+                            #:resolve powershell
+                            #:run (windows-runner "file:///c:/work/report.md\n")
+                            #:index-path index-path))
+      (check-equal? (file-search-result-status merged) 'ok)
+      (check-equal? (file-search-result-hits merged)
+                    '(("report.md" . "C:\\Work\\report.md")))
+      ;; The index answers with one row too, not one per spelling.
+      (check-equal? (length (file-search-result-hits
+                             (file-search/status
+                              "report" 8 #:os 'windows
+                              #:resolve (lambda (_) #f)
+                              #:index-path index-path)))
+                    1))
     (lambda () (delete-directory/files dir))))
 
 (test-case "an explicit find query leads with file rows, fuzzy matches follow"

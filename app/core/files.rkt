@@ -18,6 +18,7 @@
          net/uri-codec
          "file-index.rkt"
          "fuzzy.rkt"
+         "path-normalize.rkt"
          "proc.rkt"
          "search-normalize.rkt")
 
@@ -135,8 +136,15 @@
                                          (path-like? s)))
                                   (map clean-output-line
                                        (string-split output "\n"))))])
-          (define path (file-url->path line))
-          (cons (portable-file-name path) path)))
+          ;; One canonical spelling per file: SYSTEMINDEX file: URLs decode
+          ;; to forward slashes while the catalog scan stores backslashes;
+          ;; without normalization the same file seeds a second index row
+          ;; and paints twice. Dedup by the case-folded Windows identity so
+          ;; two spellings (or two cases) of one path collapse to one hit.
+          (define path (normalize-file-path (file-url->path line)))
+          (cons (portable-file-name path) path))
+        string=?
+        #:key (lambda (hit) (file-path-key (cdr hit))))
        limit)))
 
 (define (take-min xs n)
@@ -234,12 +242,16 @@
   ;; platform stage to fill the gaps and seed the index.
   (define skip-platform? (and catalog-ready? (pair? cached)))
   (if (or (false? backend) skip-platform?)
-      (if (null? cached)
-          (file-search-result '()
-                              (if cache-error? 'index-error 'unavailable)
-                              #f)
-          (file-search-result (rank-file-hits query cached limit)
-                              'ok 'fulcrum-index))
+      (begin
+        ;; No platform stage runs on this branch; a claimed handle must not
+        ;; linger in the box for the next same-query claim to post into.
+        (when cancel (release-file-search! cancel))
+        (if (null? cached)
+            (file-search-result '()
+                                (if cache-error? 'index-error 'unavailable)
+                                #f)
+            (file-search-result (rank-file-hits query cached limit)
+                                'ok 'fulcrum-index)))
       (let-values ([(program args)
                     (case backend
                       [(mdfind) (values "mdfind" (list "-name" query))]
@@ -287,10 +299,13 @@
              (parse-paths output file-search-candidate-limit))
            (when (and index-path (pair? platform-hits))
              (file-index-upsert-hits! index-path platform-hits))
+           ;; Cached rows first: the walker's on-disk spelling wins the
+           ;; dedupe over a platform URL whose case may differ.
            (define candidates
-             (remove-duplicates (append platform-hits cached)
+             (remove-duplicates (append cached platform-hits)
                                 string=?
-                                #:key cdr))
+                                #:key (lambda (hit)
+                                        (file-path-key (cdr hit)))))
            (file-search-result
             (rank-file-hits
              query

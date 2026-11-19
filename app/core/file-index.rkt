@@ -14,6 +14,7 @@
          racket/path
          racket/set
          racket/string
+         "path-normalize.rkt"
          "search-normalize.rkt")
 
 (provide file-index-count
@@ -31,7 +32,13 @@
 ;; Consumers can still use file-index-search for the historical list API.
 (struct file-index-query (hits status) #:transparent)
 
-(define schema-version 4)
+;; Schema 5 stores one canonical Windows path spelling (backslashes).
+;; Schema 4 let SYSTEMINDEX's forward-slash file: URLs seed a second row
+;; for a file the scan already held in backslash form — duplicate results
+;; that reconcile's prefix scans could never prune. The index is an
+;; explicitly rebuildable cache, so the version bump rebuilds it once and
+;; clears the legacy mixed-spelling rows.
+(define schema-version 5)
 (define max-candidates 256)
 
 (define (fold text)
@@ -190,7 +197,7 @@
       (lambda ()
         (for ([hit (in-list hits)] #:when (valid-hit? hit))
           (define name (car hit))
-          (define full-path (cdr hit))
+          (define full-path (normalize-file-path (cdr hit)))
           (query-exec connection upsert
                       full-path name (fold name))
           (insert-pinyin-terms! connection insert-pinyin full-path name))))
@@ -224,7 +231,7 @@
       (lambda ()
         (for ([hit (in-list hits)] #:when (valid-hit? hit))
           (define name (car hit))
-          (define full-path (cdr hit))
+          (define full-path (normalize-file-path (cdr hit)))
           (query-exec connection upsert
                       full-path name (fold name) rid generation)
           (insert-pinyin-terms! connection insert-pinyin full-path name))))
@@ -239,9 +246,15 @@
    path #f
    (lambda (connection)
      (define rid (root-id connection root))
+     ;; A drive-root directory already ends in a separator ("C:\");
+     ;; appending another builds a double-separator prefix that never
+     ;; matches the single-separator paths stored in the index.
+     (define dir-string (path->string (simple-form-path dir)))
      (define prefix
-       (string-append (path->string (simple-form-path dir))
-                      sep-string))
+       (if (or (string-suffix? dir-string "\\")
+               (string-suffix? dir-string "/"))
+           dir-string
+           (string-append dir-string sep-string)))
      (define prefix-len (string-length prefix))
      (define fresh-children
        (for/set ([child (in-list child-dirs)])
@@ -261,15 +274,19 @@
           (prepare connection
                    "INSERT OR IGNORE INTO file_pinyin(path,term) VALUES(?,?)"))
         (for ([hit (in-list file-hits)] #:when (valid-hit? hit))
-          (define full-path (cdr hit))
+          (define full-path (normalize-file-path (cdr hit)))
           (query-exec connection upsert
                       full-path (car hit) (fold (car hit)) rid generation)
           (insert-pinyin-terms! connection insert-pinyin full-path (car hit)))
         ;; Direct children with indexed rows under this directory.
+        ;; Platform-learned rows (root_id 0, seeded from OS search results)
+        ;; are included: a watcher reconcile is the only chance to prune a
+        ;; SYSTEMINDEX-learned file that was later deleted, and re-upserting
+        ;; a still-present one adopts it into the scanned root.
         (define indexed-children
           (for/set ([row (in-query
                           connection
-                          "SELECT path FROM files WHERE root_id = ? AND substr(path,1,?) = ?"
+                          "SELECT path FROM files WHERE root_id IN (0, ?) AND substr(path,1,?) = ?"
                           rid prefix-len prefix)])
             (define rest (substring row prefix-len))
             (path->string
@@ -288,7 +305,7 @@
         ;; for whole test budgets on CI.
         (define fresh-files
           (for/set ([hit (in-list file-hits)] #:when (valid-hit? hit))
-            (cdr hit)))
+            (normalize-file-path (cdr hit))))
         (when (getenv "FULCRUM_INDEX_DEBUG")
           (eprintf "[idx-debug] dir=~s prefix=~s rows=~a fresh-files=~a fresh-children=~a\n"
                    dir prefix (set-count indexed-children)
@@ -309,10 +326,10 @@
           (define child-prefix-len (string-length child-prefix))
           (for ([row (in-query
                       connection
-                      "SELECT path FROM files WHERE root_id = ? AND substr(path,1,?) = ?"
+                      "SELECT path FROM files WHERE root_id IN (0, ?) AND substr(path,1,?) = ?"
                       rid child-prefix-len child-prefix)])
              (query-exec connection "DELETE FROM files WHERE path = ?" row))
-           (query-exec connection "DELETE FROM files WHERE root_id = ? AND path = ?"
+           (query-exec connection "DELETE FROM files WHERE root_id IN (0, ?) AND path = ?"
                        rid (path->string (simple-form-path child))))
      #t)))))
 (define (file-index-finish-scan! path root generation)
@@ -378,7 +395,7 @@
                      (map row->hit prefix-rows)
                      (map row->hit pinyin-rows))
              string=?
-             #:key cdr))
+             #:key (lambda (hit) (file-path-key (cdr hit)))))
           (take hits (min limit (length hits)))))])
        (if hits
            (file-index-query hits 'ok)
@@ -395,18 +412,21 @@
       connection
       (lambda ()
         (for ([full-path (in-list paths)] #:when (string? full-path))
-          (query-exec connection "DELETE FROM files WHERE path = ?" full-path))))
+          (query-exec connection "DELETE FROM files WHERE path = ?"
+                      (normalize-file-path full-path)))))
      #t)))
 
 (define (file-index-rename! path old-path new-path)
+  (define old-normalized (normalize-file-path old-path))
+  (define new-normalized (normalize-file-path new-path))
   (call-with-index
    path #f
    (lambda (connection)
      (call-with-transaction
       connection
       (lambda ()
-        (query-exec connection "DELETE FROM files WHERE path = ?" old-path)
-        (define name (portable-file-name new-path))
+        (query-exec connection "DELETE FROM files WHERE path = ?" old-normalized)
+        (define name (portable-file-name new-normalized))
         (define insert-pinyin
           (prepare connection
                    "INSERT OR IGNORE INTO file_pinyin(path,term) VALUES(?,?)"))
@@ -416,6 +436,6 @@
           "INSERT INTO files(path,name,folded_name) VALUES(?,?,?) "
           "ON CONFLICT(path) DO UPDATE SET "
           "name=excluded.name, folded_name=excluded.folded_name")
-         new-path name (fold name))
-        (insert-pinyin-terms! connection insert-pinyin new-path name)))
+         new-normalized name (fold name))
+        (insert-pinyin-terms! connection insert-pinyin new-normalized name)))
      #t)))
