@@ -68,7 +68,7 @@
 <body>
   <header class="cap">
     <div class="t">Fulcrum — Settings</div>
-    <div class="n">720×520 · 五区侧栏 · General 页 · 原型 v0.1</div>
+    <div class="n">720×520 · 六区侧栏 · General 页 · 原型 v0.2</div>
     <div class="sp"></div>
     <button class="iconbtn" aria-label="Toggle light or dark theme" id="themeBtn" title="切换亮暗主题">◐</button>
   </header>
@@ -98,6 +98,10 @@
             Commands
           </div>
           <div class="sitem">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h6M4 12h10M4 18h6"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M18 8v8"/></svg>
+            Workflows
+          </div>
+          <div class="sitem">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
             Sync &amp; Updates
           </div>
@@ -117,30 +121,19 @@
         </div>
         <div class="sect">STARTUP</div>
         <div class="frow">
-          <div><div class="lab">Start at login</div><div class="note">Starts quietly after login. This Mac only; not synced.</div></div>
+          <div><div class="lab">Start at login</div><div class="note">Starts quietly after login. This device only; not synced.</div></div>
           <span class="sp"></span>
           <button class="switch on" type="button" role="switch" aria-checked="true" aria-label="Start at login"></button>
         </div>
         <div class="frow">
-          <div><div class="lab">Hotkey</div><div class="note">Press the current shortcut, then record a new combination. A taken combo falls back to ⌃⌥Space.</div></div>
+          <div><div class="lab">Hotkey</div><div class="note">Focus and press modifiers plus a key; it applies immediately. Esc cancels. A taken combo falls back to Ctrl+Alt+Space.</div></div>
           <span class="sp"></span>
           <button class="recbtn">⌥Space — Record</button>
         </div>
         <div class="frow">
-          <div><div class="lab">Maximum results</div><div class="note">Rows shown before the list scrolls. 12 fills the panel; range 1–12.</div></div>
+          <div><div class="lab">Maximum results</div><div class="note">Rows shown before the list scrolls. 12 fills the panel; range 5–12.</div></div>
           <span class="sp"></span>
           <div class="step"><button class="stepbtn" type="button" aria-label="Decrease maximum results">−</button><span class="v">12</span><button class="stepbtn" type="button" aria-label="Increase maximum results">+</button></div>
-        </div>
-        <div class="sect">AI</div>
-        <div class="frow">
-          <div><div class="lab">AI provider</div><div class="note">Bring your own key: OpenAI · Anthropic · Ollama. The key is stored on this device and never synced.</div></div>
-          <span class="sp"></span>
-          <select class="picker"><option>Off</option><option>OpenAI</option><option>Anthropic</option><option>Ollama</option></select>
-        </div>
-        <div class="frow">
-          <div><div class="lab">API key</div><div class="note">Stored in ai-keys.json on this device; never mirrored to the sync folder.</div></div>
-          <span class="sp"></span>
-          <button class="recbtn">Save key…</button>
         </div>
       </div>
     </div>

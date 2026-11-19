@@ -230,6 +230,52 @@ try {
         if ($process.HasExited) { throw 'closing About terminated the resident process' }
     }
 
+    # Update-flow parity with macOS: the dedicated update window must be a
+    # visible independent window while the launcher stays hidden; Close
+    # hides it without quitting the resident app, and the entry point can
+    # reopen it. WM_APP+9 is the acceptance-only trigger; FULCRUM_ACCEPTANCE
+    # presents the offline completed-check fixture (no network).
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        if (-not [FulcrumNative]::PostMessage(
+            $mainHwnd, [uint32]0x8009, [IntPtr]::Zero, [IntPtr]::Zero)) {
+            throw 'could not invoke acceptance-only update window command'
+        }
+        $update = Wait-Until "visible independent update window (attempt $attempt)" {
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+            $topLevels = $desktop.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+            for ($i = 0; $i -lt $topLevels.Count; $i++) {
+                $candidate = $topLevels[$i]
+                $handle = [IntPtr]::new([int64]$candidate.Current.NativeWindowHandle)
+                if ($handle -eq [IntPtr]::Zero -or -not [FulcrumNative]::IsWindowVisible($handle)) { continue }
+                if (Find-ById $candidate 'fulcrum-update-close') { return $candidate }
+            }
+            return $null
+        }
+        $updateStatus = Find-ById $update 'fulcrum-update-status'
+        if (-not $updateStatus -or $updateStatus.Current.Name -notmatch 'up to date') {
+            throw 'update window does not present the completed-check fixture'
+        }
+        if ([FulcrumNative]::IsWindowVisible($mainHwnd)) {
+            throw 'update window unexpectedly summoned the hidden search launcher'
+        }
+        $updateHwnd = [IntPtr]::new([int64]$update.Current.NativeWindowHandle)
+        if ($attempt -eq 1) {
+            $updateClose = Find-ById $update 'fulcrum-update-close'
+            ([System.Windows.Automation.InvokePattern]$updateClose.GetCurrentPattern(
+                [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+        } else {
+            $updateWindowPattern = [System.Windows.Automation.WindowPattern]$update.GetCurrentPattern(
+                [System.Windows.Automation.WindowPattern]::Pattern)
+            $updateWindowPattern.Close()
+        }
+        [void](Wait-Until "update window hidden (attempt $attempt)" {
+            if (-not [FulcrumNative]::IsWindowVisible($updateHwnd)) { return $true }
+            return $false
+        })
+        if ($process.HasExited) { throw 'closing the update window terminated the resident process' }
+    }
+
     # OS-owned login startup must be a working WinUI setting, not a
     # synced backend toggle. Use the production Settings window, change
     # HKCU Run in an isolated CI user, then restore the exact prior entry.
@@ -461,7 +507,7 @@ try {
         platform = 'windows'
         artifact = $executable.FullName
         actions = @('set:QueryBox=12*12','typed-find:Downloads-file','frame:steady-height','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:six-native-tabs-and-workflow-editor','settings:commands-editor','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','typed find returns a real Downloads file row from the packaged Windows host','window frame does not change height between calculator and file search','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','five native Settings destinations and visible Commands editor','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','typed find returns a real Downloads file row from the packaged Windows host','window frame does not change height between calculator and file search','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','six native Settings destinations and visible Commands editor','dedicated update window opens independently, Close hides without quitting, and it reopens','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
     $env:FULCRUM_DATA_DIR = $savedData

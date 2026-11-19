@@ -401,6 +401,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    /// A language change pushed from the backend (launcher settings-as-rows)
+    /// must also repaint an already-open Settings window: its translator
+    /// reads the observable model values, not just I18nService.
+    func syncSettingsLanguage(_ value: String) {
+        settingsModel?.values["language"] = value
+    }
+
     // MARK: panel
 
     private func installPanel(model: LauncherModel) {
@@ -558,13 +565,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                  modifiers: UInt32(controlKey | optionKey)) {
             activeHotkeySpec = "ctrl+alt+space"
             if spec != "ctrl+alt+space" {
-                model?.setPersistentStatus(
-                    "Fulcrum is ready — \(Hotkey.display(spec)) was taken, using ⌃⌥Space.")
+                model?.setPersistentStatus(I18nService.shared.t("hotkeyFallbackStatus"))
                 return
             }
         } else {
-            model?.setPersistentStatus(
-                "The hotkeys Fulcrum tried are taken by other tools. Change it in settings → hotkey, or release the combo and restart Fulcrum.")
+            model?.setPersistentStatus(I18nService.shared.t("hotkeyTakenStatus"))
             return
         }
         if model?.ready == true {

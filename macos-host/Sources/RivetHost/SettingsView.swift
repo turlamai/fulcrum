@@ -65,10 +65,11 @@ final class SettingsModel: ObservableObject {
             }
             refreshLoginItem()
             loginItemError = enabled && !startAtLogin
-                ? "Approve Fulcrum in System Settings → Login Items." : nil
+                ? I18nService.shared.t("settings.login.approve.mac") : nil
         } catch {
             refreshLoginItem()
-            loginItemError = "Unable to change Login Items: \(error.localizedDescription)"
+            loginItemError = I18nService.shared.format(
+                "settings.login.failed.mac", error.localizedDescription)
         }
     }
 
@@ -90,12 +91,12 @@ final class SettingsModel: ObservableObject {
                     }
                 } else {
                     self.error = key == "hotkey"
-                        ? "That shortcut is not supported. Record another key combination."
-                        : "\(key): that value is not supported."
+                        ? I18nService.shared.t("settings.hotkey.unsupported")
+                        : I18nService.shared.format("settings.value.unsupported", key)
                     await load()
                 }
             } catch {
-                self.error = "\(key): the setting could not be saved."
+                self.error = I18nService.shared.format("settings.write.failed", key)
                 await load()
             }
         }
@@ -107,7 +108,7 @@ final class SettingsModel: ObservableObject {
         Task {
             let status = (try? await api.runAction(id: "ai.key", arg: key)) ?? "error"
             aiKeyNotice = status == "ok"
-                ? "Key saved — stored on this Mac only, never synced."
+                ? I18nService.shared.t("settings.ai-key.saved")
                 : status
             aiKeyDraft = ""
             await refreshAiStatus()
@@ -134,7 +135,7 @@ final class SettingsModel: ObservableObject {
                 } else {
                     // The backend refuses duplicates, the summon hotkey, and
                     // unknown commands; say so instead of blinking.
-                    bindingError = "\(id): the backend refused this binding (taken combo, the summon hotkey, or an unknown command)."
+                    bindingError = I18nService.shared.t("settings.commands.rejected")
                 }
                 await loadBindings()
             } catch {
@@ -227,7 +228,7 @@ private struct CommandBindingRow: View {
             Text(command.count > 1 ? command[1] : id)
                 .font(.system(size: 12))
                 .frame(maxWidth: .infinity, alignment: .leading)
-            TextField("alias", text: $aliasDraft)
+            TextField(I18nService.shared.t("settings.commands.alias"), text: $aliasDraft)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 90)
                 .onAppear { aliasDraft = alias }
@@ -237,11 +238,12 @@ private struct CommandBindingRow: View {
                     if trimmed != alias { model.saveBinding(id: id, alias: trimmed, hotkey: hotkey) }
                 }
             if model.recordingId == id {
-                Button("Press keys… (Esc cancels)") {}
+                Button(I18nService.shared.t("settings.commands.recording")) {}
                     .controlSize(.small)
                     .disabled(true)
             } else {
-                Button(hotkey.isEmpty ? "Record" : Hotkey.display(hotkey)) {
+                Button(hotkey.isEmpty ? I18nService.shared.t("settings.commands.record")
+                                      : Hotkey.display(hotkey)) {
                     model.recordingId = id
                     recorder = HotkeyRecorder { spec in
                         model.recordFinished(id: id, spec: spec)
@@ -252,7 +254,7 @@ private struct CommandBindingRow: View {
                 .controlSize(.small)
             }
             if !hotkey.isEmpty || !alias.isEmpty {
-                Button("Clear") { model.clearBinding(id: id) }
+                Button(I18nService.shared.t("settings.commands.clear")) { model.clearBinding(id: id) }
                     .controlSize(.small)
             }
         }
@@ -322,7 +324,7 @@ private struct GlobalHotkeySetting: View {
     var body: some View {
         LabeledContent(title) {
             if isRecording {
-                Button("Press keys… (Esc cancels)") {}
+                Button(I18nService.shared.t("settings.commands.recording")) {}
                     .disabled(true)
             } else {
                 Button(Hotkey.display(model.values["hotkey"] ?? "alt+space")) {
@@ -336,7 +338,7 @@ private struct GlobalHotkeySetting: View {
                     }
                     recorder?.start()
                 }
-                .help("Record a new global shortcut")
+                .help(I18nService.shared.t("settings.hotkey.placeholder"))
                 .accessibilityIdentifier("settings-record-hotkey")
             }
         }
@@ -400,7 +402,7 @@ struct SettingsView: View {
                     Button {
                         selection = section
                     } label: {
-                        Label(section == .workflows ? "Workflows" : t(section.titleKey),
+                        Label(t(section.titleKey),
                               systemImage: section.icon)
                             .foregroundStyle(selection == section
                                              ? FulcrumTheme.accentText(scheme)
@@ -416,7 +418,7 @@ struct SettingsView: View {
                             : Color.clear)
                 }
                 .listStyle(.sidebar)
-                .frame(width: 170)
+                .frame(width: 176)
 
                 Divider()
 
@@ -450,22 +452,22 @@ struct SettingsView: View {
         Form {
             Section {
                 Picker(t("setting.language"), selection: model.choice("language", default: "system")) {
-                    Text("跟随系统").tag("system")
-                    Text("中文").tag("zh")
-                    Text("English").tag("en")
+                    Text(t("settings.language.system")).tag("system")
+                    Text(t("settings.language.en")).tag("en")
+                    Text(t("settings.language.zh")).tag("zh")
                 }
                 Picker(t("setting.theme"), selection: model.choice("theme", default: "system")) {
-                    Text("System").tag("system")
-                    Text("Light").tag("light")
-                    Text("Dark").tag("dark")
+                    Text(t("settings.theme.system")).tag("system")
+                    Text(t("settings.theme.light")).tag("light")
+                    Text(t("settings.theme.dark")).tag("dark")
                 }
             }
-            Section("Startup") {
-                Toggle("Start at login", isOn: Binding(
+            Section(t("settings.section.startup")) {
+                Toggle(t("settings.start-at-login"), isOn: Binding(
                     get: { model.startAtLogin },
                     set: { model.setStartAtLogin($0) }))
                     .accessibilityIdentifier("settings-start-at-login")
-                Text("Starts quietly after login. This Mac only; not synced.")
+                Text(t("settings.hint.start-at-login"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if let error = model.loginItemError {
@@ -473,18 +475,21 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(FulcrumTheme.danger(scheme))
                         .textSelection(.enabled)
-                    Button("Open Login Items settings") {
+                    Button(t("settings.login.open.mac")) {
                         SMAppService.openSystemSettingsLoginItems()
                     }
                 }
             }
             Section {
                 GlobalHotkeySetting(title: t("setting.hotkey"), model: model)
-                Text("Select the current shortcut, then press the new modifier and key combination. Applies immediately; a taken combo falls back to ⌃⌥Space.")
+                Text(t("settings.hint.hotkey"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Stepper("\(t("setting.max-results")): \(model.number("max-results", default: 12).wrappedValue)",
                         value: model.number("max-results", default: 12), in: 5...12)
+                Text(t("settings.hint.max-results"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -492,29 +497,35 @@ struct SettingsView: View {
 
     private var featuresTab: some View {
         Form {
-            Section("Clipboard") {
+            Section(t("settings.section.clipboard")) {
                 Toggle(t("setting.clipboard-enabled"), isOn: model.toggle("clipboard-enabled"))
-                SettingField(title: "History limit", key: "clipboard-limit",
+                SettingField(title: t("settings.clipboard-limit"), key: "clipboard-limit",
                              placeholder: "1000", model: model)
+                Text(t("settings.hint.clipboard-limit"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
-            Section("Search") {
+            Section(t("settings.section.search")) {
                 Toggle(t("setting.web-search-enabled"), isOn: model.toggle("web-search-enabled"))
-                Picker("Default bang", selection: model.choice("default-engine", default: "!g")) {
+                Picker(t("settings.default-engine"), selection: model.choice("default-engine", default: "!g")) {
                     ForEach(["!g", "!d", "!gh", "!so", "!w", "!yt", "!m", "!t"], id: \.self) {
                         Text($0).tag($0)
                     }
                 }
             }
-            Section("Snippets") {
+            Section(t("settings.section.snippets")) {
                 Toggle(t("setting.expansion-enabled"), isOn: model.toggle("expansion-enabled"))
-                Text("Needs the Accessibility permission on macOS.")
+                Text(t("settings.hint.expansion.mac"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
-            Section("Plugins") {
+            Section(t("settings.section.plugins")) {
                 Toggle(t("setting.plugins-enabled"), isOn: model.toggle("plugins-enabled"))
-                SettingField(title: "Call timeout (ms)", key: "plugins-timeout-ms",
+                SettingField(title: t("settings.plugins-timeout"), key: "plugins-timeout-ms",
                              placeholder: "2000", model: model)
+                Text(t("settings.hint.plugins-timeout"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -524,30 +535,31 @@ struct SettingsView: View {
         Form {
             Section {
                 Picker(t("setting.ai-provider"), selection: model.choice("ai-provider", default: "")) {
-                    Text("Off").tag("")
+                    Text(t("settings.provider.off")).tag("")
                     Text("OpenAI").tag("openai")
                     Text("Anthropic").tag("anthropic")
                     Text("Ollama").tag("ollama")
                 }
-                SettingField(title: "Model", key: "ai-model",
-                             placeholder: "provider default", model: model)
-                SettingField(title: "Base URL", key: "ai-base-url",
-                             placeholder: "provider default", model: model)
-                SettingField(title: "Persona", key: "ai-persona",
-                             placeholder: "prepended to every request", model: model)
+                SettingField(title: t("settings.ai-model"), key: "ai-model",
+                             placeholder: t("settings.ai-model.placeholder"), model: model)
+                SettingField(title: t("settings.ai-base-url"), key: "ai-base-url",
+                             placeholder: t("settings.ai-model.placeholder"), model: model)
+                SettingField(title: t("settings.ai-persona"), key: "ai-persona",
+                             placeholder: t("settings.ai-persona.placeholder"), model: model)
             }
-            Section("API key") {
+            Section(t("settings.ai-api-key")) {
                 HStack {
-                    SecureField("API key", text: $model.aiKeyDraft)
+                    SecureField(t("settings.ai-api-key"), text: $model.aiKeyDraft,
+                                prompt: Text(t("settings.ai-key.placeholder")))
                         .onSubmit { model.saveAiKey() }
-                    Button("Save") { model.saveAiKey() }
+                    Button(t("settings.save")) { model.saveAiKey() }
                         .disabled(model.aiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 HStack(spacing: 6) {
                     Image(systemName: model.aiStatus == "ready"
                           ? "checkmark.circle.fill" : "exclamationmark.circle")
                         .foregroundStyle(model.aiStatus == "ready" ? .green : .secondary)
-                    Text(model.aiStatus == "ready" ? "Ready" : model.aiStatus)
+                    Text(model.aiStatus == "ready" ? t("settings.ai-ready") : model.aiStatus)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -556,7 +568,7 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
-                Text("Stored in ai-keys.json on this Mac; never mirrored to the sync folder.")
+                Text(t("settings.hint.ai-keys"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -567,7 +579,7 @@ struct SettingsView: View {
     private var commandsTab: some View {
         Form {
             Section {
-                Text("Give a command your own shorthand (it ranks like a name) and a global hotkey that runs it with the panel hidden. Combos are recorded in this window.")
+                Text(t("settings.hint.commands"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 if let bindingError = model.bindingError {
@@ -577,7 +589,7 @@ struct SettingsView: View {
                         .textSelection(.enabled)
                 }
             }
-            Section("Commands") {
+            Section(t("settings.nav.commands")) {
                 ForEach(model.commands, id: \.self) { command in
                     CommandBindingRow(model: model, command: command)
                 }
@@ -591,13 +603,13 @@ struct SettingsView: View {
         Form {
             Section(t("settings.nav.sync")) {
                 SettingField(title: t("settings.sync-folder"), key: "sync-root",
-                             placeholder: "empty = off", model: model)
+                             placeholder: t("settings.sync-folder.placeholder"), model: model)
                 Text(t("settings.sync-folder.description"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
             Section(t("settings.updates")) {
-                Button(t("settings.check-updates-now.mac")) {
+                Button(t("settings.check-updates-now")) {
                     UpdateController.shared?.checkForUpdates()
                     AppDelegate.shared?.showUpdatePanel()
                 }

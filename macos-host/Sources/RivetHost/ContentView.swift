@@ -1165,6 +1165,7 @@ final class LauncherModel: ObservableObject {
                 if case .string(let language) = change.value {
                     setLanguage(language)
                     AppDelegate.shared?.refreshLocalizedMenus()
+                    AppDelegate.shared?.syncSettingsLanguage(language)
                 }
             case "ai-stream":
                 if case .list(let fields) = change.value, fields.count == 3,

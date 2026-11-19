@@ -85,6 +85,34 @@ feature would incorrectly suggest a different product model.
 Settings and snippets remain backend-owned. Hosts may render different native
 form layouts, but keys, values, descriptions and availability must agree.
 
+The Settings window is one six-section IA on every host — General, Features,
+AI, Commands, Workflows, Sync & Updates — in a 720 × 520 window with a 176-point
+sidebar. General row order is Language → Theme → Start at login → Hotkey →
+Maximum results; the language picker order is System / English / 中文. Every
+settings string (sidebar, page titles, labels, hints, placeholders, option
+items, dynamic command/workflow rows, refusals and notices) comes from
+`shared/i18n`; a language change repaints an already-open Settings window.
+Linux renders command-hotkey recording disabled with the declared
+`settings.hint.commands.linux` note until desktop-wide command hotkeys exist;
+aliases behave identically on all hosts.
+
+Update checks are one interaction on every host: the resident entry (tray or
+app menu), any `update.*` launcher row, and the Settings Sync & Updates button
+all open the same dedicated update window and start a manual check. Inside it:
+checking → up-to-date / available → downloading (percent) → downloaded
+(quit-and-install) / failed (retry). Close hides the window; an in-flight
+download continues. Cancel-download is macOS-only: there the host owns the
+transfer, while on Windows/Linux the backend owns it (no cancel RPC), so the
+window offers Close instead; likewise macOS relaunches automatically after
+the verified swap, while Windows/Linux stop at the explicit quit-and-install
+confirmation. The Sync & Updates page itself is the
+automatic-check note plus a "Check for Updates Now" button — no inline update
+card. Mechanism differs by platform and is declared in `design/DESIGN.md`:
+macOS verifies and installs natively (CryptoKit + RivetUpdate atomic swap);
+Windows and Linux download through the signed backend updater and hand off to
+the native installer (MSI handoff / AppImage atomic replacement) only after
+the backend reports a verified ticket.
+
 ## Acceptance contract
 
 Each packaged-host acceptance suite exercises the same observable sequence:

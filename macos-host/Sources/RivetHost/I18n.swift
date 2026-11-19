@@ -44,6 +44,12 @@ final class I18nService: @unchecked Sendable {
 
     /// Positional formatting: first argument replaces {0}, etc.
     func format(_ key: String, _ args: Any...) -> String {
+        format(key, args: args)
+    }
+
+    /// Array form for callers that already collected variadic arguments —
+    /// passing an array into the variadic form would format it as ONE value.
+    func format(_ key: String, args: [Any]) -> String {
         var text = t(key)
         for (index, arg) in args.enumerated() {
             text = text.replacingOccurrences(of: "{\(index)}", with: String(describing: arg))

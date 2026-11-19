@@ -11,7 +11,7 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
   ② `states.html` 关键状态三联（默认 ready / 搜索无结果 / 启动中）
   ③ `actions.html` ⌘K 次级操作（剪贴板行 → Copy/Paste/Pin/Delete，前后对照）
   ④ `ai.html` 内联计算 + BYOK AI 流式（running/done/error 三态，error 含 401 原因与重试路径）
-  ⑤ `settings.html` 设置窗口（General/Features/AI/Commands/Sync & Updates 五区）
+  ⑤ `settings.html` 设置窗口（General/Features/AI/Commands/Workflows/Sync & Updates 六区）
   ⑥ `workflow.html` Workflow Pro 编排概念（探索稿，非承诺）
   ⑦ `audit.html` 原型自检（命中高亮 / 输入法守卫 / 焦点顺序 / 状态矩阵集中验收）
 - **Exit 条件**：6 屏 + 自检页关键状态齐（含空态/无结果/启动中/流式中/离线/限流/敏感数据）+ 交互逻辑与 `docs/cross-platform-interaction.md` 一致 + HIG 清单全过 + 用户评审通过。
@@ -22,7 +22,7 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 - **一框即一切**：query 是唯一输入面——apps、`find` 文件、`!bang` 网页、`ai` 问答、`add snippet`、`gallery` 插件都从同一框到达；没有模式切换，就没有学习成本。
 - **结果列表是主角**：680×640 稳定面板里 chrome 只有 query、发丝线、footer 三件；行高 44 保副标题可读，图标 tile 与 badge 只为扫读服务，装饰不与结果争注意力。
 - **键盘即语法**：↑↓ 选择、↵ 执行、Tab 补全、⌘K 次级操作、Esc 阶梯（actions → detail → AI → 清 query → 隐藏）三平台语义一致（⌘K/Ctrl+K 按平台惯例）；hint bar 常驻，高频操作永远有可见快捷键提示。组合态（preedit 未上屏）下 Enter / ↑↓ / Tab 归输入法；⌘K 进入 actions 后 Esc 按 item id 回到原行，不取第一行。
-- **反馈及时**：AI 流式有 running（▍ 光标 + 转轮）/done（已复制提示）/error 三态；更新、设置、插件动作的反馈写进 status line，永不静默。
+- **反馈及时**：AI 流式有 running（▍ 光标 + 转轮）/done（已复制提示）/error 三态；设置、插件动作的反馈写进 status line，永不静默；更新检查/下载/安装统一收敛到独立更新窗（三平台同语义，见差异声明节）。
 - **原生材质，家族皮肤**：blur/acrylic/vibrancy 是平台机制，玻璃底 + amber 家族色是契约；无 compositor 的 Linux 会话用 ≥98% 不透明底——清晰优先于透明。
 - **层级克制**：glass 一层表面 + 发丝线分隔足够，不用阴影堆叠表达层级；accent 只给选中、行图标、badge、↵ chip 与进行态。
 
@@ -50,7 +50,7 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 
 ## 组件词汇
 
-`Panel`（680×640 稳定玻璃面板）· `QueryField`（19px + 放大镜，唯一输入面）· `ResultRow`（icon tile + 标题/副标题 + 尾部 badge；↵ chip 仅选中行）· `KindIcon`（28px amber tile + 语义图标；app 行用真实应用图标，Calculator 与 AI 永不共用字形）· `AiStreamPanel`（running/done/error 三态，由 `ai-stream` State 驱动，打字不中断）· `DetailPanel`（FPP2 插件详情：text + metadata 键值）· `HintBar`（footer 快捷键提示，随 Esc 阶梯换文案）· `StatusLine`（动作反馈落点）· `SettingsWindow`（侧栏五区 + 原生表单）· `CommandBindingRow`（alias + 录制热键）· Workflow 探索稿专用：`StepCard`（单步：触发/输入/条件/动作）· `RunTrace`（调试运行轨迹）。
+`Panel`（680×640 稳定玻璃面板）· `QueryField`（19px + 放大镜，唯一输入面）· `ResultRow`（icon tile + 标题/副标题 + 尾部 badge；↵ chip 仅选中行）· `KindIcon`（28px amber tile + 语义图标；app 行用真实应用图标，Calculator 与 AI 永不共用字形）· `AiStreamPanel`（running/done/error 三态，由 `ai-stream` State 驱动，打字不中断）· `DetailPanel`（FPP2 插件详情：text + metadata 键值）· `HintBar`（footer 快捷键提示，随 Esc 阶梯换文案）· `StatusLine`（动作反馈落点）· `SettingsWindow`（侧栏六区 + 原生表单）· `CommandBindingRow`（alias + 录制热键）· Workflow 探索稿专用：`StepCard`（单步：触发/输入/条件/动作）· `RunTrace`（调试运行轨迹）。
 
 ## 不变式
 
@@ -84,6 +84,16 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 
 差异声明纪律：宿主特例必须先写进本节才能实现；未声明的宿主差异按违约处理
 （案例：taskly 漂移台账 D8）。
+
+### 已声明的平台差异（2026-11-19 设置页与更新交互收口）
+
+- **设置 IA**：三宿主统一六区侧栏 General / Features / AI / Commands / Workflows / Sync & Updates，侧栏宽 176，窗体 720×520；General 行序 Language → Theme → Start at login → Hotkey → Maximum results；语言选项序 System / English / 中文。设置窗全部 chrome 文案走 `shared/i18n` 单源（含侧栏、页标题、hint、占位符、选项与动态行），改语言即时刷新已打开的设置窗。
+- **更新交互（统一层）**：任何入口（托盘/应用菜单「检查更新」、启动器 `update.*` 行、设置 Sync 页按钮）都唤起同一个独立更新窗并立即手动检查；窗内语义 checking → up-to-date / available → downloading（进度）→ downloaded（退出并安装）/ failed（重试）。Close 只隐藏窗口，下载继续。设置 Sync 页 = 自动检查说明 + 「立即检查更新」按钮，不再内联更新卡片。
+- **更新机制（因地制宜层）**：macOS 用原生 CryptoKit 校验 + RivetUpdate 下载后原子替换并自动重启（打包版 Racket 解不了签名公钥）；Windows/Linux 用后端签名下载，宿主执行安装交接（Windows MSI handoff、Linux AppImage 原子替换），安装前必须拿到后端已验证的票据。
+- **更新窗取消与完成态**：macOS 的传输由宿主自己持有，下载中可 Cancel，校验通过后自动重启；Windows/Linux 的传输由后端持有（无取消 RPC），更新窗不提供 Cancel，只有 Close（隐藏、下载继续），下载完成后停在「退出并安装」确认步。
+- **Linux 命令热键**：别名三端一致；全局命令热键在 Linux 暂未注册，录制控件置灰并展示声明文案（`settings.hint.commands.linux`）。
+- **Linux 片段自动展开**：设置项展示但置灰（`settings.hint.expansion.linux`），保持三端功能地图一致。
+- **Start at login**：三端均为本机原生机制（macOS Login Items / Windows 注册表 Run / Linux autostart desktop），不进同步 schema；错误文案按平台键（`settings.login.failed.*`）。
 
 
 ## 2026-11-15 · 原型交互补齐
