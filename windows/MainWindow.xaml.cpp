@@ -12,6 +12,8 @@
 #include "WindowsInstance.h"
 
 #include <shellapi.h>
+
+#include <cstdio>
 #include <commctrl.h>
 #include <shellscalingapi.h>
 #include <cstring>
@@ -1038,6 +1040,15 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
               if (auto window = weak.get()) {
                 set_i18n_language(value_copy);
                 window->ApplyLanguage();
+                // An open Settings window and update window follow the
+                // same push (macOS syncSettingsLanguage parity).
+                if (window->settings_window_) {
+                  winrt::get_self<SettingsWindow>(window->settings_window_)
+                      ->RefreshLanguage(value_copy);
+                }
+                if (window->update_window_) {
+                  window->update_window_->RefreshLanguage(value_copy);
+                }
               }
             });
           }
@@ -1080,7 +1091,9 @@ winrt::fire_and_forget MainWindow::InitializeBackendAsync() {
                             SW_SHOWNORMAL);
             window->HideLauncher();
           } else if (name == "update-available") {
-            window->SetStatusOk(to_wide(payload));
+            // Legacy backend offer: surface it in the dedicated update
+            // window (macOS offered() parity), not the transient footer.
+            window->ShowUpdateWindow(true);
           } else if (name == "notify") {
             // Action feedback rides the notify event (update check results,
             // settings toggles, plugin installs). Without this branch the
@@ -1270,6 +1283,9 @@ void MainWindow::FinishNativeSetup() {
     // the process — the Linux host made the same call for its WM close
     // button. Explicit Quit bypasses hide-on-close via the quitting_ guard.
     appWindow.Closing([this](auto&&, auto&& args) {
+      std::fprintf(stderr, "window: main Closing (quitting=%d)\n",
+                   quitting_ ? 1 : 0);
+      std::fflush(stderr);
       if (quitting_) return;  // An explicit Application.Exit is not a hide.
       args.Cancel(true);
       this->HideLauncher();
@@ -1307,6 +1323,21 @@ void MainWindow::FinishNativeSetup() {
                           self->HandleHotkeyMessage(msg, wParam, lParam)) {
                         return 0;
                       }
+                      if (msg == WM_DPICHANGED && self != nullptr) {
+                        // Crossing monitors fires WM_DPICHANGED *during*
+                        // position_launcher's SetWindowPos. WinUI then applies
+                        // the system suggested rect — the freshly set physical
+                        // size scaled by the DPI ratio a second time — so the
+                        // first summon on a differently-scaled display came up
+                        // tiny (or huge) and only the second summon, with no
+                        // monitor change left, looked right. Let WinUI update
+                        // its rasterization scale, then re-assert the
+                        // monitor-aware geometry (issue: mixed-DPI desks).
+                        LRESULT const result =
+                            DefSubclassProc(hWnd, msg, wParam, lParam);
+                        position_launcher(hWnd);
+                        return result;
+                      }
                       if (msg == WM_CLIPBOARDUPDATE && self != nullptr) {
                         self->OnClipboardUpdate();
                       }
@@ -1341,6 +1372,13 @@ void MainWindow::FinishNativeSetup() {
                       if (msg == fulcrum::windows::kAcceptanceSettingsMessage &&
                           self != nullptr && is_acceptance_run()) {
                         self->ShowSettings();
+                        return 0;
+                      }
+                      // Acceptance-only update window: the offline
+                      // completed-check fixture, same as the tray entry.
+                      if (msg == fulcrum::windows::kAcceptanceUpdateMessage &&
+                          self != nullptr && is_acceptance_run()) {
+                        self->ShowUpdateWindow(true);
                         return 0;
                       }
                       if (msg == WM_NCHITTEST && self != nullptr) {
@@ -1440,14 +1478,10 @@ void MainWindow::HandleTrayMessage(std::uint32_t message, std::int64_t lParam,
         } else if (choice == kTrayMenuSettings) {
           ShowSettings();
         } else if (choice == kTrayMenuUpdates) {
-          // A visible window beats a hidden launcher's status line: open
-          // the settings app on Sync & Updates and run the check there.
-          ShowSettings();
-          if (settings_window_) {
-            winrt::get_self<winrt::RivetHost::implementation::SettingsWindow>(
-                settings_window_)
-                ->OpenUpdates();
-          }
+          // Update-flow parity with macOS: the tray entry opens the
+          // dedicated update window and checks there — never a hidden
+          // launcher's status line, never the settings form.
+          ShowUpdateWindow(true);
         } else if (choice == kTrayMenuAbout) {
           ShowAbout();
         } else if (choice == kTrayMenuQuit) {
@@ -1538,6 +1572,11 @@ void MainWindow::HideLauncher() { this->AppWindow().Hide(); }
 void MainWindow::QuitApplication() {
   if (quitting_) return;
   quitting_ = true;
+  std::fprintf(stderr, "quit: QuitApplication enter\n");
+  std::fflush(stderr);
+  // The update window hides on close; let an explicit quit close it for
+  // real, otherwise its Closing veto keeps the process alive.
+  if (update_window_) update_window_->AllowClose();
 
   // Release native resources before closing their owner HWND.
   if (expansion_hook_) {
@@ -1559,14 +1598,49 @@ void MainWindow::QuitApplication() {
 
   // RVT1 Shutdown can join Racket worker threads: never block WinUI's
   // event pump while stopping them. Exit the *application*, not one window.
+  //
+  // The exit request closes every owned window explicitly before leaving
+  // the message loop: in the packaged acceptance Application.Exit alone
+  // closed the settings and update windows but left the borderless main
+  // window alive with an idle pump. A watchdog bounds the whole shutdown:
+  // after the grace period it requests the exit again, and if the process
+  // is still alive five seconds later it terminates itself — an explicit
+  // quit must always end the process (the OS releases the instance lease).
   if (backend_) {
     auto backend = backend_;
     auto dispatcher = DispatcherQueue();
-    std::thread([backend = std::move(backend), dispatcher]() mutable {
+    auto exit_once = std::make_shared<std::atomic_bool>(false);
+    auto request_exit = [this, dispatcher, exit_once]() {
+      if (!exit_once->exchange(true)) {
+        std::fprintf(stderr, "quit: requesting window close + Application.Exit\n");
+        std::fflush(stderr);
+        dispatcher.TryEnqueue([this] {
+          std::fprintf(stderr, "quit: closing owned windows\n");
+          std::fflush(stderr);
+          if (settings_window_) settings_window_.Close();
+          if (update_window_) update_window_->CloseForQuit();
+          this->Close();  // quitting_ == true: the Closing handler allows it
+          std::fprintf(stderr, "quit: Application.Exit\n");
+          std::fflush(stderr);
+          Microsoft::UI::Xaml::Application::Current().Exit();
+        });
+      }
+    };
+    std::thread([backend = std::move(backend), request_exit]() mutable {
       try { backend->stop(); } catch (...) { /* still exit the host */ }
-      dispatcher.TryEnqueue([] {
-        Microsoft::UI::Xaml::Application::Current().Exit();
-      });
+      std::fprintf(stderr, "quit: backend stop returned\n");
+      std::fflush(stderr);
+      request_exit();
+    }).detach();
+    std::thread([request_exit]() {
+      std::this_thread::sleep_for(std::chrono::seconds(10));
+      std::fprintf(stderr, "quit: watchdog grace elapsed\n");
+      std::fflush(stderr);
+      request_exit();
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::fprintf(stderr, "quit: forcing termination after grace\n");
+      std::fflush(stderr);
+      ::TerminateProcess(::GetCurrentProcess(), 0);
     }).detach();
   } else {
     Microsoft::UI::Xaml::Application::Current().Exit();
@@ -1667,13 +1741,10 @@ void MainWindow::ApplyHotkey(std::string const& spec) {
                        MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE)) {
     hotkey_atom_ = kHotkeyIdFallback;
     if (spec != "ctrl+alt+space") {
-      SetStatusOk(L"Fulcrum is ready — that hotkey was taken, using "
-                  L"Ctrl+Alt+Space. Change it in settings → hotkey.");
+      SetStatusOk(t("hotkeyFallbackStatus"));
     }
   } else {
-    SetStatusError(L"The hotkeys Fulcrum tried are taken by other tools. "
-                   L"Change it in settings → hotkey, or release the combo "
-                   L"and restart Fulcrum.");
+    SetStatusError(t("hotkeyTakenStatus"));
   }
 }
 
@@ -1778,6 +1849,13 @@ void MainWindow::PullHostSettings() {
           if (auto window = weak.get()) {
             set_i18n_language(language);
             window->ApplyLanguage();
+            if (window->settings_window_) {
+              winrt::get_self<SettingsWindow>(window->settings_window_)
+                  ->RefreshLanguage(language);
+            }
+            if (window->update_window_) {
+              window->update_window_->RefreshLanguage(language);
+            }
             if (!hotkey.empty()) {
               window->ApplyHotkey(hotkey);
             }
@@ -2255,6 +2333,17 @@ void MainWindow::RunSelected() {
     return;
   }
   auto const row = rows_[static_cast<std::size_t>(index)];
+
+  // Update-flow parity with macOS: all three update rows open the dedicated
+  // update window (check first; download/install happen there). The launcher
+  // never drives an update transfer from a row press.
+  if (row.id == "update.check" || row.id == "update.download" ||
+      row.id == "update.install") {
+    HideLauncher();
+    ShowUpdateWindow(true);
+    return;
+  }
+
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto api = api_;
@@ -2282,19 +2371,8 @@ void MainWindow::RunSelected() {
         }
       }
       auto const status = api->run_action(fresh_row.id, fresh_row.arg).get();
-      std::optional<std::string> update_path;
-      std::optional<std::string> update_version;
       auto const action_row = fresh_row;
-      if (status == "quit-and-install" && action_row.id == "update.install") {
-        auto const state = api->update_state().get();
-        if (state.downloaded_path && !state.downloaded_path->empty()) {
-          update_path = *state.downloaded_path;
-          update_version = state.available_version;
-        }
-      }
-      dispatcher.TryEnqueue([weak, dispatcher, status, row, action_row,
-                             update_path = std::move(update_path),
-                             update_version = std::move(update_version)]() mutable {
+      dispatcher.TryEnqueue([weak, dispatcher, status, row, action_row]() mutable {
         if (auto window = weak.get()) {
           if (status == "ok" || status == "launched" || status == "copied" ||
               status == "opened") {
@@ -2338,36 +2416,6 @@ void MainWindow::RunSelected() {
                 });
               }
             }).detach();
-          } else if (status == "downloading") {
-            // The backend download thread owns the transfer; the host
-            // mirrors its progress into the status bar.
-            window->HideLauncher();
-            window->StartUpdateProgressPoll();
-          } else if (status == "quit-and-install" &&
-                     action_row.id == "update.install") {
-            try {
-              if (!update_path) {
-                throw std::runtime_error("downloaded update path is missing");
-              }
-              // The handoff records the manifest version next to the queued
-              // MSI so a stale queue is refused at the next launch; the
-              // launcher rejects an empty version, so a download without one
-              // is an updater state bug and surfaces here.
-              if (!update_version || update_version->empty()) {
-                throw std::runtime_error(
-                    "downloaded update version is missing");
-              }
-              auto const msi = std::filesystem::path(to_wide(*update_path));
-              rivet::update::MsiHandoff::LaunchVerifiedInstaller(
-                  L"site.jrtx.fulcrum", msi, to_wide(*update_version),
-                  executable_path());
-              // The MSI handoff waits for this PID; share the tray's orderly
-              // backend shutdown and WinUI application exit.
-              window->QuitApplication();
-            } catch (std::exception const& e) {
-              window->SetStatusError(
-                  t_format("update.install-failed", {to_wide(e.what())}));
-            }
           } else if (status == "delegated") {
             // Host-native actions: window commands reach other apps'
             // windows; about.open and settings.open render this app's own
@@ -2497,6 +2545,10 @@ void MainWindow::ShowSettings() {
   if (settings_window_ == nullptr) {
     auto window = winrt::make<SettingsWindow>();
     window.Closed([this](auto&&, auto&&) { settings_window_ = nullptr; });
+    // The Sync & Updates button opens the same dedicated update window as
+    // the tray entry and the launcher update rows (update-flow parity).
+    winrt::get_self<SettingsWindow>(window)->SetUpdateOpener(
+        [this] { ShowUpdateWindow(true); });
     settings_window_ = window;
   }
   winrt::get_self<SettingsWindow>(settings_window_)->Attach(api_);
@@ -2506,6 +2558,53 @@ void MainWindow::ShowSettings() {
   // needed: claim the foreground explicitly for the settings window.
   if (HWND hwnd = rivet::system::NativeWindowHandle(settings_window_)) {
     ::SetForegroundWindow(hwnd);
+  }
+}
+
+// ---- update window ----------------------------------------------------------
+
+// One dedicated update window for every entry point (tray, launcher update
+// rows, Settings Sync & Updates). The verified MSI handoff lives here — the
+// window asks, the host launches the installer and quits into it. Acceptance
+// runs present the offline completed-check fixture instead of the network
+// (the macOS presentCompletedCheckForAcceptance twin).
+void MainWindow::ShowUpdateWindow(bool check) {
+  if (api_ == nullptr) {
+    SetStatusError(L"Update check once the backend is ready.");
+    return;
+  }
+  if (update_window_ == nullptr) {
+    auto weak = get_weak();
+    update_window_ = std::make_shared<UpdateWindow>(
+        api_, [weak](std::wstring const& path,
+                     std::wstring const& version) -> std::wstring {
+          auto window = weak.get();
+          if (window == nullptr) return L"host window is gone";
+          try {
+            // The handoff records the manifest version next to the queued
+            // MSI so a stale queue is refused at the next launch.
+            rivet::update::MsiHandoff::LaunchVerifiedInstaller(
+                L"site.jrtx.fulcrum", std::filesystem::path(path), version,
+                executable_path());
+            // The MSI handoff waits for this PID; share the tray's orderly
+            // backend shutdown and WinUI application exit.
+            window->QuitApplication();
+            return {};
+          } catch (std::exception const& e) {
+            return to_wide(e.what());
+          } catch (...) {
+            return L"unknown error";
+          }
+        });
+  }
+  if (is_acceptance_run()) {
+    update_window_->PresentCompletedCheckForAcceptance();
+    return;
+  }
+  if (check) {
+    update_window_->ShowAndCheck();
+  } else {
+    update_window_->Show();
   }
 }
 
@@ -2679,136 +2778,37 @@ void MainWindow::AttachStatusBarCopyAffordance() {
   StatusText().ContextFlyout(footer_flyout);
 }
 
-// Manual check from the tray: manual=true bypasses the 4-hour family
-// throttle (the backend stamps the timestamp either way, per the update
-// trigger contract). Results surface in the footer; the `update` launcher
-// rows drive download and install from here.
-void MainWindow::CheckForUpdates() {
-  if (api_ == nullptr) {
-    SetStatusError(L"Update check once the backend is ready.");
-    return;
-  }
-  auto const dispatcher = DispatcherQueue();
-  auto const weak = get_weak();
-  auto api = api_;
-  std::thread([weak, api, dispatcher]() mutable {
-    std::wstring line;
-    bool is_error = false;
-    try {
-      auto const check = api->update_check(true).get();
-      if (check.status == "available") {
-        auto const version = check.available_version.value_or(std::string("?"));
-        line = t_format("updateAvailableStatus", {to_wide(version)});
-      } else if (check.status == "up-to-date") {
-        line = t("updateUpToDate");
-      } else if (check.status == "throttled") {
-        line = L"Update check throttled — try again shortly.";
-      } else {
-        is_error = true;
-        line = t_format("updateDownloadFailed",
-                        {to_wide(check.error.value_or("check failed"))});
-      }
-    } catch (std::exception const& e) {
-      is_error = true;
-      line = to_wide(std::string("Update check failed: ") + e.what());
-    } catch (...) {
-      is_error = true;
-      line = L"Update check failed.";
-    }
-    dispatcher.TryEnqueue([weak, line, is_error]() mutable {
-      if (auto window = weak.get()) {
-        if (is_error) {
-          window->SetStatusError(line);
-        } else {
-          window->SetStatusOk(line);
-        }
-      }
-    });
-  }).detach();
-}
-
+// Silent startup check: the 4-hour throttle and manifest verification are
+// backend-owned; this is one cheap RPC the backend may decline. An eligible
+// update is presented in the dedicated update window (macOS silent-check
+// parity) — never a nag in the transient launcher footer. Failures stay
+// silent, and acceptance runs skip the network entirely.
 void MainWindow::StartSilentUpdateCheck() {
-  if (api_ == nullptr) {
+  if (api_ == nullptr || is_acceptance_run()) {
     return;
   }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto api = api_;
-  // The 4-hour throttle and the manifest verification are backend-owned;
-  // this is one cheap RPC the backend may decline (status "throttled").
-  // Failures are silent by design — a resident launcher must never nag.
   std::thread([weak, api, dispatcher]() mutable {
     try {
       auto const check = api->update_check(false).get();
       if (check.status != "available") {
         return;
       }
-      auto const version = check.available_version.value_or(std::string("?"));
-      dispatcher.TryEnqueue([weak, version]() mutable {
+      auto const version = to_wide(check.available_version.value_or("?"));
+      auto const size = check.size_bytes.value_or(0);
+      dispatcher.TryEnqueue([weak, version, size]() mutable {
         if (auto window = weak.get()) {
-          window->SetStatusOk(
-              t_format("updateAvailableStatus", {to_wide(version)}));
+          if (window->update_window_ == nullptr) {
+            window->ShowUpdateWindow(false);
+          }
+          window->update_window_->PresentAvailable(version, size);
         }
       });
     } catch (...) {
       // silent: network down, feed unreachable — never nag
     }
-  }).detach();
-}
-
-void MainWindow::StartUpdateProgressPoll() {
-  if (api_ == nullptr || update_polling_.exchange(true)) {
-    return;
-  }
-  auto const dispatcher = DispatcherQueue();
-  auto const weak = get_weak();
-  auto api = api_;
-  std::thread([weak, api, dispatcher]() mutable {
-    while (true) {
-      try {
-        auto const state = api->update_state().get();
-        if (state.phase == "downloaded") {
-          dispatcher.TryEnqueue([weak]() mutable {
-            if (auto window = weak.get()) {
-              window->SetStatusOk(t("updateDownloadedStatusWin"));
-            }
-          });
-          break;
-        }
-        if (state.phase == "error") {
-          auto const message = state.message;
-          dispatcher.TryEnqueue([weak, message = std::move(message)]() mutable {
-            if (auto window = weak.get()) {
-              std::wstring const detail =
-                  message ? to_wide(*message) : t("updateUnknownError");
-              window->SetStatusError(t_format("updateDownloadFailed", {detail}));
-            }
-          });
-          break;
-        }
-        if (state.phase != "downloading") {
-          break;
-        }
-        auto const percent = state.percent;
-        dispatcher.TryEnqueue([weak, percent]() mutable {
-          if (auto window = weak.get()) {
-            window->SetStatusOk(
-                t_format("updateDownloadPercent",
-                         {std::to_wstring(percent)}));
-          }
-        });
-      } catch (...) {
-        break;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
-    // Re-entry guard only: clear it on the UI thread (the worker never
-    // captures `this`) so a later download can poll again.
-    dispatcher.TryEnqueue([weak]() mutable {
-      if (auto window = weak.get()) {
-        window->update_polling_.store(false, std::memory_order_release);
-      }
-    });
   }).detach();
 }
 

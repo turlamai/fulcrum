@@ -4,6 +4,7 @@
 #include "MainWindow.g.h"
 #include "GeneratedBackend.hpp"
 #include "FsWatchHost.h"
+#include "UpdateWindow.h"
 #include "winui_window.hpp"
 
 #include <memory>
@@ -153,15 +154,17 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::wstring last_status_;
   // Snippet auto-expansion (WH_KEYBOARD_LL): types the snippet text when
   // its keyword lands against a word boundary in any app.
-  // Updater 0.2 (in-app install stays macOS-only on this line): the silent
-  // launch check is throttled backend-side, and progress polling follows the
-  // backend's download thread, surfacing percent in the status bar. Once the
-  // artifact is downloaded the user gets the open-folder status; the
-  // "update" launcher rows drive check/download/reveal on this state.
+  // Updater 0.3 (update-flow parity with macOS): every update entry point
+  // — tray "Check for Updates…", the launcher update rows, the Settings
+  // Sync & Updates button — opens the dedicated UpdateWindow. The silent
+  // launch check is throttled backend-side and presents an eligible update
+  // in that same window; the launcher status line is no longer an update
+  // surface. The verified MSI handoff runs from the window's install button.
   void StartSilentUpdateCheck();
-  void StartUpdateProgressPoll();
-  // Tray "Check for Updates…": manual check, result in the footer.
-  void CheckForUpdates();
+  // One dedicated update window for every entry point (check=true runs a
+  // manual check; acceptance runs present the offline fixture instead).
+  void ShowUpdateWindow(bool check = true);
+  std::shared_ptr<UpdateWindow> update_window_;
   // A separate titled window: tray About must be visible while the
   // transient launcher is hidden, without summoning Alt+Space first.
   void ShowAbout();
@@ -198,7 +201,6 @@ struct MainWindow : MainWindowT<MainWindow> {
   std::atomic<bool> clipboard_listener_installed_{false};
   std::wstring last_recorded_clipboard_;
   std::unique_ptr<rivet::system::TrayIcon> tray_icon_;
-  std::atomic<bool> update_polling_{false};
   bool startup_presented_{false};
   bool quitting_{false};
   // ⌘K (Ctrl+K) mode: rows_ currently holds secondary actions and

@@ -77,13 +77,13 @@ FsWatchHost::~FsWatchHost() {
 
 void FsWatchHost::Start(std::shared_ptr<rivet_app::API> api,
                         std::vector<std::wstring> roots) {
-  if (started_.exchange(true)) {
-    return;
+  if (state_) {
+    return;  // already watching; Stop() first to re-arm from scratch
   }
-  api_ = std::move(api);
-  batch_semaphore_ = ::CreateSemaphoreW(nullptr, 0, LONG_MAX, nullptr);
-  stopping_.store(false, std::memory_order_release);
-  reconcile_thread_ = std::thread([this]() { ReconcileLoop(); });
+  auto state = std::make_shared<State>();
+  state->api = std::move(api);
+  state->batch_semaphore = ::CreateSemaphoreW(nullptr, 0, LONG_MAX, nullptr);
+  state->reconcile_thread = std::thread([state]() { ReconcileLoop(state); });
   for (auto& root : roots) {
     auto watch = std::make_unique<WatchRoot>();
     watch->root = root;
@@ -99,17 +99,19 @@ void FsWatchHost::Start(std::shared_ptr<rivet_app::API> api,
     watch->read_event = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
     watch->buffer = std::make_unique<std::byte[]>(kReadBufferSize);
     auto* raw = watch.get();
-    watches_.push_back(std::move(watch));
-    raw->thread = std::thread([this, raw]() { WatchRootLoop(raw); });
+    state->watches.push_back(std::move(watch));
+    raw->thread = std::thread([state, raw]() { WatchRootLoop(state, raw); });
   }
+  state_ = std::move(state);
 }
 
 void FsWatchHost::Stop() {
-  if (!started_.exchange(false)) {
+  auto state = std::move(state_);
+  if (!state) {
     return;
   }
-  stopping_.store(true, std::memory_order_release);
-  for (auto& watch : watches_) {
+  state->stopping.store(true, std::memory_order_release);
+  for (auto& watch : state->watches) {
     if (watch->directory != INVALID_HANDLE_VALUE) {
       ::CancelIoEx(watch->directory, nullptr);
     }
@@ -117,39 +119,47 @@ void FsWatchHost::Stop() {
       ::SetEvent(watch->stop_event);
     }
   }
-  for (auto& watch : watches_) {
-    if (watch->thread.joinable()) {
-      watch->thread.join();
-    }
-    if (watch->directory != INVALID_HANDLE_VALUE) {
-      ::CloseHandle(watch->directory);
-    }
-    if (watch->stop_event != nullptr) {
-      ::CloseHandle(watch->stop_event);
-    }
-    if (watch->read_event != nullptr) {
-      ::CloseHandle(watch->read_event);
-    }
+  // Wake the reconcile worker so it observes the stop between RPCs.
+  if (state->batch_semaphore != nullptr) {
+    ::ReleaseSemaphore(state->batch_semaphore, 1, nullptr);
   }
-  watches_.clear();
-  // Let the reconcile worker drain (and observe the stop) before teardown.
-  if (batch_semaphore_ != nullptr) {
-    ::ReleaseSemaphore(batch_semaphore_, 1, nullptr);
-  }
-  if (reconcile_thread_.joinable()) {
-    reconcile_thread_.join();
-  }
-  if (batch_semaphore_ != nullptr) {
-    ::CloseHandle(batch_semaphore_);
-    batch_semaphore_ = nullptr;
-  }
+  // NEVER join on the caller thread. The reconcile worker can sit inside a
+  // synchronous fs-reconcile RPC while the backend is busy (a full catalog
+  // scan holds SQLite write locks); joining here from QuitApplication froze
+  // the UI thread, stopped the message pump and wedged the whole process.
+  // The detached cleanup owns the shared state — the workers keep it (and
+  // the backend API) alive until they exit, so the owning window can die.
+  std::thread([state]() mutable {
+    for (auto& watch : state->watches) {
+      if (watch->thread.joinable()) {
+        watch->thread.join();
+      }
+      if (watch->directory != INVALID_HANDLE_VALUE) {
+        ::CloseHandle(watch->directory);
+      }
+      if (watch->stop_event != nullptr) {
+        ::CloseHandle(watch->stop_event);
+      }
+      if (watch->read_event != nullptr) {
+        ::CloseHandle(watch->read_event);
+      }
+    }
+    state->watches.clear();
+    if (state->reconcile_thread.joinable()) {
+      state->reconcile_thread.join();
+    }
+    if (state->batch_semaphore != nullptr) {
+      ::CloseHandle(state->batch_semaphore);
+      state->batch_semaphore = nullptr;
+    }
+  }).detach();
 }
 
-void FsWatchHost::WatchRootLoop(WatchRoot* watch) {
+void FsWatchHost::WatchRootLoop(std::shared_ptr<State> state, WatchRoot* watch) {
   OVERLAPPED overlapped{};
   overlapped.hEvent = watch->read_event;
   for (;;) {
-    if (stopping_.load(std::memory_order_acquire)) {
+    if (state->stopping.load(std::memory_order_acquire)) {
       return;
     }
     DWORD bytes = 0;
@@ -186,24 +196,24 @@ void FsWatchHost::WatchRootLoop(WatchRoot* watch) {
     CollectDirectories(watch->buffer.get(), result_bytes, watch->root,
                        directories);
     for (auto const& directory : directories) {
-      EnqueueDirectory(directory);
+      EnqueueDirectory(*state, directory);
     }
   }
 }
 
-void FsWatchHost::EnqueueDirectory(std::wstring const& directory) {
+void FsWatchHost::EnqueueDirectory(State& state, std::wstring const& directory) {
   {
-    std::lock_guard lock(batch_mutex_);
-    if (pending_dirs_.insert(directory).second) {
-      batch_.push_back(directory);
+    std::lock_guard lock(state.batch_mutex);
+    if (state.pending_dirs.insert(directory).second) {
+      state.batch.push_back(directory);
     }
   }
-  if (batch_semaphore_ != nullptr) {
-    ::ReleaseSemaphore(batch_semaphore_, 1, nullptr);
+  if (state.batch_semaphore != nullptr) {
+    ::ReleaseSemaphore(state.batch_semaphore, 1, nullptr);
   }
 }
 
-void FsWatchHost::ReconcileLoop() {
+void FsWatchHost::ReconcileLoop(std::shared_ptr<State> state) {
   // One reconcile worker: pops directories, dedupes, forwards each to the
   // backend's fs-reconcile RPC (the RPC can take hundreds of milliseconds;
   // the worker keeps draining meanwhile).
@@ -213,21 +223,21 @@ void FsWatchHost::ReconcileLoop() {
                clock::now().time_since_epoch())
         .count();
   };
-  auto const reconcile = [this](std::wstring const& directory) {
-    if (stopping_.load(std::memory_order_acquire) || !api_) {
+  auto const reconcile = [&state](std::wstring const& directory) {
+    if (state->stopping.load(std::memory_order_acquire) || !state->api) {
       return;
     }
     try {
-      (void)api_->fs_reconcile(Utf8FromWide(directory)).get();
+      (void)state->api->fs_reconcile(Utf8FromWide(directory)).get();
     } catch (...) {
       // A reconcile failure (backend busy, transient SQLite lock) is
       // healed by the next change in that directory; never surface it.
     }
   };
-  while (!stopping_.load(std::memory_order_acquire)) {
+  while (!state->stopping.load(std::memory_order_acquire)) {
     // A timeout is not a skip: due delete-pending re-checks below must
     // fire even when no fresh event batch arrives.
-    (void)::WaitForSingleObject(batch_semaphore_, 500);
+    (void)::WaitForSingleObject(state->batch_semaphore, 500);
     // Due deferred re-checks first. A Windows delete notification can
     // fire while the file still sits in delete-pending state (antivirus
     // or an indexer holds a handle): the immediate reconcile still lists
@@ -235,7 +245,7 @@ void FsWatchHost::ReconcileLoop() {
     // notification. The same 2/4/6/8 s ladder the backend's Racket
     // flusher uses spans that window.
     auto const now = now_ms();
-    for (auto it = recheck_.begin(); it != recheck_.end();) {
+    for (auto it = state->recheck.begin(); it != state->recheck.end();) {
       auto& deadlines = it->second;
       auto const due = static_cast<std::size_t>(
           std::count_if(deadlines.begin(), deadlines.end(),
@@ -248,7 +258,7 @@ void FsWatchHost::ReconcileLoop() {
       deadlines.erase(deadlines.begin(),
                       deadlines.begin() + static_cast<std::ptrdiff_t>(due));
       if (deadlines.empty()) {
-        it = recheck_.erase(it);
+        it = state->recheck.erase(it);
       } else {
         ++it;
       }
@@ -256,22 +266,22 @@ void FsWatchHost::ReconcileLoop() {
     for (;;) {
       std::wstring directory;
       {
-        std::lock_guard lock(batch_mutex_);
-        if (batch_.empty()) {
+        std::lock_guard lock(state->batch_mutex);
+        if (state->batch.empty()) {
           break;
         }
-        directory = std::move(batch_.front());
-        batch_.pop_front();
+        directory = std::move(state->batch.front());
+        state->batch.pop_front();
         // Release the dedupe slot as the directory leaves the batch: a
         // change arriving during (or after) its reconcile must enqueue
         // again. Holding the slot forever reconciled every directory at
         // most once per session and silently dropped every later change.
-        pending_dirs_.erase(directory);
+        state->pending_dirs.erase(directory);
       }
       reconcile(directory);
       auto const scheduled = now_ms();
-      recheck_[directory] = {scheduled + 2000, scheduled + 4000,
-                             scheduled + 6000, scheduled + 8000};
+      state->recheck[directory] = {scheduled + 2000, scheduled + 4000,
+                                   scheduled + 6000, scheduled + 8000};
     }
   }
 }

@@ -49,6 +49,13 @@ std::wstring translated_setting(std::string const& language, std::string_view ke
   return to_wide(std::string(key));
 }
 
+// Positional {0} substitution for the shared i18n frames.
+std::wstring frame0(std::wstring text, std::wstring const& value) {
+  auto const at = text.find(L"{0}");
+  if (at == std::wstring::npos) return text;
+  return text.replace(at, 3, value);
+}
+
 std::string to_utf8(std::wstring const& wide) {
   if (wide.empty()) return {};
   auto const size = ::WideCharToMultiByte(CP_UTF8, 0, wide.data(),
@@ -199,6 +206,26 @@ void SettingsWindow::Attach(std::shared_ptr<rivet_app::API> api) {
   if (CommandsSection().Visibility() == mx::Visibility::Visible) LoadBindings();
 }
 
+void SettingsWindow::SetUpdateOpener(std::function<void()> opener) {
+  update_opener_ = std::move(opener);
+}
+
+void SettingsWindow::RefreshLanguage(std::string const& language) {
+  language_ = language.empty() ? "system" : language;
+  values_["language"] = language_;
+  loading_ = true;
+  select_choice(LanguageBox(), language_);
+  loading_ = false;
+  ApplyLocalization(language_);
+  // Dynamic rows were painted in the previous language; rebuild whichever
+  // section is on screen so the whole window follows the push.
+  if (CommandsSection().Visibility() == mx::Visibility::Visible) LoadBindings();
+  if (WorkflowsSection().Visibility() == mx::Visibility::Visible) {
+    LoadWorkflowList();
+    LoadWorkflowDetail();
+  }
+}
+
 void SettingsWindow::Load() {
   if (api_ == nullptr) {
     return;
@@ -238,7 +265,8 @@ void SettingsWindow::Apply(std::map<std::string, std::string> values,
     auto const it = values_.find(key);
     return it == values_.end() ? std::string() : it->second;
   };
-  ApplyLocalization(get("language"));
+  language_ = get("language").empty() ? "system" : get("language");
+  ApplyLocalization(language_);
   select_choice(LanguageBox(), get("language"));
   select_choice(ThemeBox(), get("theme"));
   HotkeyBox().Text(to_wide(get("hotkey")));
@@ -256,8 +284,9 @@ void SettingsWindow::Apply(std::map<std::string, std::string> values,
   BaseUrlBox().Text(to_wide(get("ai-base-url")));
   PersonaBox().Text(to_wide(get("ai-persona")));
   SyncRootBox().Text(to_wide(get("sync-root")));
-  AiStatusText().Text(
-      to_wide(ai_status == "ready" ? std::string("Ready") : ai_status));
+  AiStatusText().Text(ai_status == "ready"
+                          ? translated_setting(language_, "settings.ai-ready")
+                          : to_wide(ai_status));
   loading_ = false;
 }
 
@@ -266,22 +295,26 @@ void SettingsWindow::Write(std::string key, std::string value) {
     return;
   }
   values_[key] = value;
-  if (key == "language") ApplyLocalization(value);
+  if (key == "language") {
+    language_ = value.empty() ? "system" : value;
+    ApplyLocalization(language_);
+  }
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto api = api_;
-  std::thread([weak, api, dispatcher, key, value]() mutable {
-    std::string error;
+  std::string const lang = language_;
+  std::thread([weak, api, dispatcher, key, value, lang]() mutable {
+    std::wstring error;
     try {
       if (!api->settings_set(key, value).get()) {
         error = key == "hotkey"
-            ? "that shortcut is not supported"
-            : "that value is not supported";
+            ? translated_setting(lang, "settings.hotkey.unsupported")
+            : frame0(translated_setting(lang, "settings.value.unsupported"),
+                     to_wide(key));
       }
-    } catch (std::exception const& e) {
-      error = e.what();
     } catch (...) {
-      error = "settings-set failed";
+      error = frame0(translated_setting(lang, "settings.write.failed"),
+                     to_wide(key));
     }
     dispatcher.TryEnqueue([weak, key, error]() mutable {
       if (auto window = weak.get()) {
@@ -290,10 +323,14 @@ void SettingsWindow::Write(std::string key, std::string value) {
           if (key == "ai-provider") {
             window->RefreshAiStatus();
           }
+          if (key == "language") {
+            // Repaint the dynamic rows in the accepted language.
+            window->RefreshLanguage(window->values_["language"]);
+          }
         } else {
           // The backend refused the value (grammar, range): say so and
           // fall back to what it actually holds.
-          window->ShowError(to_wide(key + ": " + error));
+          window->ShowError(error);
           window->Load();
         }
       }
@@ -302,66 +339,102 @@ void SettingsWindow::Write(std::string key, std::string value) {
 }
 
 void SettingsWindow::ApplyLocalization(std::string const& language) {
-  LanguageLabel().Text(translated_setting(language, "setting.language"));
-  ThemeLabel().Text(translated_setting(language, "setting.theme"));
-  HotkeyLabel().Text(translated_setting(language, "setting.hotkey"));
-  MaxResultsLabel().Text(translated_setting(language, "setting.max-results"));
-  ClipboardLabel().Text(translated_setting(language, "setting.clipboard-enabled"));
-  WebSearchLabel().Text(translated_setting(language, "setting.web-search-enabled"));
-  ExpansionLabel().Text(translated_setting(language, "setting.expansion-enabled"));
-  PluginsLabel().Text(translated_setting(language, "setting.plugins-enabled"));
-  ProviderLabel().Text(translated_setting(language, "setting.ai-provider"));
-  // Navigation and section titles (the v0.18 five-section IA shipped with
-  // hardcoded English; these follow the active language like every label).
-  NavGeneral().Content(winrt::box_value(
-      translated_setting(language, "settings.nav.general")));
-  NavFeatures().Content(winrt::box_value(
-      translated_setting(language, "settings.nav.features")));
-  NavAi().Content(winrt::box_value(
-      translated_setting(language, "settings.nav.ai")));
-  NavCommands().Content(winrt::box_value(
-      translated_setting(language, "settings.nav.commands")));
-  NavSync().Content(winrt::box_value(
-      translated_setting(language, "settings.nav.sync")));
-  GeneralTitle().Text(translated_setting(language, "settings.nav.general"));
-  FeaturesTitle().Text(translated_setting(language, "settings.nav.features"));
-  AiTitle().Text(translated_setting(language, "settings.nav.ai"));
-  CommandsTitle().Text(translated_setting(language, "settings.nav.commands"));
-  SyncTitle().Text(translated_setting(language, "settings.nav.sync"));
-  // Sync & Updates card.
-  SyncFolderLabel().Text(translated_setting(language, "settings.sync-folder"));
-  SyncFolderHint().Text(
-      translated_setting(language, "settings.sync-folder.description"));
-  UpdatesNoteHint().Text(
-      translated_setting(language, "settings.updates-note.win"));
-  CheckUpdatesLabel().Text(
-      translated_setting(language, "settings.check-updates"));
-  UpdateCheckButton().Content(
-      winrt::box_value(translated_setting(language, "settings.check-now")));
-  UpdateDownloadButton().Content(
-      winrt::box_value(translated_setting(language, "settings.download")));
-  UpdateInstallButton().Content(winrt::box_value(
-      translated_setting(language, "settings.quit-and-install")));
-  // Localized placeholder used by the update-card status lines that were
-  // painted before this window existed (see UpdatePollTick / RunUpdateCheck).
-  update_checking_ =
-      translated_setting(language, "update.checking");
-  update_available_ =
-      translated_setting(language, "update.available");
-  update_up_to_date_ =
-      translated_setting(language, "update.up-to-date");
-  update_throttled_ =
-      translated_setting(language, "update.check-throttled");
-  update_check_failed_ =
-      translated_setting(language, "update.check-failed");
-  update_downloaded_ =
-      translated_setting(language, "update.downloaded");
-  update_download_failed_ =
-      translated_setting(language, "update.download-failed");
-  update_progress_ =
-      translated_setting(language, "update.download-progress");
-  update_install_failed_ =
-      translated_setting(language, "update.install-failed");
+  auto const tr = [&language](std::string_view key) {
+    return translated_setting(language, key);
+  };
+  // General: labels, hints, placeholders and option items.
+  LanguageLabel().Text(tr("setting.language"));
+  ThemeLabel().Text(tr("setting.theme"));
+  StartAtLoginLabel().Text(tr("settings.start-at-login"));
+  StartAtLoginHint().Text(tr("settings.hint.start-at-login"));
+  HotkeyLabel().Text(tr("setting.hotkey"));
+  HotkeyBox().PlaceholderText(tr("settings.hotkey.placeholder"));
+  HotkeyHint().Text(tr("settings.hint.hotkey"));
+  MaxResultsLabel().Text(tr("setting.max-results"));
+  MaxResultsHint().Text(tr("settings.hint.max-results"));
+  LangSystemItem().Content(winrt::box_value(tr("settings.language.system")));
+  LangEnItem().Content(winrt::box_value(tr("settings.language.en")));
+  LangZhItem().Content(winrt::box_value(tr("settings.language.zh")));
+  ThemeSystemItem().Content(winrt::box_value(tr("settings.theme.system")));
+  ThemeLightItem().Content(winrt::box_value(tr("settings.theme.light")));
+  ThemeDarkItem().Content(winrt::box_value(tr("settings.theme.dark")));
+  // Features.
+  ClipboardLabel().Text(tr("setting.clipboard-enabled"));
+  ClipboardLimitLabel().Text(tr("settings.clipboard-limit"));
+  ClipboardLimitHint().Text(tr("settings.hint.clipboard-limit"));
+  WebSearchLabel().Text(tr("setting.web-search-enabled"));
+  DefaultBangLabel().Text(tr("settings.default-engine"));
+  ExpansionLabel().Text(tr("setting.expansion-enabled"));
+  PluginsLabel().Text(tr("setting.plugins-enabled"));
+  PluginTimeoutLabel().Text(tr("settings.plugins-timeout"));
+  PluginTimeoutHint().Text(tr("settings.hint.plugins-timeout"));
+  // AI.
+  ProviderLabel().Text(tr("setting.ai-provider"));
+  ProviderOffItem().Content(winrt::box_value(tr("settings.provider.off")));
+  ModelLabel().Text(tr("settings.ai-model"));
+  ModelBox().PlaceholderText(tr("settings.ai-model.placeholder"));
+  BaseUrlLabel().Text(tr("settings.ai-base-url"));
+  BaseUrlBox().PlaceholderText(tr("settings.ai-model.placeholder"));
+  PersonaLabel().Text(tr("settings.ai-persona"));
+  PersonaBox().PlaceholderText(tr("settings.ai-persona.placeholder"));
+  ApiKeyLabel().Text(tr("settings.ai-api-key"));
+  KeyBox().PlaceholderText(tr("settings.ai-key.placeholder"));
+  SaveKeyButton().Content(winrt::box_value(tr("settings.save")));
+  AiKeysHint().Text(tr("settings.hint.ai-keys"));
+  // Navigation and section titles: the shared six-section IA.
+  NavGeneral().Content(winrt::box_value(tr("settings.nav.general")));
+  NavFeatures().Content(winrt::box_value(tr("settings.nav.features")));
+  NavAi().Content(winrt::box_value(tr("settings.nav.ai")));
+  NavCommands().Content(winrt::box_value(tr("settings.nav.commands")));
+  NavWorkflows().Content(winrt::box_value(tr("settings.nav.workflows")));
+  NavSync().Content(winrt::box_value(tr("settings.nav.sync")));
+  GeneralTitle().Text(tr("settings.nav.general"));
+  FeaturesTitle().Text(tr("settings.nav.features"));
+  AiTitle().Text(tr("settings.nav.ai"));
+  CommandsTitle().Text(tr("settings.nav.commands"));
+  WorkflowsTitle().Text(tr("settings.wf.title"));
+  SyncTitle().Text(tr("settings.nav.sync"));
+  // Commands.
+  CommandsHint().Text(tr("settings.hint.commands"));
+  CommandsLoadingText().Text(tr("settings.commands.loading"));
+  // Workflows editor chrome (dynamic rows localize at paint time).
+  WorkflowsHint().Text(tr("settings.wf.hint"));
+  WorkflowNameBox().PlaceholderText(tr("settings.wf.new-name"));
+  WorkflowCreateButton().Content(winrt::box_value(tr("settings.wf.create")));
+  WorkflowRefreshButton().Content(winrt::box_value(tr("settings.wf.refresh")));
+  WorkflowListLoadingText().Text(tr("settings.wf.loading"));
+  WorkflowListPrevButton().Content(winrt::box_value(tr("settings.wf.prev")));
+  WorkflowListNextButton().Content(winrt::box_value(tr("settings.wf.next")));
+  WorkflowListPage().Text(frame0(tr("settings.wf.page"),
+                                 std::to_wstring(workflow_list_page_)));
+  if (workflow_selected_.empty()) {
+    WorkflowSelectedText().Text(tr("settings.wf.select"));
+  }
+  WorkflowStepPrevButton().Content(winrt::box_value(tr("settings.wf.prev")));
+  WorkflowStepNextButton().Content(winrt::box_value(tr("settings.wf.next")));
+  WorkflowStepPage().Text(frame0(tr("settings.wf.steps-page"),
+                                 std::to_wstring(workflow_step_page_)));
+  WorkflowStepBox().PlaceholderText(tr("settings.wf.step-placeholder"));
+  WorkflowAddStepButton().Content(winrt::box_value(tr("settings.wf.add-step")));
+  WorkflowInputLabel().Text(tr("settings.wf.input"));
+  WorkflowInputBox().PlaceholderText(tr("settings.wf.clipboard-note"));
+  WorkflowDryRunButton().Content(winrt::box_value(tr("settings.wf.dry-run")));
+  WorkflowRunCopyButton().Content(winrt::box_value(tr("settings.wf.run-copy")));
+  WorkflowDeleteConfirm().Content(winrt::box_value(tr("settings.wf.confirm-delete")));
+  WorkflowDeleteButton().Content(winrt::box_value(tr("settings.wf.delete")));
+  WorkflowClipboardNote().Text(tr("settings.wf.clipboard-note"));
+  WorkflowTraceTitle().Text(tr("settings.wf.trace"));
+  WorkflowTracePrevButton().Content(winrt::box_value(tr("settings.wf.prev")));
+  WorkflowTraceNextButton().Content(winrt::box_value(tr("settings.wf.next")));
+  WorkflowTracePage().Text(frame0(tr("settings.wf.trace-page"),
+                                  std::to_wstring(workflow_trace_page_)));
+  // Sync & Updates: note + one button opening the dedicated update window.
+  SyncFolderLabel().Text(tr("settings.sync-folder"));
+  SyncRootBox().PlaceholderText(tr("settings.sync-folder.placeholder"));
+  SyncFolderHint().Text(tr("settings.sync-folder.description"));
+  UpdatesNoteHint().Text(tr("settings.updates-note.win"));
+  CheckUpdatesNowButton().Content(
+      winrt::box_value(tr("settings.check-updates-now")));
 }
 
 void SettingsWindow::RefreshAiStatus() {
@@ -371,16 +444,18 @@ void SettingsWindow::RefreshAiStatus() {
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto api = api_;
-  std::thread([weak, api, dispatcher]() mutable {
+  std::string const lang = language_;
+  std::thread([weak, api, dispatcher, lang]() mutable {
     std::string status;
     try {
       status = api->ai_status().get();
     } catch (...) {
     }
-    dispatcher.TryEnqueue([weak, status]() mutable {
+    dispatcher.TryEnqueue([weak, status, lang]() mutable {
       if (auto window = weak.get()) {
         window->AiStatusText().Text(
-            to_wide(status == "ready" ? std::string("Ready") : status));
+            status == "ready" ? translated_setting(lang, "settings.ai-ready")
+                              : to_wide(status));
       }
     });
   }).detach();
@@ -392,15 +467,17 @@ void SettingsWindow::LoadBindings() {
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto api = api_;
-  std::thread([weak, api, dispatcher]() mutable {
+  std::string const lang = language_;
+  std::thread([weak, api, dispatcher, lang]() mutable {
     std::vector<std::vector<std::string>> commands, bindings;
     try {
       commands = api->bindings_commands().get();
       bindings = api->bindings_list().get();
     } catch (...) {
-      dispatcher.TryEnqueue([weak] {
+      dispatcher.TryEnqueue([weak, lang] {
         if (auto window = weak.get()) {
-          window->BindingErrorText().Text(L"Could not load command bindings.");
+          window->BindingErrorText().Text(
+              translated_setting(lang, "settings.commands.load-failed"));
           window->BindingErrorText().Visibility(mx::Visibility::Visible);
         }
       });
@@ -417,6 +494,9 @@ void SettingsWindow::LoadBindings() {
 void SettingsWindow::ShowBindings(
     std::vector<std::vector<std::string>> commands,
     std::vector<std::vector<std::string>> bindings) {
+  auto const tr = [this](std::string_view key) {
+    return translated_setting(language_, key);
+  };
   std::map<std::string, std::pair<std::string, std::string>> existing;
   for (auto const& row : bindings) {
     if (row.size() >= 3) existing[row[0]] = {row[1], row[2]};
@@ -441,12 +521,12 @@ void SettingsWindow::ShowBindings(
     mxc::TextBox aliasBox;
     aliasBox.Width(105);
     aliasBox.Text(to_wide(alias));
-    aliasBox.PlaceholderText(L"alias");
+    aliasBox.PlaceholderText(tr("settings.commands.alias"));
     row.Children().Append(aliasBox);
     mxc::TextBox hotkeyBox;
     hotkeyBox.Width(125);
     hotkeyBox.Text(to_wide(hotkey));
-    hotkeyBox.PlaceholderText(L"Press keys");
+    hotkeyBox.PlaceholderText(tr("settings.commands.press-keys"));
     hotkeyBox.IsReadOnly(true);
     hotkeyBox.KeyDown([hotkeyBox, previous = to_wide(hotkey)]
                       (auto const&, mx::Input::KeyRoutedEventArgs const& args) {
@@ -457,7 +537,7 @@ void SettingsWindow::ShowBindings(
     });
     row.Children().Append(hotkeyBox);
     mxc::Button save;
-    save.Content(winrt::box_value(L"Save"));
+    save.Content(winrt::box_value(tr("settings.save")));
     save.Click([weak = get_weak(), id, aliasBox, hotkeyBox](auto const&, auto const&) {
       if (auto window = weak.get())
         window->SaveBinding(id, trimmed(to_utf8(std::wstring(aliasBox.Text()))),
@@ -465,7 +545,7 @@ void SettingsWindow::ShowBindings(
     });
     row.Children().Append(save);
     mxc::Button clear;
-    clear.Content(winrt::box_value(L"Clear"));
+    clear.Content(winrt::box_value(tr("settings.commands.clear")));
     clear.Click([weak = get_weak(), id](auto const&, auto const&) {
       if (auto window = weak.get()) window->ClearBinding(id);
     });
@@ -480,16 +560,18 @@ void SettingsWindow::SaveBinding(std::string id, std::string alias,
   auto const weak = get_weak();
   auto const dispatcher = DispatcherQueue();
   auto api = api_;
-  std::thread([weak, api, dispatcher, id, alias, hotkey]() mutable {
-    std::string error;
+  std::string const lang = language_;
+  std::thread([weak, api, dispatcher, id, alias, hotkey, lang]() mutable {
+    std::wstring error;
     try {
       if (!api->binding_set(id, alias, hotkey).get())
-        error = "Binding rejected: shortcut already used, summon key, or unsupported command.";
-    } catch (std::exception const& e) { error = e.what(); }
-    catch (...) { error = "Could not save command binding."; }
+        error = translated_setting(lang, "settings.commands.rejected");
+    } catch (...) {
+      error = translated_setting(lang, "settings.commands.save-failed");
+    }
     dispatcher.TryEnqueue([weak, error] {
       if (auto window = weak.get()) {
-        window->BindingErrorText().Text(to_wide(error));
+        window->BindingErrorText().Text(error);
         window->BindingErrorText().Visibility(
             error.empty() ? mx::Visibility::Collapsed : mx::Visibility::Visible);
         window->LoadBindings();
@@ -503,15 +585,18 @@ void SettingsWindow::ClearBinding(std::string id) {
   auto const weak = get_weak();
   auto const dispatcher = DispatcherQueue();
   auto api = api_;
-  std::thread([weak, api, dispatcher, id]() mutable {
-    std::string error;
+  std::string const lang = language_;
+  std::thread([weak, api, dispatcher, id, lang]() mutable {
+    std::wstring error;
     try {
-      if (!api->binding_clear(id).get()) error = "Could not clear command binding.";
-    } catch (std::exception const& e) { error = e.what(); }
-    catch (...) { error = "Could not clear command binding."; }
+      if (!api->binding_clear(id).get())
+        error = translated_setting(lang, "settings.commands.clear-failed");
+    } catch (...) {
+      error = translated_setting(lang, "settings.commands.clear-failed");
+    }
     dispatcher.TryEnqueue([weak, error] {
       if (auto window = weak.get()) {
-        window->BindingErrorText().Text(to_wide(error));
+        window->BindingErrorText().Text(error);
         window->BindingErrorText().Visibility(
             error.empty() ? mx::Visibility::Collapsed : mx::Visibility::Visible);
         window->LoadBindings();
@@ -531,15 +616,18 @@ void SettingsWindow::LoadWorkflowList() {
   auto weak = get_weak();
   auto api = api_;
   int const page = workflow_list_page_;
-  std::thread([weak, api, dispatcher, page]() mutable {
+  std::string const lang = language_;
+  std::thread([weak, api, dispatcher, page, lang]() mutable {
     std::vector<std::vector<std::string>> rows;
-    std::string error;
+    std::wstring error;
     try { rows = api->search("wf list " + std::to_string(page)).get(); }
-    catch (std::exception const& e) { error = e.what(); }
-    catch (...) { error = "Workflow list unavailable"; }
-    dispatcher.TryEnqueue([weak, page, rows = std::move(rows), error]() mutable {
+    catch (...) { error = translated_setting(lang, "settings.wf.load-failed"); }
+    dispatcher.TryEnqueue([weak, page, lang, rows = std::move(rows), error]() mutable {
       auto window = weak.get();
       if (!window || window->workflow_list_page_ != page) return;
+      auto const tr = [&lang](std::string_view key) {
+        return translated_setting(lang, key);
+      };
       auto children = window->WorkflowListRows().Children();
       children.Clear();
       unsigned shown = 0;
@@ -568,12 +656,12 @@ void SettingsWindow::LoadWorkflowList() {
       }
       if (shown == 0) {
         mxc::TextBlock empty;
-        empty.Text(L"No workflows on this page.");
+        empty.Text(tr("settings.wf.empty"));
         children.Append(empty);
       }
       window->WorkflowListPage().Text(
-          winrt::hstring(L"Page " + std::to_wstring(page)));
-      if (!error.empty()) window->WorkflowStatusText().Text(to_wide(error));
+          frame0(tr("settings.wf.page"), std::to_wstring(page)));
+      if (!error.empty()) window->WorkflowStatusText().Text(error);
     });
   }).detach();
 }
@@ -581,7 +669,7 @@ void SettingsWindow::LoadWorkflowList() {
 void SettingsWindow::LoadWorkflowDetail() {
   if (!api_) return;
   if (workflow_selected_.empty()) {
-    WorkflowSelectedText().Text(L"Select a workflow");
+    WorkflowSelectedText().Text(translated_setting(language_, "settings.wf.select"));
     WorkflowStepRows().Children().Clear();
     WorkflowTraceRows().Children().Clear();
     WorkflowRunCopyButton().IsEnabled(false);
@@ -590,27 +678,32 @@ void SettingsWindow::LoadWorkflowDetail() {
   std::string const name = workflow_selected_;
   int const step_page = workflow_step_page_;
   int const trace_page = workflow_trace_page_;
+  std::string const lang = language_;
   WorkflowSelectedText().Text(to_wide(name));
   auto dispatcher = DispatcherQueue();
   auto weak = get_weak();
   auto api = api_;
-  std::thread([weak, api, dispatcher, name, step_page, trace_page]() mutable {
+  std::thread([weak, api, dispatcher, name, step_page, trace_page, lang]() mutable {
     std::vector<std::vector<std::string>> steps, traces;
-    std::string error;
+    std::wstring error;
     try {
       steps = api->search("wf show " + name + " " +
                           std::to_string(step_page)).get();
       traces = api->search("wf trace " + name + " " +
                            std::to_string(trace_page)).get();
-    } catch (std::exception const& e) { error = e.what(); }
-    catch (...) { error = "Workflow detail unavailable"; }
-    dispatcher.TryEnqueue([weak, name, step_page, trace_page,
+    } catch (...) {
+      error = translated_setting(lang, "settings.wf.load-failed");
+    }
+    dispatcher.TryEnqueue([weak, name, step_page, trace_page, lang,
                            steps = std::move(steps),
                            traces = std::move(traces), error]() mutable {
       auto window = weak.get();
       if (!window || window->workflow_selected_ != name ||
           window->workflow_step_page_ != step_page ||
           window->workflow_trace_page_ != trace_page) return;
+      auto const tr = [&lang](std::string_view key) {
+        return translated_setting(lang, key);
+      };
       auto step_children = window->WorkflowStepRows().Children();
       step_children.Clear();
       bool copy_safe = false;
@@ -631,7 +724,7 @@ void SettingsWindow::LoadWorkflowDetail() {
         std::string const index = pos == std::string::npos
                                       ? "" : title.substr(pos + 1);
         mxc::Button remove;
-        remove.Content(winrt::box_value(L"Remove"));
+        remove.Content(winrt::box_value(tr("settings.wf.remove")));
         remove.Click([weak, name, index](auto const&, auto const&) {
           if (auto w = weak.get()) {
             w->WorkflowCommand("workflow.remove",
@@ -645,7 +738,7 @@ void SettingsWindow::LoadWorkflowDetail() {
       window->workflow_copy_safe_ = copy_safe;
       window->WorkflowRunCopyButton().IsEnabled(copy_safe);
       window->WorkflowStepPage().Text(
-          winrt::hstring(L"Steps page " + std::to_wstring(step_page)));
+          frame0(tr("settings.wf.steps-page"), std::to_wstring(step_page)));
       auto trace_children = window->WorkflowTraceRows().Children();
       trace_children.Clear();
       for (auto const& row : traces) {
@@ -657,8 +750,8 @@ void SettingsWindow::LoadWorkflowDetail() {
         trace_children.Append(line);
       }
       window->WorkflowTracePage().Text(
-          winrt::hstring(L"Trace page " + std::to_wstring(trace_page)));
-      if (!error.empty()) window->WorkflowStatusText().Text(to_wide(error));
+          frame0(tr("settings.wf.trace-page"), std::to_wstring(trace_page)));
+      if (!error.empty()) window->WorkflowStatusText().Text(error);
     });
   }).detach();
 }
@@ -668,18 +761,18 @@ void SettingsWindow::WorkflowCommand(std::string id, std::string arg) {
   auto dispatcher = DispatcherQueue();
   auto weak = get_weak();
   auto api = api_;
-  WorkflowStatusText().Text(L"Running workflow request…");
-  std::thread([weak, api, dispatcher, id = std::move(id),
+  std::string const lang = language_;
+  WorkflowStatusText().Text(translated_setting(lang, "settings.wf.running"));
+  std::thread([weak, api, dispatcher, lang, id = std::move(id),
                arg = std::move(arg)]() mutable {
-    std::string status, error;
+    std::string status;
+    std::wstring error;
     try { status = api->run_action(id, arg).get(); }
-    catch (std::exception const& e) { error = e.what(); }
-    catch (...) { error = "Workflow action failed"; }
-    dispatcher.TryEnqueue([weak, id, status, error] {
+    catch (...) { error = translated_setting(lang, "settings.wf.action-failed"); }
+    dispatcher.TryEnqueue([weak, id, status, error, lang] {
       if (auto w = weak.get()) {
-        w->WorkflowStatusText().Text(error.empty()
-             ? L"Request completed; inspect the updated steps/trace for validation."
-             : to_wide(error));
+        w->WorkflowStatusText().Text(
+            error.empty() ? translated_setting(lang, "settings.wf.done") : error);
         if (error.empty() && id == "workflow.delete") {
           w->workflow_selected_.clear();
           w->WorkflowDeleteConfirm().IsChecked(
@@ -698,7 +791,10 @@ void SettingsWindow::WorkflowCommand(std::string id, std::string arg) {
 void SettingsWindow::WorkflowCreate_Click(
     winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
   auto name = trimmed(to_utf8(std::wstring(WorkflowNameBox().Text())));
-  if (name.empty()) { WorkflowStatusText().Text(L"Enter a workflow name."); return; }
+  if (name.empty()) {
+    WorkflowStatusText().Text(translated_setting(language_, "settings.wf.enter-name"));
+    return;
+  }
   workflow_list_page_ = 1;
   WorkflowCommand("workflow.create", name);
 }
@@ -742,7 +838,10 @@ void SettingsWindow::WorkflowAdd_Click(
     winrt::Windows::Foundation::IInspectable const&, mx::RoutedEventArgs const&) {
   if (workflow_selected_.empty()) return;
   auto step = trimmed(to_utf8(std::wstring(WorkflowStepBox().Text())));
-  if (step.empty()) { WorkflowStatusText().Text(L"Enter a step expression."); return; }
+  if (step.empty()) {
+    WorkflowStatusText().Text(translated_setting(language_, "settings.wf.enter-step"));
+    return;
+  }
   WorkflowCommand("workflow.add",
                   workflow_selected_ + std::string(1, '\x1F') + step);
 }
@@ -767,7 +866,8 @@ void SettingsWindow::WorkflowDelete_Click(
   if (workflow_selected_.empty()) return;
   auto checked = WorkflowDeleteConfirm().IsChecked();
   if (!checked || !checked.Value()) {
-    WorkflowStatusText().Text(L"Check Confirm delete before deleting.");
+    WorkflowStatusText().Text(
+        translated_setting(language_, "settings.wf.confirm-first"));
     return;
   }
   WorkflowCommand("workflow.delete", workflow_selected_);
@@ -784,21 +884,19 @@ void SettingsWindow::SaveKey() {
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto api = api_;
-  std::thread([weak, api, dispatcher, key]() mutable {
+  std::string const lang = language_;
+  std::thread([weak, api, dispatcher, key, lang]() mutable {
     std::string status;
     try {
       status = api->run_action("ai.key", key).get();
-    } catch (std::exception const& e) {
-      status = e.what();
     } catch (...) {
-      status = "ai.key failed";
+      status = "error";
     }
-    dispatcher.TryEnqueue([weak, status]() mutable {
+    dispatcher.TryEnqueue([weak, status, lang]() mutable {
       if (auto window = weak.get()) {
         window->KeyNotice().Text(
-            status == "ok"
-                ? std::wstring(L"Key saved — stored on this PC only, never synced.")
-                : to_wide(status));
+            status == "ok" ? translated_setting(lang, "settings.ai-key.saved")
+                           : translated_setting(lang, "settings.ai-key.failed"));
         window->KeyBox().Password(L"");
         window->RefreshAiStatus();
       }
@@ -843,7 +941,7 @@ void SettingsWindow::Toggle_Toggled(
   }
   if (tag_key(sender) == "local-login-startup") {
     if (!fulcrum::windows::SetAutostart(toggle.IsOn())) {
-      ShowError(L"Could not change this PC's login startup setting.");
+      ShowError(translated_setting(language_, "settings.login.failed.win"));
       loading_ = true;
       LoginStartupSwitch().IsOn(fulcrum::windows::AutostartEnabled());
       loading_ = false;
@@ -911,164 +1009,13 @@ void SettingsWindow::SaveKey_Click(
   SaveKey();
 }
 
-void SettingsWindow::OpenUpdates() {
-  NavigateTo("sync");
-  RunUpdateCheck();
-}
-
-void SettingsWindow::UpdateCheck_Click(
+void SettingsWindow::CheckUpdatesNow_Click(
     winrt::Windows::Foundation::IInspectable const&,
     mx::RoutedEventArgs const&) {
-  RunUpdateCheck();
-}
-
-void SettingsWindow::SetUpdateStatus(std::wstring const& message) {
-  UpdateStatusText().Text(message);
-  UpdateStatusText().Visibility(mx::Visibility::Visible);
-}
-
-void SettingsWindow::RunUpdateCheck() {
-  if (api_ == nullptr || update_polling_.exchange(true)) {
-    return;
-  }
-  UpdateCheckButton().IsEnabled(false);
-  UpdateDownloadButton().Visibility(mx::Visibility::Collapsed);
-  UpdateInstallButton().Visibility(mx::Visibility::Collapsed);
-  UpdateProgressBar().Visibility(mx::Visibility::Collapsed);
-  SetUpdateStatus(update_checking_);
-  auto const dispatcher = DispatcherQueue();
-  auto weak = get_weak();
-  auto api = api_;
-  // The localized frames are copied before the thread starts: the members
-  // are written on the UI thread (ApplyLocalization) and must not be read
-  // concurrently from this worker.
-  std::wstring const available_frame = update_available_;
-  std::wstring const up_to_date_frame = update_up_to_date_;
-  std::wstring const throttled_text = update_throttled_;
-  std::wstring const check_failed_frame = update_check_failed_;
-  std::thread([weak, api, dispatcher, available_frame, up_to_date_frame,
-               throttled_text, check_failed_frame]() mutable {
-    std::wstring line;
-    auto frame = [](std::wstring text, std::wstring const& value) {
-      auto const at = text.find(L"{0}");
-      if (at == std::wstring::npos) return text;
-      return text.replace(at, 3, value);
-    };
-    try {
-      auto const check = api->update_check(true).get();
-      if (check.status == "available") {
-        auto const version = to_wide(check.available_version.value_or("?"));
-        auto const size_mb = check.size_bytes
-                                 ? std::to_wstring((*check.size_bytes + (1 << 20) - 1) >> 20) + L" MB"
-                                 : L"?";
-        line = frame(frame(available_frame, version), size_mb);
-        dispatcher.TryEnqueue([weak, dispatcher]() mutable {
-          if (auto window = weak.get()) {
-            window->UpdateDownloadButton().Visibility(mx::Visibility::Visible);
-          }
-        });
-      } else if (check.status == "up-to-date") {
-        line = frame(up_to_date_frame, to_wide(check.current_version));
-      } else if (check.status == "throttled") {
-        line = throttled_text;
-      } else {
-        line = frame(check_failed_frame,
-                     to_wide(check.error.value_or("check failed")));
-      }
-    } catch (std::exception const& e) {
-      line = frame(check_failed_frame, to_wide(e.what()));
-    } catch (...) {
-      line = frame(check_failed_frame, L"unknown reason");
-    }
-    dispatcher.TryEnqueue([weak, dispatcher, line]() mutable {
-      if (auto window = weak.get()) {
-        window->SetUpdateStatus(line);
-        window->UpdateCheckButton().IsEnabled(true);
-        window->update_polling_.store(false, std::memory_order_release);
-      }
-    });
-  }).detach();
-}
-
-void SettingsWindow::UpdateDownload_Click(
-    winrt::Windows::Foundation::IInspectable const&,
-    mx::RoutedEventArgs const&) {
-  if (api_ == nullptr || update_polling_.exchange(true)) {
-    return;
-  }
-  UpdateDownloadButton().IsEnabled(false);
-  UpdateProgressBar().Visibility(mx::Visibility::Visible);
-  SetUpdateStatus(update_progress_.empty()
-                      ? L"Downloading…"
-                      : update_progress_.substr(0, update_progress_.find(L"{0}")));
-  auto const dispatcher = DispatcherQueue();
-  update_timer_ = DispatcherQueue().CreateTimer();
-  update_timer_.Interval(std::chrono::milliseconds{700});
-  update_timer_.Tick({this, &SettingsWindow::UpdatePollTick});
-  update_timer_.Start();
-  auto weak = get_weak();
-  auto api = api_;
-  std::thread([weak, api]() mutable {
-    try {
-      api->update_download().get();
-    } catch (...) {
-    }
-  }).detach();
-}
-
-void SettingsWindow::UpdatePollTick(
-    winrt::Windows::Foundation::IInspectable const&,
-    winrt::Windows::Foundation::IInspectable const&) {
-  if (api_ == nullptr) {
-    return;
-  }
-  auto const state = api_->update_state().get();
-  if (state.phase == "downloading") {
-    auto const percent = state.percent < 0 ? 0 : (state.percent > 100 ? 100 : state.percent);
-    UpdateProgressBar().Value(static_cast<double>(percent));
-    auto const frame = update_progress_.empty()
-                           ? std::wstring(L"Downloading… {0}%")
-                           : update_progress_;
-    auto text = frame;
-    auto const at = text.find(L"{0}");
-    SetUpdateStatus(at == std::wstring::npos
-                        ? text
-                        : text.replace(at, 3, std::to_wstring(percent)));
-    return;
-  }
-  // Any other phase means the transfer left `downloading` (done, failed,
-  // or superseded): stop polling and re-read the truth.
-  update_timer_.Stop();
-  update_polling_.store(false, std::memory_order_release);
-  UpdateProgressBar().Visibility(mx::Visibility::Collapsed);
-  if (state.phase == "downloaded") {
-    SetUpdateStatus(update_downloaded_);
-    UpdateInstallButton().Visibility(mx::Visibility::Visible);
-    return;
-  }
-  if (state.phase == "error") {
-    auto const detail = state.message.value_or("");
-    SetUpdateStatus(detail.empty() ? update_download_failed_ : to_wide(detail));
-    UpdateDownloadButton().IsEnabled(true);
-    return;
-  }
-  SetUpdateStatus(L"");
-}
-
-void SettingsWindow::UpdateInstall_Click(
-    winrt::Windows::Foundation::IInspectable const&,
-    mx::RoutedEventArgs const&) {
-  if (api_ == nullptr) {
-    return;
-  }
-  UpdateInstallButton().IsEnabled(false);
-  auto api = api_;
-  std::thread([api]() mutable {
-    try {
-      (void)api->run_action("update.install", "").get();
-    } catch (...) {
-    }
-  }).detach();
+  // Update-flow parity: the Sync page button opens the same dedicated
+  // update window as the tray entry and the launcher update rows. The
+  // install handoff lives in MainWindow, not in this form.
+  if (update_opener_) update_opener_();
 }
 
 }  // namespace winrt::RivetHost::implementation

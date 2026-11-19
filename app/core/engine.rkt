@@ -831,7 +831,7 @@
      [(cancelled) "File indexing stopped"]
      [else "File index needs attention"])
    (case state
-     [(idle) "run find <query> to build Desktop, Documents and Downloads in the background"]
+     [(idle) "run find <query> to index your folders and fixed drives in the background"]
      [(starting scanning) (format "~a of ~a search roots complete" completed total)]
      [(ready) (format "~a search roots complete · the live catalog answers instantly; OS-managed trees stay on the OS index" completed)]
      [(partial) "some folders could not be read; existing entries were preserved and platform search fills the gaps"]
@@ -851,7 +851,7 @@
       (result
        "noop"
        "No matching files in searched locations"
-       "Coverage is limited by the OS index and local folders; type file index to check indexing status"
+       "Coverage: your folders, fixed drives, the OS index and ready mapped drives; type file index for status"
        "File" "" "doc" "" "Partial scope"
        "find file search empty index scope"
        85)))

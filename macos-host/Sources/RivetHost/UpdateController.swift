@@ -73,7 +73,7 @@ final class UpdateController: ObservableObject {
 
     func t(_ key: String, _ args: Any...) -> String {
         if args.isEmpty { return i18n.t(key) }
-        return i18n.format(key, args)
+        return i18n.format(key, args: args)
     }
 
     func checkForUpdates() {

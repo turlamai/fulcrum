@@ -4,6 +4,84 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [0.19.2] - 2026-11-19
+
+### Fixed
+
+- **All platforms: the settings pages match the design truth source again.**
+  The three hosts had drifted apart (Linux hardcoded English chrome,
+  Windows carried an inline update card inside Settings, macOS hardcoded
+  workflow notices and hotkey status strings, and the General row order /
+  language option order differed per host). The prototype is back to the
+  six-section sidebar (General / Features / AI / Commands / Workflows /
+  Sync & Updates, v0.2), DESIGN.md declares the 176px sidebar, the General
+  row order and the remaining platform differences explicitly, and every
+  settings string now comes from the single shared/i18n source (222 keys,
+  en/zh complete). An open Settings window repaints when the language
+  changes on all three hosts.
+- **Windows / Linux: "Check for Updates" opens a real window.** macOS has
+  always shown a dedicated update panel; Windows ran the check in the
+  hidden launcher's status line and the Linux tray check posted into a
+  status line nobody could see. Both hosts now have a dedicated update
+  window (WinUI / GTK4) with the same phases as macOS — check, up-to-date,
+  available, download progress, downloaded, failed — reached from the tray
+  menu, the launcher update rows, update-available events and the Settings
+  Sync & Updates button. Close hides the window without freezing a running
+  download; reopening shows live progress. Install keeps the signed
+  backend ticket (Windows: verified MSI handoff; Linux AppImage:
+  first-party replacement handoff). Cancel-download stays macOS-only,
+  where the host owns the transfer — now a declared platform difference
+  instead of silent drift.
+- **Windows: quitting with the update window open no longer hangs.** The
+  update window's hide-on-close veto also cancelled the window close that
+  `Application.Exit` performs, keeping the process alive after an explicit
+  quit; `QuitApplication` now marks the window closable first.
+- **Windows: quitting while the file index is scanning no longer hangs.**
+  The native watcher's `Stop()` joined its reconcile worker on the UI
+  thread, but that worker can sit inside a synchronous fs-reconcile RPC
+  while a full catalog scan holds SQLite write locks — the message pump
+  stopped and the process never exited. `Stop()` now signals the workers
+  and hands the joins to a detached cleanup thread that owns the shared
+  state; `QuitApplication` additionally closes every owned window
+  explicitly before `Application.Exit` (which alone left the borderless
+  main window alive) and bounds the whole shutdown with a watchdog plus a
+  self-termination backstop, so an explicit quit always ends the process.
+- **All platforms: the launcher sizes correctly on mixed-DPI multi-monitor
+  desks.** On Windows, crossing monitors fired `WM_DPICHANGED` and WinUI
+  applied the system suggested rect on top of the already monitor-aware
+  size, so the first summon on a differently-scaled display came up tiny
+  (or huge) and only the second summon looked right; the host now
+  re-asserts its geometry after the DPI change. Linux's placement clamp
+  used the pre-v2 460 height instead of the design 640, and macOS now
+  clamps the panel to the pointer screen's visible frame like the other
+  hosts. DESIGN.md declares the geometry contract, including the X11
+  per-monitor scaling limitation.
+- **Windows: `find` reaches files outside the home folders again.** Two
+  coverage gaps: the fixed-drive enumeration used `Get-Volume`, whose
+  CIM/WMI first call can exceed the 5 s budget on multi-drive workstations
+  — a timeout silently dropped EVERY fixed drive from the catalog, leaving
+  only Desktop/Documents/Downloads indexed; it now uses .NET `DriveInfo`
+  (direct drive-table read, milliseconds, no WMI). And files on a ready
+  mapped network drive were invisible to every explicit-find tier (the
+  background catalog deliberately never walks shares, issue #116); an
+  explicit `find` now adds a bounded network tier (Depth 3, 128 hits, ready
+  mapped drives only) after the OS index and before the profile fallback.
+  The idle/empty status lines describe the real coverage honestly.
+
+### Added
+
+- `tests/settings-i18n-contract.rkt`: en/zh key-set equality, the settings
+  key inventory, six destinations and declared row order on every host,
+  update-window routing (including the Linux tray entry and the Windows
+  quit path), and the prototype / DESIGN.md declarations.
+- `tests/launcher-geometry-contract.rkt`: the 680×640 design size, the
+  pointer-monitor placement and work-area clamps on all three hosts, the
+  Windows `WM_DPICHANGED` re-assertion, and the DESIGN.md geometry
+  declaration.
+- `tests/files-test.rkt` gains source pins: fixed-drive enumeration must
+  use `DriveInfo` (never WMI `Get-Volume`), and the bounded network tier
+  must sit between the OS index and the profile fallback.
+
 ## [0.19.1] - 2026-11-19
 
 ### Fixed

@@ -10,6 +10,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 public static class FulcrumNative {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
@@ -17,6 +18,18 @@ public static class FulcrumNative {
     public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+    public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int capacity);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassName(IntPtr hwnd, StringBuilder text, int capacity);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, IntPtr wParam,
+        IntPtr lParam, uint flags, uint timeoutMs, out UIntPtr result);
 }
 '@
 
@@ -230,9 +243,57 @@ try {
         if ($process.HasExited) { throw 'closing About terminated the resident process' }
     }
 
+    # Update-flow parity with macOS: the dedicated update window must be a
+    # visible independent window while the launcher stays hidden; Close
+    # hides it without quitting the resident app, and the entry point can
+    # reopen it. WM_APP+9 is the acceptance-only trigger; FULCRUM_ACCEPTANCE
+    # presents the offline completed-check fixture (no network).
+    Write-Output 'e2e: update window parity block'
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        if (-not [FulcrumNative]::PostMessage(
+            $mainHwnd, [uint32]0x8009, [IntPtr]::Zero, [IntPtr]::Zero)) {
+            throw 'could not invoke acceptance-only update window command'
+        }
+        $update = Wait-Until "visible independent update window (attempt $attempt)" {
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $process.Id)
+            $topLevels = $desktop.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+            for ($i = 0; $i -lt $topLevels.Count; $i++) {
+                $candidate = $topLevels[$i]
+                $handle = [IntPtr]::new([int64]$candidate.Current.NativeWindowHandle)
+                if ($handle -eq [IntPtr]::Zero -or -not [FulcrumNative]::IsWindowVisible($handle)) { continue }
+                if (Find-ById $candidate 'fulcrum-update-close') { return $candidate }
+            }
+            return $null
+        }
+        $updateStatus = Find-ById $update 'fulcrum-update-status'
+        if (-not $updateStatus -or $updateStatus.Current.Name -notmatch 'up to date') {
+            throw 'update window does not present the completed-check fixture'
+        }
+        if ([FulcrumNative]::IsWindowVisible($mainHwnd)) {
+            throw 'update window unexpectedly summoned the hidden search launcher'
+        }
+        $updateHwnd = [IntPtr]::new([int64]$update.Current.NativeWindowHandle)
+        if ($attempt -eq 1) {
+            $updateClose = Find-ById $update 'fulcrum-update-close'
+            ([System.Windows.Automation.InvokePattern]$updateClose.GetCurrentPattern(
+                [System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
+        } else {
+            $updateWindowPattern = [System.Windows.Automation.WindowPattern]$update.GetCurrentPattern(
+                [System.Windows.Automation.WindowPattern]::Pattern)
+            $updateWindowPattern.Close()
+        }
+        [void](Wait-Until "update window hidden (attempt $attempt)" {
+            if (-not [FulcrumNative]::IsWindowVisible($updateHwnd)) { return $true }
+            return $false
+        })
+        if ($process.HasExited) { throw 'closing the update window terminated the resident process' }
+    }
+
     # OS-owned login startup must be a working WinUI setting, not a
     # synced backend toggle. Use the production Settings window, change
     # HKCU Run in an isolated CI user, then restore the exact prior entry.
+    Write-Output 'e2e: settings and start-at-login block'
     if (-not [FulcrumNative]::PostMessage(
         $mainHwnd, [uint32]0x8008, [IntPtr]::Zero, [IntPtr]::Zero)) {
         throw 'cannot invoke native Settings startup acceptance'
@@ -399,17 +460,56 @@ try {
     # Close through the exact production QuitApplication function and demand
     # natural process exit (not a test force-kill). The next primary must be
     # free to acquire the same instance ID and expose a usable window again.
+    Write-Output 'e2e: requesting QuitApplication (WM_APP+6)'
     $hwnd = [IntPtr]::new([int64]$reopened.Current.NativeWindowHandle)
     if ($hwnd -eq [IntPtr]::Zero -or -not [FulcrumNative]::PostMessage(
         $hwnd, [uint32]0x8006, [IntPtr]::Zero, [IntPtr]::Zero)) {
         throw 'could not request acceptance-only QuitApplication'
     }
     if (-not $process.WaitForExit(30000)) {
+        # Evidence for a wedged quit: which top-level windows survive, and
+        # whether the main HWND still pumps messages. A live pump with no
+        # survivors points at the backend shutdown thread; a dead pump or a
+        # surviving window points at the UI side.
+        $procId = [uint32]$process.Id
+        $survivors = New-Object System.Collections.ArrayList
+        $callback = [FulcrumNative+EnumWindowsProc]{
+            param($h, $l)
+            $owner = [uint32]0
+            [void][FulcrumNative]::GetWindowThreadProcessId($h, [ref]$owner)
+            if ($owner -eq $procId) {
+                $title = New-Object System.Text.StringBuilder 512
+                [void][FulcrumNative]::GetWindowText($h, $title, 512)
+                $class = New-Object System.Text.StringBuilder 256
+                [void][FulcrumNative]::GetClassName($h, $class, 256)
+                [void]$survivors.Add([ordered]@{
+                    hwnd = $h.ToInt64(); title = $title.ToString()
+                    class = $class.ToString()
+                    visible = [FulcrumNative]::IsWindowVisible($h)
+                })
+            }
+            return $true
+        }
+        [void][FulcrumNative]::EnumWindows($callback, [IntPtr]::Zero)
+        $pump = 'unknown'
+        try {
+            $result = [UIntPtr]::Zero
+            $watch = [System.Diagnostics.Stopwatch]::StartNew()
+            $sent = [FulcrumNative]::SendMessageTimeout($hwnd, 0x0000,
+                [IntPtr]::Zero, [IntPtr]::Zero, 0x0002, 3000, [ref]$result)
+            $pump = if ($sent -eq [IntPtr]::Zero) {
+                'WM_NULL timed out after 3s - main window not pumping'
+            } else { "WM_NULL answered in $($watch.ElapsedMilliseconds) ms" }
+        } catch { $pump = "probe failed: $_" }
+        [ordered]@{ survivors = @($survivors); mainHwndPump = $pump } |
+            ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $output 'quit-survivors.json') -Encoding utf8
         throw 'Fulcrum did not terminate after QuitApplication'
     }
     if ($process.ExitCode -ne 0) {
         throw "Fulcrum quit with code $($process.ExitCode)"
     }
+    Write-Output 'e2e: quit exited cleanly; relaunching for lease reuse'
     $process.Dispose()
     $process = Start-Process -FilePath $executable.FullName -PassThru `
         -WorkingDirectory $repo `
@@ -461,7 +561,7 @@ try {
         platform = 'windows'
         artifact = $executable.FullName
         actions = @('set:QueryBox=12*12','typed-find:Downloads-file','frame:steady-height','press:Enter','about:while-launcher-hidden','about:close-and-reopen','settings:six-native-tabs-and-workflow-editor','settings:commands-editor','settings:local-login-registry-roundtrip','launch:background-secondary','launch:secondary','quit:acceptance-tray-path','launch:again','msi-rm:query-and-end-session')
-        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','typed find returns a real Downloads file row from the packaged Windows host','window frame does not change height between calculator and file search','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','five native Settings destinations and visible Commands editor','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
+        assertions = @('no blank startup XAML frame','packaged WinUI window activated','QueryBox exposed through UI Automation','query crossed RVT1 into the embedded backend','native result list contains 144','typed find returns a real Downloads file row from the packaged Windows host','window frame does not change height between calculator and file search','run-action emitted 144 to the native clipboard','tray About is a visible independent versioned window even while the launcher remains hidden','About can close and reopen without exiting the resident app','six native Settings destinations and visible Commands editor','dedicated update window opens independently, Close hides without quitting, and it reopens','native Start at login toggles HKCU Run and restores its prior value','login startup does not summon resident launcher','secondary exited without a phantom process','secondary summons primary','QuitApplication terminated primary normally','relaunch obtained same lease and painted the ready window','Restart Manager shutdown closes the hidden resident process normally')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'interaction-trace.json') -Encoding utf8
 } finally {
     $env:FULCRUM_DATA_DIR = $savedData

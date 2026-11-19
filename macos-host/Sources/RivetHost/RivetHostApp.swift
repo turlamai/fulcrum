@@ -401,6 +401,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    /// A language change pushed from the backend (launcher settings-as-rows)
+    /// must also repaint an already-open Settings window: its translator
+    /// reads the observable model values, not just I18nService.
+    func syncSettingsLanguage(_ value: String) {
+        settingsModel?.values["language"] = value
+    }
+
     // MARK: panel
 
     private func installPanel(model: LauncherModel) {
@@ -452,7 +459,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let screen = NSScreen.screens.first { $0.frame.contains(pointer) }
             ?? NSScreen.main ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
-        let size = panel.frame.size
+        // AppKit sizes in points, so mixed backing scales need no manual DPI
+        // math; but a small secondary display must still clamp the panel the
+        // way Windows/X11 clamp to the work area (design v2: 680x640).
+        let size = NSSize(width: min(680, visible.width),
+                          height: min(640, visible.height))
+        if panel.frame.size != size {
+            panel.setContentSize(size)
+        }
         let x = max(visible.minX, visible.midX - size.width / 2)
         // AppKit's origin is bottom-left. Place the panel a quarter of the
         // free vertical space below the work area's top, like Windows/X11.
@@ -558,13 +572,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                  modifiers: UInt32(controlKey | optionKey)) {
             activeHotkeySpec = "ctrl+alt+space"
             if spec != "ctrl+alt+space" {
-                model?.setPersistentStatus(
-                    "Fulcrum is ready — \(Hotkey.display(spec)) was taken, using ⌃⌥Space.")
+                model?.setPersistentStatus(I18nService.shared.t("hotkeyFallbackStatus"))
                 return
             }
         } else {
-            model?.setPersistentStatus(
-                "The hotkeys Fulcrum tried are taken by other tools. Change it in settings → hotkey, or release the combo and restart Fulcrum.")
+            model?.setPersistentStatus(I18nService.shared.t("hotkeyTakenStatus"))
             return
         }
         if model?.ready == true {

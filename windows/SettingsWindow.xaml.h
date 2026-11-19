@@ -6,6 +6,7 @@
 
 #include "winui_window.hpp"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -26,12 +27,16 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   // Hooked up by MainWindow once the backend is ready (and again on every
   // show, which reloads). The API outlives this window: MainWindow owns it.
   void Attach(std::shared_ptr<rivet_app::API> api);
-  // Opens the Sync & Updates tab and runs an update check — the tray
-  // "Check for updates" entry lands here so the result shows in a
-  // visible window instead of a hidden launcher's status line.
-  void OpenUpdates();
+  // The Sync & Updates button opens the dedicated update window — the same
+  // surface the tray entry and the launcher update rows open (update-flow
+  // parity, design/DESIGN.md). MainWindow owns that window and the install
+  // handoff; this window only asks for it to be shown.
+  void SetUpdateOpener(std::function<void()> opener);
+  // A backend language push repaints an already-open window: static chrome
+  // plus the dynamic command/workflow rows.
+  void RefreshLanguage(std::string const& language);
 
-  // Native five-section settings IA. The same backend keys are used by
+  // Native six-section settings IA. The same backend keys are used by
   // macOS, Windows and Linux; only the host controls differ.
   void Navigation_SelectionChanged(
       Microsoft::UI::Xaml::Controls::NavigationView const&,
@@ -79,12 +84,8 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
                                    Microsoft::UI::Xaml::RoutedEventArgs const&);
   void WorkflowTraceNext_Click(winrt::Windows::Foundation::IInspectable const&,
                                Microsoft::UI::Xaml::RoutedEventArgs const&);
-  void UpdateCheck_Click(winrt::Windows::Foundation::IInspectable const&,
-                         Microsoft::UI::Xaml::RoutedEventArgs const&);
-  void UpdateDownload_Click(winrt::Windows::Foundation::IInspectable const&,
-                            Microsoft::UI::Xaml::RoutedEventArgs const&);
-  void UpdateInstall_Click(winrt::Windows::Foundation::IInspectable const&,
-                           Microsoft::UI::Xaml::RoutedEventArgs const&);
+  void CheckUpdatesNow_Click(winrt::Windows::Foundation::IInspectable const&,
+                             Microsoft::UI::Xaml::RoutedEventArgs const&);
 
  private:
   void Load();
@@ -105,37 +106,21 @@ struct SettingsWindow : SettingsWindowT<SettingsWindow> {
   void CommitText(Microsoft::UI::Xaml::Controls::TextBox const& box);
   void ShowError(std::wstring const& message);
   void ClearError();
-  void SetUpdateStatus(std::wstring const& message);
-  void UpdatePollTick(winrt::Windows::Foundation::IInspectable const&,
-                      winrt::Windows::Foundation::IInspectable const&);
 
   std::shared_ptr<rivet_app::API> api_;
+  std::function<void()> update_opener_;
   // True while Apply pushes values into the controls, so their change
   // handlers do not write them straight back.
   bool loading_{false};
   std::map<std::string, std::string> values_;
+  // Active UI language ("system"/"zh"/"en"); dynamic rows read it at paint
+  // time and RefreshLanguage repaints them on a backend push.
+  std::string language_{"system"};
   std::string workflow_selected_;
   int workflow_list_page_{1};
   int workflow_step_page_{1};
   int workflow_trace_page_{1};
   bool workflow_copy_safe_{false};
-  // Update-card strings, refreshed by ApplyLocalization so the async
-  // status lines read the active language at paint time.
-  std::wstring update_checking_;
-  std::wstring update_available_;
-  std::wstring update_up_to_date_;
-  std::wstring update_throttled_;
-  std::wstring update_check_failed_;
-  std::wstring update_downloaded_;
-  std::wstring update_download_failed_;
-  std::wstring update_progress_;
-  std::wstring update_install_failed_;
-  // Update card state: a download poller while a download runs; the flag
-  // guards the poll against overlapping re-entries.
-  winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer update_timer_{nullptr};
-  std::atomic<bool> update_polling_{false};
-
-  void RunUpdateCheck();
 };
 
 }  // namespace winrt::RivetHost::implementation

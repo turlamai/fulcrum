@@ -79,7 +79,7 @@
 ;; update check: drift here means every install believes it is outdated
 ;; (0.2.0 shipped believing it was 0.1.0).
 (define app-version
-  (with-handlers ([exn:fail? (lambda (_) "0.19.1")])
+  (with-handlers ([exn:fail? (lambda (_) "0.19.2")])
     (string-append (rivet-info:app-version))))
 
 ;; The updater learns the running version from here (the packaged app reads
@@ -1768,9 +1768,9 @@
                  #:plugin-manager plug-mgr
                  #:max-results (settings-get manager 'max-results)
                  #:file-index-path (file-index-path)
-                 ;; Windows data volumes ride the PowerShell drive-type
-                 ;; filter (fixed local volumes only); other platforms
-                 ;; contribute none through this call.
+                 ;; Windows data volumes ride the .NET DriveInfo
+                 ;; drive-type filter (fixed local volumes only, no WMI);
+                 ;; other platforms contribute none through this call.
                  #:file-catalog-roots
                  (default-file-catalog-roots
                    #:all-roots (windows-fixed-volume-roots))

@@ -12,7 +12,7 @@ final class WorkflowEditorModel: ObservableObject {
     @Published var nameDraft = ""
     @Published var stepDraft = ""
     @Published var inputDraft = ""
-    @Published var notice = "Create a workflow or select one to edit its steps."
+    @Published var notice = I18nService.shared.t("settings.wf.notice.init")
     @Published var busy = false
     @Published var page = 1
     @Published var stepPage = 1
@@ -67,7 +67,8 @@ final class WorkflowEditorModel: ObservableObject {
                 }
             if selected != nil { await refreshDetail() }
         } catch {
-            notice = "Could not load workflows: \(error.localizedDescription)"
+            notice = I18nService.shared.format(
+                "settings.wf.notice.load-failed", error.localizedDescription)
         }
     }
 
@@ -90,18 +91,20 @@ final class WorkflowEditorModel: ObservableObject {
             steps = stepRows.filter { $0.kind == "Workflow" && $0.badge == "Step" }
             trace = traceRows.filter { $0.kind == "Workflow" && $0.badge == "Trace" }
         } catch {
-            notice = "Could not load steps or trace: \(error.localizedDescription)"
+            notice = I18nService.shared.format(
+                "settings.wf.notice.detail-failed", error.localizedDescription)
         }
     }
 
     private func action(_ id: String, _ arg: String) async -> String? {
-        guard !busy else { notice = "Another workflow operation is in progress."; return nil }
+        guard !busy else { notice = I18nService.shared.t("settings.wf.notice.busy"); return nil }
         busy = true
         defer { busy = false }
         do {
             return try await api.runAction(id: id, arg: arg)
         } catch {
-            notice = "Workflow request failed: \(error.localizedDescription)"
+            notice = I18nService.shared.format(
+                "settings.wf.notice.request-failed", error.localizedDescription)
             return nil
         }
     }
@@ -109,30 +112,30 @@ final class WorkflowEditorModel: ObservableObject {
     func create() async {
         let draft = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = draft.lowercased()
-        guard !draft.isEmpty else { notice = "Enter a workflow name."; return }
+        guard !draft.isEmpty else { notice = I18nService.shared.t("settings.wf.enter-name"); return }
         if let existingPage = await pageContaining(name) {
             page = existingPage
             await refresh()
             select(name)
-            notice = "This workflow already exists."
+            notice = I18nService.shared.t("settings.wf.notice.exists")
             return
         }
         guard await action("workflow.create", draft) != nil else { return }
         guard let savedPage = await pageContaining(name) else {
-            notice = "Not created. Names must begin with a letter and use only a-z, 0-9, - or _."
+            notice = I18nService.shared.t("settings.wf.notice.invalid-name")
             return
         }
         page = savedPage
         await refresh()
         nameDraft = ""
         select(name)
-        notice = "Workflow created."
+        notice = I18nService.shared.t("settings.wf.notice.created")
     }
 
     func append() async {
         guard let name = selected else { return }
         let text = stepDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { notice = "Enter a step expression."; return }
+        guard !text.isEmpty else { notice = I18nService.shared.t("settings.wf.enter-step"); return }
         let before = await totalSteps(for: name)
         guard await action("workflow.add", name + separator + text) != nil else { return }
         let after = await totalSteps(for: name)
@@ -140,10 +143,10 @@ final class WorkflowEditorModel: ObservableObject {
             stepPage = max(1, (after + 4) / 5)
             await refreshDetail()
             stepDraft = ""
-            notice = "Step added."
+            notice = I18nService.shared.t("settings.wf.notice.step-added")
         } else {
             await refreshDetail()
-            notice = "Step not confirmed. Check the grammar, step count and terminal copy/paste rule."
+            notice = I18nService.shared.t("settings.wf.notice.step-unconfirmed")
         }
     }
 
@@ -151,7 +154,7 @@ final class WorkflowEditorModel: ObservableObject {
         guard let name = selected else { return }
         let label = step.title.split(separator: " ").last.map(String.init) ?? ""
         guard let index = Int(label), index > 0 else {
-            notice = "Invalid step index."
+            notice = I18nService.shared.t("settings.wf.notice.bad-index")
             return
         }
         let before = await totalSteps(for: name)
@@ -160,10 +163,10 @@ final class WorkflowEditorModel: ObservableObject {
         if let before, let after, after < before {
             stepPage = min(stepPage, max(1, (after + 4) / 5))
             await refreshDetail()
-            notice = "Step removed."
+            notice = I18nService.shared.t("settings.wf.notice.step-removed")
         } else {
             await refreshDetail()
-            notice = "Step removal not confirmed; inspect the list."
+            notice = I18nService.shared.t("settings.wf.notice.remove-unconfirmed")
         }
     }
 
@@ -171,7 +174,7 @@ final class WorkflowEditorModel: ObservableObject {
         guard let name = selected else { return }
         guard await action("workflow.delete", name) != nil else { return }
         guard await pageContaining(name) == nil else {
-            notice = "Delete was not confirmed; the definition still exists."
+            notice = I18nService.shared.t("settings.wf.notice.delete-unconfirmed")
             return
         }
         selected = nil
@@ -179,7 +182,7 @@ final class WorkflowEditorModel: ObservableObject {
         trace = []
         page = 1
         await refresh()
-        notice = "Workflow deleted."
+        notice = I18nService.shared.t("settings.wf.notice.deleted")
     }
 
     func dryRun() async {
@@ -188,16 +191,16 @@ final class WorkflowEditorModel: ObservableObject {
         tracePage = 1
         await refreshDetail()
         if trace.contains(where: { $0.subtitle.hasPrefix("Status: failed") }) {
-            notice = "Dry run stopped on a failed step. No clipboard action was performed."
+            notice = I18nService.shared.t("settings.wf.notice.dry-failed")
         } else {
-            notice = "Dry run requested. Inspect the redacted trace; no clipboard side effects."
+            notice = I18nService.shared.t("settings.wf.notice.dry-ok")
         }
     }
 
     func copyResult() async {
         guard let name = selected else { return }
         guard steps.last?.subtitle == "copy" else {
-            notice = "Only workflows ending in copy can run from Settings; launch paste workflows from the launcher."
+            notice = I18nService.shared.t("settings.wf.notice.copy-only")
             return
         }
         guard let result = await action("workflow.run", name + separator + inputDraft)
@@ -205,8 +208,8 @@ final class WorkflowEditorModel: ObservableObject {
         tracePage = 1
         await refreshDetail()
         notice = result == "copied"
-            ? "Workflow completed; result copied to the system clipboard."
-            : "Workflow did not confirm a copy. Inspect the redacted trace."
+            ? I18nService.shared.t("settings.wf.notice.copied")
+            : I18nService.shared.t("settings.wf.notice.copy-unconfirmed")
     }
 
     func nextList() { page += 1; Task { await refresh() } }
@@ -221,10 +224,17 @@ final class WorkflowEditorModel: ObservableObject {
 struct WorkflowEditorView: View {
     @ObservedObject var model: WorkflowEditorModel
 
+    // Chrome strings ride the i18n single source; the parent SettingsView
+    // re-renders this child on a language change, so labels follow live.
+    private func t(_ key: String) -> String { I18nService.shared.t(key) }
+    private func fmt(_ key: String, _ arg: Any) -> String {
+        I18nService.shared.format(key, arg)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Workflows")
+                Text(t("settings.nav.workflows"))
                     .font(.headline)
                 List(model.names, id: \.self) { name in
                     Button(name) { model.select(name) }
@@ -238,10 +248,10 @@ struct WorkflowEditorView: View {
                     Button("‹") { model.previousList() }.disabled(model.page <= 1)
                     Text("\(model.page)").accessibilityLabel("Workflow page \(model.page)")
                     Button("›") { model.nextList() }.disabled(model.names.count < 5)
-                    Button("Refresh") { Task { await model.refresh() } }
+                    Button(t("settings.wf.refresh")) { Task { await model.refresh() } }
                 }
                 HStack(spacing: 5) {
-                    TextField("new-name", text: $model.nameDraft)
+                    TextField(t("settings.wf.new-name"), text: $model.nameDraft)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("workflow-create-name")
                     Button("+") { Task { await model.create() } }
@@ -260,12 +270,12 @@ struct WorkflowEditorView: View {
                         HStack {
                             Text(selected).font(.title3.bold())
                             Spacer()
-                            Button("Delete", role: .destructive) {
+                            Button(t("settings.wf.delete"), role: .destructive) {
                                 model.confirmDelete = true
                             }
                             .accessibilityIdentifier("workflow-delete")
                         }
-                        Text("Ordered steps — backend validates each expression.")
+                        Text(t("settings.wf.steps"))
                             .font(.caption).foregroundStyle(.secondary)
                         ForEach(model.steps, id: \.rowId) { row in
                             HStack {
@@ -275,42 +285,42 @@ struct WorkflowEditorView: View {
                                         .textSelection(.enabled)
                                 }
                                 Spacer()
-                                Button("Remove") { Task { await model.remove(step: row) } }
+                                Button(t("settings.wf.remove")) { Task { await model.remove(step: row) } }
                                     .accessibilityIdentifier("workflow-remove-step")
                             }
                         }
                         HStack {
-                            Button("Previous") { model.previousSteps() }
+                            Button(t("settings.wf.prev")) { model.previousSteps() }
                                 .disabled(model.stepPage <= 1)
-                            Text("Steps \(model.stepPage)")
-                            Button("Next") { model.nextSteps() }
+                            Text(fmt("settings.wf.steps-page", model.stepPage))
+                            Button(t("settings.wf.next")) { model.nextSteps() }
                                 .disabled(model.steps.count < 5)
                         }.font(.caption)
                         HStack {
-                            TextField("trim, lines unique, require text…",
+                            TextField(t("settings.wf.step-placeholder"),
                                       text: $model.stepDraft)
                                 .accessibilityIdentifier("workflow-step-expression")
-                            Button("Add step") { Task { await model.append() } }
+                            Button(t("settings.wf.add-step")) { Task { await model.append() } }
                                 .disabled(model.busy || model.stepDraft.isEmpty)
                                 .accessibilityIdentifier("workflow-add-step")
                         }
                         Divider()
-                        Text("Input").font(.headline)
+                        Text(t("settings.wf.input")).font(.headline)
                         TextEditor(text: $model.inputDraft)
                             .frame(height: 65)
                             .border(Color.secondary.opacity(0.2))
                             .accessibilityIdentifier("workflow-input")
                         HStack {
-                            Button("Dry run") { Task { await model.dryRun() } }
+                            Button(t("settings.wf.dry-run")) { Task { await model.dryRun() } }
                                 .accessibilityIdentifier("workflow-dry-run")
-                            Button("Run to clipboard") { Task { await model.copyResult() } }
+                            Button(t("settings.wf.run-copy")) { Task { await model.copyResult() } }
                                 .disabled(model.steps.last?.subtitle != "copy")
                                 .accessibilityIdentifier("workflow-run-copy")
                         }
-                        Text("Use @clipboard to explicitly read the latest recorded clipboard text. No automatic execution.")
+                        Text(t("settings.wf.clipboard-note"))
                             .font(.caption).foregroundStyle(.secondary)
                         Divider()
-                        Text("Debug trace").font(.headline)
+                        Text(t("settings.wf.trace")).font(.headline)
                         ForEach(model.trace, id: \.rowId) { row in
                             HStack {
                                 Text(row.title).font(.caption.bold())
@@ -320,14 +330,14 @@ struct WorkflowEditorView: View {
                             .accessibilityIdentifier("workflow-trace-step")
                         }
                         HStack {
-                            Button("Previous") { model.previousTrace() }
+                            Button(t("settings.wf.prev")) { model.previousTrace() }
                                 .disabled(model.tracePage <= 1)
-                            Text("Trace \(model.tracePage)")
-                            Button("Next") { model.nextTrace() }
+                            Text(fmt("settings.wf.trace-page", model.tracePage))
+                            Button(t("settings.wf.next")) { model.nextTrace() }
                                 .disabled(model.trace.count < 5)
                         }.font(.caption)
                     } else {
-                        Text("Create a workflow or choose one from the list.")
+                        Text(t("settings.wf.empty-list"))
                             .foregroundStyle(.secondary)
                     }
                     Text(model.notice)
@@ -341,9 +351,9 @@ struct WorkflowEditorView: View {
             }
         }
         .task { await model.refresh() }
-        .confirmationDialog("Delete this workflow permanently?",
+        .confirmationDialog(t("settings.wf.delete-dialog"),
                             isPresented: $model.confirmDelete) {
-            Button("Delete workflow", role: .destructive) {
+            Button(t("settings.wf.delete-title"), role: .destructive) {
                 Task { await model.delete() }
             }
         }

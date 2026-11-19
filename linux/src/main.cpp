@@ -25,6 +25,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -995,6 +996,9 @@ void load_i18n(std::filesystem::path const& exe_dir) {
 
 void set_i18n_language(std::string const& lang);
 void refresh_settings_language();
+void show_update_window(bool check = true);
+void update_window_refresh_language();
+void update_window_present_available(std::string version, std::int64_t size);
 
 std::string tr(char const* key) {
   int const active = g_i18n_active.load(std::memory_order_relaxed);
@@ -1097,8 +1101,6 @@ struct Launcher {
   // Matches the macOS/Windows hosts: only the newest query may paint, so a
   // slow completion can never overwrite a newer result set.
   std::atomic<int> search_generation{0};
-  // Re-entry guard for the download-progress poller (updater 0.2).
-  std::atomic<bool> update_polling{false};
   // Clipboard-history capture: the GTK host has no change notification, so
   // a 1s poll (same cadence as the macOS pasteboard timer) diffs the
   // clipboard text and records new values backend-side.
@@ -1355,12 +1357,13 @@ struct Launcher {
     return G_SOURCE_CONTINUE;
   }
 
-  // Updater 0.2 (in-app install stays macOS-only on this line): the 4-hour
-  // throttle and manifest verification are backend-owned, so the silent
-  // launch check is one cheap RPC the backend may decline ("throttled").
-  // Failures are silent by design — a resident launcher must never nag.
+  // Updater 0.2: the 4-hour throttle and manifest verification are
+  // backend-owned, so the silent launch check is one cheap RPC the backend
+  // may decline ("throttled"). Failures are silent by design — a resident
+  // launcher must never nag. An available update surfaces in the dedicated
+  // update window (update-flow parity with macOS/Windows).
   void start_silent_update_check() {
-    if (api == nullptr) {
+    if (api == nullptr || std::getenv("FULCRUM_ACCEPTANCE") != nullptr) {
       return;
     }
     auto* api_raw = api.get();
@@ -1370,54 +1373,18 @@ struct Launcher {
         if (check.status != "available") {
           return;
         }
-        post_status(tr_format("updateAvailableStatus",
-                              {check.available_version.value_or("?")}));
+        auto* boxed = new std::pair<std::string, std::int64_t>(
+            check.available_version.value_or("?"),
+            check.size_bytes.value_or(0));
+        g_idle_add([](gpointer user_data) -> int {
+          std::unique_ptr<std::pair<std::string, std::int64_t>> info(
+              static_cast<std::pair<std::string, std::int64_t>*>(user_data));
+          update_window_present_available(info->first, info->second);
+          return G_SOURCE_REMOVE;
+        }, boxed);
       } catch (...) {
         // silent: network down, feed unreachable — never nag
       }
-    }).detach();
-  }
-
-  // Mirror the backend's download thread into the status bar; when the
-  // artifact is verified the user gets the open-folder / manual-install
-  // guidance (the "update" launcher rows drive reveal on this state).
-  void start_update_progress_poll() {
-    if (api == nullptr || update_polling.exchange(true)) {
-      return;
-    }
-    auto* api_raw = api.get();
-    std::thread([api_raw]() mutable {
-      while (true) {
-        try {
-          auto const state = api_raw->update_state().get();
-          if (state.phase == "downloaded") {
-            if (auto const* image = std::getenv("APPIMAGE");
-                image != nullptr && *image != '\0') {
-              post_status("AppImage verified — type update and choose Quit and install");
-            } else {
-              post_status(tr("updateDownloadedStatusLinux"));
-            }
-            break;
-          }
-          if (state.phase == "error") {
-            post_status(tr_format(
-                "updateDownloadFailed",
-                {state.message.value_or(tr("updateUnknownError"))}));
-            break;
-          }
-          if (state.phase != "downloading") {
-            break;
-          }
-          post_status(tr_format("updateDownloadPercent",
-                                {std::to_string(state.percent)}));
-        } catch (...) {
-          break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-      }
-      // Re-entry guard only: clear it from the worker so a later download
-      // can poll again.
-      Launcher::instance().update_polling.store(false, std::memory_order_release);
     }).detach();
   }
 
@@ -1564,7 +1531,7 @@ struct Launcher {
       gtk_show_uri(GTK_WINDOW(window), payload.c_str(), GDK_CURRENT_TIME);
       hide();
     } else if (name == "update-available") {
-      set_status(payload);
+      show_update_window(true);
     } else if (name == "notify") {
       // Action feedback rides the notify event (update check results,
       // settings toggles, plugin installs). Without this branch the
@@ -1739,19 +1706,11 @@ struct Launcher {
     // No-op: initial GTK window size is set once at creation.
   }
 
-  struct AppImageTicket {
-    std::filesystem::path verified_path;
-    std::string version;
-    std::string signed_sha256;
-    bool rollback_allowed{false};
-  };
-
   struct RunOutcome {
     bool success{false};
     std::string status;
     std::string action_id;
     std::string arg;
-    std::optional<AppImageTicket> appimage_ticket;
   };
 
   void show_actions_for_selection() {
@@ -1889,6 +1848,15 @@ struct Launcher {
       index = 0;
     }
     ResultRow const row = rows[static_cast<std::size_t>(index)];
+    // Update rows open the dedicated update window (update-flow parity
+    // with macOS/Windows); the transfer and install live there, not in
+    // the launcher status line.
+    if (row.id == "update.check" || row.id == "update.download" ||
+        row.id == "update.install") {
+      hide();
+      show_update_window(true);
+      return;
+    }
     if (row.id == "settings.set") ++host_settings_generation;
     set_status("Running…");
     auto* api_raw = api.get();
@@ -1918,24 +1886,6 @@ struct Launcher {
       boxed->arg = run_row.arg;
       try {
         boxed->status = api_raw->run_action(run_row.id, run_row.arg).get();
-        if (boxed->status == "quit-and-install" &&
-            run_row.id == "update.install") {
-          // The signed manifest remains backend-owned. Never derive a
-          // handoff digest from the downloaded file itself: an attacker
-          // could change the file after its initial authenticated download.
-          auto state = api_raw->update_state().get();
-          if (state.phase != "downloaded" || !state.downloaded_path ||
-              !state.available_version || !state.artifact_sha256 ||
-              !state.installer || *state.installer != "appimage") {
-            throw std::runtime_error(
-                "signed AppImage install ticket is missing; check updates again");
-          }
-          boxed->appimage_ticket = AppImageTicket{
-              std::filesystem::path(*state.downloaded_path),
-              *state.available_version,
-              *state.artifact_sha256,
-              state.rollback_allowed};
-        }
         boxed->success = boxed->status == "ok" ||
                          boxed->status == "launched" ||
                          boxed->status == "copied" ||
@@ -1943,10 +1893,7 @@ struct Launcher {
                          boxed->status == "started" ||
                          boxed->status == "detail" ||
                          boxed->status == "stay" ||
-                         boxed->status == "downloading" ||
-                         boxed->status == "delegated" ||
-                         (boxed->status == "quit-and-install" &&
-                          boxed->appimage_ticket.has_value());
+                         boxed->status == "delegated";
       } catch (std::exception const& e) {
         boxed->status = e.what();
       }
@@ -2016,46 +1963,6 @@ struct Launcher {
                 Launcher::post_status(std::string("Detail error: ") + e.what());
               }
             }).detach();
-            return G_SOURCE_REMOVE;
-          }
-          if (job->status == "downloading") {
-            // The backend download thread owns the transfer; the host
-            // mirrors its progress into the status bar.
-            Launcher::instance().hide();
-            Launcher::instance().start_update_progress_poll();
-            return G_SOURCE_REMOVE;
-          }
-          if (job->status == "quit-and-install" &&
-              job->action_id == "update.install") {
-            try {
-              auto* running_image = std::getenv("APPIMAGE");
-              if (running_image == nullptr || *running_image == '\0') {
-                throw std::runtime_error(
-                    "AppImage replacement is only available from an AppImage");
-              }
-              auto const& ticket = *job->appimage_ticket;
-              std::filesystem::path const target(running_image);
-              if (!target.is_absolute() ||
-                  !std::filesystem::is_regular_file(target)) {
-                throw std::runtime_error(
-                    "cannot locate the running AppImage installation");
-              }
-              rivet::update::AppImageHandoffOptions options;
-              options.version = ticket.version;
-              options.artifact_sha256 = ticket.signed_sha256;
-              options.rollback_allowed = ticket.rollback_allowed;
-              // The first-party helper detaches before our GTK process
-              // exits. It waits for this PID, so shutdown releases the
-              // SingleInstanceLease before replacing the live executable.
-              rivet::update::AppImageHandoff::LaunchReplacement(
-                  "site.jrtx.fulcrum", ticket.verified_path, target,
-                  {}, 30, options);
-              g_application_quit(
-                  G_APPLICATION(Launcher::instance().app));
-            } catch (std::exception const& e) {
-              Launcher::instance().set_status(
-                  std::string("AppImage update install failed: ") + e.what());
-            }
             return G_SOURCE_REMOVE;
           }
           if (Launcher::instance().actions_mode) {
@@ -2331,6 +2238,7 @@ void set_i18n_language(std::string const& lang) {
   if (changed && launcher.api != nullptr) launcher.set_ready_status();
   apply_tray_language();
   refresh_settings_language();
+  update_window_refresh_language();
 }
 
 // ---- settings window ---------------------------------------------------------
@@ -2350,6 +2258,10 @@ struct SettingBinding {
   std::string key;
   SettingKind kind{SettingKind::text};
   std::vector<std::string> choices;  // choice: drop-down index → value
+  // choice: per-option fallback label and optional shared/i18n key, so a
+  // language change can repaint the drop-down without losing the selection.
+  std::vector<std::string> choice_labels;
+  std::vector<std::string> choice_keys;
   GtkWidget* widget{nullptr};
 };
 
@@ -2376,6 +2288,10 @@ struct SettingsForm {
   std::vector<std::unique_ptr<SettingBinding>> bindings;
   // Keep backend-defined localized labels alive across language changes.
   std::vector<std::tuple<GtkLabel*, std::string, std::string>> localized_labels;
+  std::vector<std::tuple<GtkButton*, std::string>> localized_buttons;
+  std::vector<std::tuple<GtkEntry*, std::string>> localized_placeholders;
+  // Stack page id → settings.nav.* key (sidebar titles follow the language).
+  std::vector<std::pair<std::string, std::string>> localized_pages;
   GtkLabel* ai_status{nullptr};
   GtkLabel* key_notice{nullptr};
   GtkWidget* key_entry{nullptr};
@@ -2389,6 +2305,7 @@ struct SettingsForm {
 SettingsForm* g_settings_form = nullptr;
 
 void settings_load();
+void settings_load_commands();
 void workflow_load_list();
 void workflow_load_detail();
 void workflow_action(std::string id, std::string arg);
@@ -2412,7 +2329,8 @@ void settings_refresh_ai_status() {
       std::unique_ptr<std::string> text(static_cast<std::string*>(user_data));
       if (g_settings_form != nullptr) {
         gtk_label_set_text(g_settings_form->ai_status,
-                           *text == "ready" ? "Ready" : text->c_str());
+                           *text == "ready" ? tr("settings.ai-ready").c_str()
+                                            : text->c_str());
       }
       return G_SOURCE_REMOVE;
     }, new std::string(std::move(status)));
@@ -2432,13 +2350,13 @@ void settings_write(std::string const& key, std::string const& value) {
     try {
       if (!api_raw->settings_set(key, value).get()) {
         error = key == "hotkey"
-            ? "that shortcut is not supported"
-            : "that value is not supported";
+            ? tr("settings.hotkey.unsupported")
+            : tr_format("settings.value.unsupported", {key});
       }
     } catch (std::exception const& e) {
       error = e.what();
     } catch (...) {
-      error = "settings-set failed";
+      error = tr_format("settings.write.failed", {key});
     }
     g_idle_add([](gpointer user_data) -> int {
       std::unique_ptr<std::pair<std::string, std::string>> result(
@@ -2456,7 +2374,7 @@ void settings_write(std::string const& key, std::string const& value) {
       } else {
         // The backend refused the value (grammar, range): say so and fall
         // back to what it actually holds.
-        settings_show_error(written_key + ": " + written_error);
+        settings_show_error(written_error);
         settings_load();
       }
       return G_SOURCE_REMOVE;
@@ -2531,8 +2449,8 @@ void settings_save_key() {
       if (g_settings_form != nullptr) {
         gtk_label_set_text(
             g_settings_form->key_notice,
-            *text == "ok" ? "Key saved — stored on this machine only, never synced."
-                          : text->c_str());
+            *text == "ok" ? tr("settings.ai-key.saved").c_str()
+                          : tr("settings.ai-key.failed").c_str());
         gtk_editable_set_text(GTK_EDITABLE(g_settings_form->key_entry), "");
         settings_refresh_ai_status();
       }
@@ -2547,14 +2465,18 @@ void on_key_entry_activate(GtkPasswordEntry*, gpointer) { settings_save_key(); }
 // ---- form construction
 
 GtkWidget* settings_row(GtkWidget* section, char const* label_text,
-                        GtkWidget* control, char const* setting_key = nullptr) {
+                        GtkWidget* control, char const* setting_key = nullptr,
+                        char const* label_key = nullptr) {
   auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
   gtk_widget_set_margin_top(row, 8);
   gtk_widget_set_margin_bottom(row, 8);
   gtk_widget_set_margin_start(row, 14);
   gtk_widget_set_margin_end(row, 14);
-  std::string const lookup = setting_key == nullptr
-      ? "" : "setting." + std::string(setting_key);
+  // Canonical label key: an explicit settings.* key wins; otherwise the
+  // launcher's setting.<backend-key> row label is reused when it exists.
+  std::string const lookup = label_key != nullptr
+      ? std::string(label_key)
+      : (setting_key == nullptr ? "" : "setting." + std::string(setting_key));
   std::string const translated = lookup.empty() ? "" : tr(lookup.c_str());
   auto* label = gtk_label_new(!lookup.empty() && translated != lookup
                                   ? translated.c_str() : label_text);
@@ -2573,8 +2495,10 @@ GtkWidget* settings_row(GtkWidget* section, char const* label_text,
   return row;
 }
 
-void settings_hint(GtkWidget* section, char const* text) {
-  auto* label = gtk_label_new(text);
+void settings_hint(GtkWidget* section, char const* key) {
+  std::string const text = tr(key);
+  auto* label = gtk_label_new(text.c_str());
+  g_settings_form->localized_labels.emplace_back(GTK_LABEL(label), key, "");
   gtk_label_set_xalign(GTK_LABEL(label), 0.0);
   gtk_label_set_wrap(GTK_LABEL(label), TRUE);
   gtk_widget_add_css_class(label, "caption");
@@ -2585,8 +2509,10 @@ void settings_hint(GtkWidget* section, char const* text) {
   gtk_box_append(GTK_BOX(section), label);
 }
 
-GtkWidget* settings_section(GtkWidget* page, char const* title) {
-  auto* heading = gtk_label_new(title);
+GtkWidget* settings_section(GtkWidget* page, char const* title_key) {
+  auto* heading = gtk_label_new(tr(title_key).c_str());
+  g_settings_form->localized_labels.emplace_back(
+      GTK_LABEL(heading), title_key, "");
   gtk_label_set_xalign(GTK_LABEL(heading), 0.0);
   gtk_widget_add_css_class(heading, "heading");
   gtk_widget_set_margin_top(heading, 14);
@@ -2596,6 +2522,13 @@ GtkWidget* settings_section(GtkWidget* page, char const* title) {
   gtk_frame_set_child(GTK_FRAME(frame), body);
   gtk_box_append(GTK_BOX(page), frame);
   return body;
+}
+
+// A button whose label follows the shared/i18n language live.
+GtkButton* settings_button(char const* key) {
+  auto* button = gtk_button_new_with_label(tr(key).c_str());
+  g_settings_form->localized_buttons.emplace_back(GTK_BUTTON(button), key);
+  return GTK_BUTTON(button);
 }
 
 SettingBinding* settings_bind(std::string key, SettingKind kind,
@@ -2612,35 +2545,48 @@ SettingBinding* settings_bind(std::string key, SettingKind kind,
 }
 
 GtkWidget* settings_add_toggle(GtkWidget* section, char const* label,
-                               char const* key) {
+                               char const* key, char const* label_key = nullptr) {
   auto* toggle = gtk_switch_new();
   auto* binding = settings_bind(key, SettingKind::toggle, toggle);
   g_signal_connect(toggle, "notify::active", G_CALLBACK(on_setting_switch), binding);
-  settings_row(section, label, toggle, key);
+  settings_row(section, label, toggle, key, label_key);
   return toggle;
 }
 
-void settings_add_choice(GtkWidget* section, char const* label, char const* key,
-                         std::vector<std::pair<char const*, char const*>> const& options) {
-  std::vector<char const*> labels;
+void settings_add_choice(
+    GtkWidget* section, char const* label, char const* key,
+    std::vector<std::tuple<char const*, char const*, char const*>> const& options,
+    char const* label_key = nullptr) {
   std::vector<std::string> values;
-  for (auto const& [text, value] : options) {
-    labels.push_back(text);
+  std::vector<std::string> fallbacks;
+  std::vector<std::string> keys;
+  std::vector<std::string> display;
+  display.reserve(options.size());
+  for (auto const& [text, value, option_key] : options) {
+    display.push_back(option_key != nullptr && *option_key != '\0'
+                          ? tr(option_key) : std::string(text));
     values.push_back(value);
+    fallbacks.push_back(text);
+    keys.push_back(option_key == nullptr ? "" : option_key);
   }
+  std::vector<char const*> labels;
+  labels.reserve(display.size() + 1);
+  for (auto const& text : display) labels.push_back(text.c_str());
   labels.push_back(nullptr);
   auto* drop = gtk_drop_down_new_from_strings(labels.data());
   auto* binding = settings_bind(key, SettingKind::choice, drop, std::move(values));
+  binding->choice_labels = std::move(fallbacks);
+  binding->choice_keys = std::move(keys);
   g_signal_connect(drop, "notify::selected", G_CALLBACK(on_setting_choice), binding);
-  settings_row(section, label, drop, key);
+  settings_row(section, label, drop, key, label_key);
 }
 
 void settings_add_number(GtkWidget* section, char const* label, char const* key,
-                         double min, double max) {
+                         double min, double max, char const* label_key = nullptr) {
   auto* spin = gtk_spin_button_new_with_range(min, max, 1);
   auto* binding = settings_bind(key, SettingKind::number, spin);
   g_signal_connect(spin, "value-changed", G_CALLBACK(on_setting_number), binding);
-  settings_row(section, label, spin, key);
+  settings_row(section, label, spin, key, label_key);
 }
 
 std::string linux_key_spec(guint keyval, GdkModifierType modifiers) {
@@ -2692,12 +2638,14 @@ void linux_attach_key_recorder(GtkWidget* widget) {
 }
 
 void settings_add_text(GtkWidget* section, char const* label, char const* key,
-                       char const* placeholder) {
+                       char const* placeholder_key,
+                       char const* label_key = nullptr) {
   auto* entry = gtk_entry_new();
-  gtk_entry_set_placeholder_text(GTK_ENTRY(entry), placeholder);
+  gtk_entry_set_placeholder_text(GTK_ENTRY(entry), tr(placeholder_key).c_str());
+  g_settings_form->localized_placeholders.emplace_back(
+      GTK_ENTRY(entry), placeholder_key);
   gtk_widget_set_size_request(entry, 260, -1);
   if (std::string(key) == "hotkey") {
-    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Focus and press a shortcut");
     linux_attach_key_recorder(entry);
   }
   auto* binding = settings_bind(key, SettingKind::text, entry);
@@ -2705,7 +2653,7 @@ void settings_add_text(GtkWidget* section, char const* label, char const* key,
   auto* focus = gtk_event_controller_focus_new();
   g_signal_connect(focus, "leave", G_CALLBACK(on_setting_entry_leave), binding);
   gtk_widget_add_controller(entry, focus);
-  settings_row(section, label, entry, key);
+  settings_row(section, label, entry, key, label_key);
 }
 
 void refresh_settings_language() {
@@ -2714,6 +2662,55 @@ void refresh_settings_language() {
     std::string const value = tr(key.c_str());
     gtk_label_set_text(label, value == key ? fallback.c_str() : value.c_str());
   }
+  for (auto const& [button, key] : g_settings_form->localized_buttons) {
+    gtk_button_set_label(button, tr(key.c_str()).c_str());
+  }
+  for (auto const& [entry, key] : g_settings_form->localized_placeholders) {
+    gtk_entry_set_placeholder_text(entry, tr(key.c_str()).c_str());
+  }
+  for (auto const& [id, key] : g_settings_form->localized_pages) {
+    auto* stack = GTK_STACK(g_settings_form->stack);
+    if (auto* child = gtk_stack_get_child_by_name(stack, id.c_str())) {
+      if (auto* page = gtk_stack_get_page(stack, child)) {
+        gtk_stack_page_set_title(page, tr(key.c_str()).c_str());
+      }
+    }
+  }
+  // Choice drop-downs: splice the string model in place so the current
+  // selection index survives the repaint.
+  for (auto const& binding : g_settings_form->bindings) {
+    if (binding->kind != SettingKind::choice || binding->choice_keys.empty())
+      continue;
+    std::vector<std::string> display;
+    display.reserve(binding->choice_keys.size());
+    for (std::size_t i = 0; i < binding->choice_keys.size(); ++i) {
+      std::string const& key = binding->choice_keys[i];
+      std::string const value = key.empty() ? "" : tr(key.c_str());
+      display.push_back(key.empty() || value == key
+                            ? binding->choice_labels[i] : value);
+    }
+    std::vector<char const*> labels;
+    labels.reserve(display.size() + 1);
+    for (auto const& text : display) labels.push_back(text.c_str());
+    labels.push_back(nullptr);
+    auto* model = gtk_drop_down_get_model(GTK_DROP_DOWN(binding->widget));
+    if (GTK_IS_STRING_LIST(model)) {
+      gtk_string_list_splice(GTK_STRING_LIST(model), 0,
+                             g_list_model_get_n_items(G_LIST_MODEL(model)),
+                             labels.data());
+    }
+  }
+  // Dynamic editors rebuild their rows in the new language.
+  if (g_settings_form->workflow_selected.empty()) {
+    gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_selected_label),
+                       tr("settings.wf.select").c_str());
+  }
+  gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
+                     tr("settings.wf.idle").c_str());
+  settings_load_commands();
+  workflow_load_list();
+  workflow_load_detail();
+  settings_refresh_ai_status();
 }
 
 void on_linux_startup_toggle(GObject* object, GParamSpec*, gpointer) {
@@ -2727,7 +2724,7 @@ void on_linux_startup_toggle(GObject* object, GParamSpec*, gpointer) {
     g_settings_form->loading = true;
     gtk_switch_set_active(GTK_SWITCH(object), !enabled);
     g_settings_form->loading = false;
-    settings_show_error("Start at login: " + error);
+    settings_show_error(tr_format("settings.login.failed.linux", {error}));
   } else {
     settings_show_error("");
   }
@@ -2743,7 +2740,7 @@ void settings_build() {
   gtk_window_set_default_size(GTK_WINDOW(window), 720, 520);
   gtk_window_set_hide_on_close(GTK_WINDOW(window), TRUE);
 
-  // Mirror native macOS/WinUI Settings information architecture: five
+  // Mirror native macOS/WinUI Settings information architecture: six
   // named sidebar categories, one current scrollable content page.
   auto* layout = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   auto* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -2755,7 +2752,7 @@ void settings_build() {
   gtk_widget_set_vexpand(stack, TRUE);
   auto* sidebar = gtk_stack_sidebar_new();
   gtk_stack_sidebar_set_stack(GTK_STACK_SIDEBAR(sidebar), GTK_STACK(stack));
-  gtk_widget_set_size_request(sidebar, 170, -1);
+  gtk_widget_set_size_request(sidebar, 176, -1);
   gtk_widget_add_css_class(sidebar, "navigation-sidebar");
   gtk_box_append(GTK_BOX(layout), sidebar);
   gtk_box_append(GTK_BOX(layout), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
@@ -2763,7 +2760,7 @@ void settings_build() {
   gtk_box_append(GTK_BOX(layout), content);
   gtk_window_set_child(GTK_WINDOW(window), layout);
 
-  auto make_page = [stack](char const* id, char const* title) -> GtkWidget* {
+  auto make_page = [stack](char const* id, char const* title_key) -> GtkWidget* {
     auto* scrolled = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
@@ -2773,68 +2770,80 @@ void settings_build() {
     gtk_widget_set_margin_start(page, 24);
     gtk_widget_set_margin_end(page, 24);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), page);
-    gtk_stack_add_titled(GTK_STACK(stack), scrolled, id, title);
+    gtk_stack_add_titled(GTK_STACK(stack), scrolled, id, tr(title_key).c_str());
+    g_settings_form->localized_pages.emplace_back(id, title_key);
     return page;
   };
 
-  auto* general_page = make_page("general", "General");
-  auto* general = settings_section(general_page, "General");
+  auto* general_page = make_page("general", "settings.nav.general");
+  auto* general = settings_section(general_page, "settings.nav.general");
   settings_add_choice(general, "Language", "language",
-                      {{"跟随系统", "system"},
-                       {"中文", "zh"},
-                       {"English", "en"}});
+                      {{"System", "system", "settings.language.system"},
+                       {"English", "en", "settings.language.en"},
+                       {"中文", "zh", "settings.language.zh"}});
   settings_add_choice(general, "Theme", "theme",
-                      {{"System", "system"}, {"Light", "light"}, {"Dark", "dark"}});
-  settings_add_text(general, "Hotkey", "hotkey", "alt+space");
-  settings_hint(general,
-                "Focus the hotkey field and press modifiers plus a key. "
-                "Esc cancels; the shared backend rejects unsupported combos.");
-  settings_add_number(general, "Maximum results", "max-results", 5, 12);
+                      {{"System", "system", "settings.theme.system"},
+                       {"Light", "light", "settings.theme.light"},
+                       {"Dark", "dark", "settings.theme.dark"}});
   auto* startup_toggle = gtk_switch_new();
   gtk_switch_set_active(GTK_SWITCH(startup_toggle), fulcrum_autostart_enabled());
   gtk_accessible_update_property(GTK_ACCESSIBLE(startup_toggle),
                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
                                   "Fulcrum start at login", -1);
-  settings_row(general, "Start at login", startup_toggle);
+  settings_row(general, "Start at login", startup_toggle, nullptr,
+               "settings.start-at-login");
   g_signal_connect(startup_toggle, "notify::active",
                    G_CALLBACK(on_linux_startup_toggle), nullptr);
-  settings_hint(general, "Runs quietly after sign-in. This setting belongs to this device.");
+  settings_hint(general, "settings.hint.start-at-login");
+  settings_add_text(general, "Hotkey", "hotkey", "settings.hotkey.placeholder");
+  settings_hint(general, "settings.hint.hotkey");
+  settings_add_number(general, "Maximum results", "max-results", 5, 12);
+  settings_hint(general, "settings.hint.max-results");
 
-  auto* features = settings_section(make_page("features", "Features"), "Features");
+  auto* features = settings_section(make_page("features", "settings.nav.features"),
+                                    "settings.nav.features");
   settings_add_toggle(features, "Record clipboard history", "clipboard-enabled");
-  settings_add_number(features, "Clipboard history limit", "clipboard-limit", 10, 100000);
+  settings_add_number(features, "Clipboard history limit", "clipboard-limit",
+                      10, 100000, "settings.clipboard-limit");
+  settings_hint(features, "settings.hint.clipboard-limit");
   settings_add_toggle(features, "Web search rows (bangs and fallback)", "web-search-enabled");
   settings_add_choice(features, "Default bang", "default-engine",
-                      {{"!g", "!g"}, {"!d", "!d"}, {"!gh", "!gh"}, {"!so", "!so"},
-                       {"!w", "!w"}, {"!yt", "!yt"}, {"!m", "!m"}, {"!t", "!t"}});
+                      {{"!g", "!g", ""}, {"!d", "!d", ""}, {"!gh", "!gh", ""},
+                       {"!so", "!so", ""}, {"!w", "!w", ""}, {"!yt", "!yt", ""},
+                       {"!m", "!m", ""}, {"!t", "!t", ""}},
+                      "settings.default-engine");
   auto* expansion = settings_add_toggle(
       features, "Expand snippet keywords as you type in any app",
       "expansion-enabled");
   gtk_widget_set_sensitive(expansion, FALSE);
-  settings_hint(features,
-                "Snippet expansion is not supported on Linux yet; the setting "
-                "is shown so the three hosts expose the same feature map.");
+  settings_hint(features, "settings.hint.expansion.linux");
   settings_add_toggle(features, "Load plugins", "plugins-enabled");
-  settings_add_number(features, "Plugin call timeout (ms)", "plugins-timeout-ms", 100, 10000);
+  settings_add_number(features, "Plugin call timeout (ms)", "plugins-timeout-ms",
+                      100, 10000, "settings.plugins-timeout");
+  settings_hint(features, "settings.hint.plugins-timeout");
 
-  auto* ai = settings_section(make_page("ai", "AI"), "AI");
+  auto* ai = settings_section(make_page("ai", "settings.nav.ai"), "settings.nav.ai");
   settings_add_choice(ai, "Provider", "ai-provider",
-                      {{"Off", ""}, {"OpenAI", "openai"},
-                       {"Anthropic", "anthropic"}, {"Ollama", "ollama"}});
-  settings_add_text(ai, "Model", "ai-model", "provider default");
-  settings_add_text(ai, "Base URL", "ai-base-url", "provider default");
-  settings_add_text(ai, "Persona", "ai-persona", "prepended to every request");
+                      {{"Off", "", "settings.provider.off"},
+                       {"OpenAI", "openai", ""},
+                       {"Anthropic", "anthropic", ""}, {"Ollama", "ollama", ""}});
+  settings_add_text(ai, "Model", "ai-model", "settings.ai-model.placeholder",
+                    "settings.ai-model");
+  settings_add_text(ai, "Base URL", "ai-base-url", "settings.ai-model.placeholder",
+                    "settings.ai-base-url");
+  settings_add_text(ai, "Persona", "ai-persona", "settings.ai-persona.placeholder",
+                    "settings.ai-persona");
   auto* key_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   auto* key_entry = gtk_password_entry_new();
   gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(key_entry), TRUE);
   gtk_widget_set_size_request(key_entry, 240, -1);
   g_signal_connect(key_entry, "activate", G_CALLBACK(on_key_entry_activate), nullptr);
-  auto* save = gtk_button_new_with_label("Save");
+  auto* save = settings_button("settings.save");
   g_signal_connect(save, "clicked", G_CALLBACK(on_save_key_clicked), nullptr);
   gtk_box_append(GTK_BOX(key_box), key_entry);
-  gtk_box_append(GTK_BOX(key_box), save);
+  gtk_box_append(GTK_BOX(key_box), GTK_WIDGET(save));
   g_settings_form->key_entry = key_entry;
-  settings_row(ai, "API key", key_box);
+  settings_row(ai, "API key", key_box, nullptr, "settings.ai-api-key");
   auto* status = gtk_label_new("");
   gtk_label_set_xalign(GTK_LABEL(status), 0.0);
   gtk_widget_add_css_class(status, "dim-label");
@@ -2851,16 +2860,16 @@ void settings_build() {
   gtk_widget_set_margin_end(notice, 14);
   gtk_box_append(GTK_BOX(ai), notice);
   g_settings_form->key_notice = GTK_LABEL(notice);
-  settings_hint(ai, "Stored in ai-keys.json on this machine; never mirrored to the sync folder.");
+  settings_hint(ai, "settings.hint.ai-keys");
 
   // Commands is a real backend-owned editor, not just a placeholder label.
-  auto* commands_page = make_page("commands", "Commands");
-  auto* commands = settings_section(commands_page, "Commands");
-  settings_hint(commands, "Configure command aliases. Desktop-wide command hotkeys are not yet registered on Linux.");
+  auto* commands_page = make_page("commands", "settings.nav.commands");
+  auto* commands = settings_section(commands_page, "settings.nav.commands");
+  settings_hint(commands, "settings.hint.commands.linux");
   auto* commands_list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   gtk_box_append(GTK_BOX(commands), commands_list);
   g_settings_form->commands_list = commands_list;
-  auto* commands_message = gtk_label_new("Loading command bindings…");
+  auto* commands_message = gtk_label_new(tr("settings.commands.loading").c_str());
   gtk_label_set_xalign(GTK_LABEL(commands_message), 0);
   gtk_label_set_wrap(GTK_LABEL(commands_message), TRUE);
   gtk_box_append(GTK_BOX(commands), commands_message);
@@ -2868,20 +2877,21 @@ void settings_build() {
 
   // Workflow editor: real GTK controls over the same backend actions that
   // serve WinUI and SwiftUI. No host-specific JSON editing or evaluator.
-  auto* workflow_page = make_page("workflows", "Workflows");
-  auto* workflows = settings_section(workflow_page, "Workflow editor");
-  settings_hint(workflows,
-                "Local-only steps; the shared backend validates every change. "
-                "Debug traces never expose input or output.");
+  auto* workflow_page = make_page("workflows", "settings.nav.workflows");
+  auto* workflows = settings_section(workflow_page, "settings.wf.title");
+  settings_hint(workflows, "settings.wf.hint");
   auto* wf_create = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
   auto* wf_name = gtk_entry_new();
-  gtk_entry_set_placeholder_text(GTK_ENTRY(wf_name), "new-name");
+  gtk_entry_set_placeholder_text(GTK_ENTRY(wf_name),
+                                 tr("settings.wf.new-name").c_str());
+  g_settings_form->localized_placeholders.emplace_back(
+      GTK_ENTRY(wf_name), "settings.wf.new-name");
   gtk_widget_set_hexpand(wf_name, TRUE);
   gtk_accessible_update_property(GTK_ACCESSIBLE(wf_name),
                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
                                   "workflow-create-name", -1);
   g_settings_form->workflow_name = wf_name;
-  auto* wf_create_button = gtk_button_new_with_label("Create");
+  auto* wf_create_button = settings_button("settings.wf.create");
   gtk_accessible_update_property(GTK_ACCESSIBLE(wf_create_button),
                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
                                   "workflow-create", -1);
@@ -2892,27 +2902,27 @@ void settings_build() {
         gtk_editable_get_text(GTK_EDITABLE(g_settings_form->workflow_name)));
     if (name.empty()) {
       gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
-                         "Enter a workflow name.");
+                         tr("settings.wf.enter-name").c_str());
       return;
     }
     g_settings_form->workflow_list_page = 1;
     workflow_action("workflow.create", name);
   }), nullptr);
-  auto* wf_refresh = gtk_button_new_with_label("Refresh");
+  auto* wf_refresh = settings_button("settings.wf.refresh");
   g_signal_connect(wf_refresh, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
     workflow_load_list(); workflow_load_detail();
   }), nullptr);
   gtk_box_append(GTK_BOX(wf_create), wf_name);
-  gtk_box_append(GTK_BOX(wf_create), wf_create_button);
-  gtk_box_append(GTK_BOX(wf_create), wf_refresh);
+  gtk_box_append(GTK_BOX(wf_create), GTK_WIDGET(wf_create_button));
+  gtk_box_append(GTK_BOX(wf_create), GTK_WIDGET(wf_refresh));
   gtk_box_append(GTK_BOX(workflows), wf_create);
 
   auto* wf_list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   g_settings_form->workflow_list = wf_list;
   gtk_box_append(GTK_BOX(workflows), wf_list);
   auto* wf_list_navigation = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  auto* wf_prev = gtk_button_new_with_label("Previous workflows");
-  auto* wf_next = gtk_button_new_with_label("Next workflows");
+  GtkWidget* wf_prev = GTK_WIDGET(settings_button("settings.wf.prev"));
+  GtkWidget* wf_next = GTK_WIDGET(settings_button("settings.wf.next"));
   g_signal_connect(wf_prev, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
     if (!g_settings_form) return;
     g_settings_form->workflow_list_page =
@@ -2928,18 +2938,18 @@ void settings_build() {
   gtk_box_append(GTK_BOX(wf_list_navigation), wf_next);
   gtk_box_append(GTK_BOX(workflows), wf_list_navigation);
 
-  auto* wf_selected = gtk_label_new("Select a workflow");
+  auto* wf_selected = gtk_label_new(tr("settings.wf.select").c_str());
   gtk_label_set_xalign(GTK_LABEL(wf_selected), 0);
   gtk_widget_add_css_class(wf_selected, "heading");
   gtk_box_append(GTK_BOX(workflow_page), wf_selected);
   g_settings_form->workflow_selected_label = wf_selected;
-  auto* wf_steps_section = settings_section(workflow_page, "Ordered steps");
+  auto* wf_steps_section = settings_section(workflow_page, "settings.wf.steps");
   auto* wf_steps = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   g_settings_form->workflow_steps = wf_steps;
   gtk_box_append(GTK_BOX(wf_steps_section), wf_steps);
   auto* wf_step_navigation = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  auto* wf_step_prev = gtk_button_new_with_label("Previous steps");
-  auto* wf_step_next = gtk_button_new_with_label("Next steps");
+  GtkWidget* wf_step_prev = GTK_WIDGET(settings_button("settings.wf.prev"));
+  GtkWidget* wf_step_next = GTK_WIDGET(settings_button("settings.wf.next"));
   g_signal_connect(wf_step_prev, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
     if (!g_settings_form) return;
     g_settings_form->workflow_step_page =
@@ -2957,20 +2967,22 @@ void settings_build() {
   auto* wf_add = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
   auto* wf_step_entry = gtk_entry_new();
   gtk_entry_set_placeholder_text(GTK_ENTRY(wf_step_entry),
-                                  "trim, lines unique, require text…");
+                                 tr("settings.wf.step-placeholder").c_str());
+  g_settings_form->localized_placeholders.emplace_back(
+      GTK_ENTRY(wf_step_entry), "settings.wf.step-placeholder");
   gtk_widget_set_hexpand(wf_step_entry, TRUE);
   g_settings_form->workflow_step = wf_step_entry;
   gtk_accessible_update_property(GTK_ACCESSIBLE(wf_step_entry),
                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
                                   "workflow-step-expression", -1);
-  auto* wf_add_button = gtk_button_new_with_label("Add step");
+  GtkWidget* wf_add_button = GTK_WIDGET(settings_button("settings.wf.add-step"));
   g_signal_connect(wf_add_button, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
     if (!g_settings_form || g_settings_form->workflow_selected.empty()) return;
     std::string step = settings_trimmed(
         gtk_editable_get_text(GTK_EDITABLE(g_settings_form->workflow_step)));
     if (step.empty()) {
       gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
-                         "Enter a step expression.");
+                         tr("settings.wf.enter-step").c_str());
       return;
     }
     workflow_action("workflow.add", g_settings_form->workflow_selected +
@@ -2980,7 +2992,7 @@ void settings_build() {
   gtk_box_append(GTK_BOX(wf_add), wf_add_button);
   gtk_box_append(GTK_BOX(wf_steps_section), wf_add);
 
-  auto* wf_input_section = settings_section(workflow_page, "Input / preview");
+  auto* wf_input_section = settings_section(workflow_page, "settings.wf.input");
   auto* wf_input_scroller = gtk_scrolled_window_new();
   gtk_widget_set_size_request(wf_input_scroller, -1, 90);
   auto* wf_input = gtk_text_view_new();
@@ -2993,7 +3005,7 @@ void settings_build() {
                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
                                   "workflow-input-multiline", -1);
   auto* wf_run_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  auto* wf_dry = gtk_button_new_with_label("Dry run");
+  GtkWidget* wf_dry = GTK_WIDGET(settings_button("settings.wf.dry-run"));
   g_signal_connect(wf_dry, "clicked", G_CALLBACK((+[](GtkButton*, gpointer) {
     if (!g_settings_form || g_settings_form->workflow_selected.empty()) return;
     auto* buffer = gtk_text_view_get_buffer(
@@ -3007,7 +3019,7 @@ void settings_build() {
     workflow_action("workflow.dry", g_settings_form->workflow_selected +
         std::string(1, '\x1F') + input);
   })), nullptr);
-  auto* wf_run_copy = gtk_button_new_with_label("Run to clipboard");
+  GtkWidget* wf_run_copy = GTK_WIDGET(settings_button("settings.wf.run-copy"));
   gtk_widget_set_sensitive(wf_run_copy, FALSE);
   g_settings_form->workflow_run_copy = wf_run_copy;
   g_signal_connect(wf_run_copy, "clicked", G_CALLBACK((+[](GtkButton*, gpointer) {
@@ -3024,15 +3036,18 @@ void settings_build() {
     workflow_action("workflow.run", g_settings_form->workflow_selected +
         std::string(1, '\x1F') + input);
   })), nullptr);
-  auto* wf_confirm = gtk_check_button_new_with_label("Confirm delete");
+  auto* wf_confirm = gtk_check_button_new_with_label(
+      tr("settings.wf.confirm-delete").c_str());
+  g_settings_form->localized_buttons.emplace_back(
+      GTK_BUTTON(wf_confirm), "settings.wf.confirm-delete");
   g_settings_form->workflow_delete_confirm = wf_confirm;
-  auto* wf_delete = gtk_button_new_with_label("Delete");
+  GtkWidget* wf_delete = GTK_WIDGET(settings_button("settings.wf.delete"));
   g_signal_connect(wf_delete, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
     if (!g_settings_form || g_settings_form->workflow_selected.empty()) return;
     if (!gtk_check_button_get_active(
             GTK_CHECK_BUTTON(g_settings_form->workflow_delete_confirm))) {
       gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
-                         "Confirm delete before removing the definition.");
+                         tr("settings.wf.confirm-first").c_str());
       return;
     }
     workflow_action("workflow.delete", g_settings_form->workflow_selected);
@@ -3042,17 +3057,15 @@ void settings_build() {
   gtk_box_append(GTK_BOX(wf_run_buttons), wf_confirm);
   gtk_box_append(GTK_BOX(wf_run_buttons), wf_delete);
   gtk_box_append(GTK_BOX(wf_input_section), wf_run_buttons);
-  settings_hint(wf_input_section,
-                "@clipboard explicitly reads recent local text. "
-                "Paste workflows must run from the launcher to preserve focus.");
+  settings_hint(wf_input_section, "settings.wf.clipboard-note");
 
-  auto* wf_trace_section = settings_section(workflow_page, "Redacted trace");
+  auto* wf_trace_section = settings_section(workflow_page, "settings.wf.trace");
   auto* wf_trace = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
   g_settings_form->workflow_trace = wf_trace;
   gtk_box_append(GTK_BOX(wf_trace_section), wf_trace);
   auto* wf_trace_nav = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  auto* wf_trace_prev = gtk_button_new_with_label("Previous trace");
-  auto* wf_trace_next = gtk_button_new_with_label("Next trace");
+  GtkWidget* wf_trace_prev = GTK_WIDGET(settings_button("settings.wf.prev"));
+  GtkWidget* wf_trace_next = GTK_WIDGET(settings_button("settings.wf.next"));
   g_signal_connect(wf_trace_prev, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
     if (!g_settings_form) return;
     g_settings_form->workflow_trace_page =
@@ -3067,22 +3080,30 @@ void settings_build() {
   gtk_box_append(GTK_BOX(wf_trace_nav), wf_trace_prev);
   gtk_box_append(GTK_BOX(wf_trace_nav), wf_trace_next);
   gtk_box_append(GTK_BOX(wf_trace_section), wf_trace_nav);
-  auto* wf_status = gtk_label_new("Workflow actions remain local and user-initiated.");
+  auto* wf_status = gtk_label_new(tr("settings.wf.idle").c_str());
   gtk_label_set_xalign(GTK_LABEL(wf_status), 0);
   gtk_label_set_wrap(GTK_LABEL(wf_status), TRUE);
   gtk_label_set_selectable(GTK_LABEL(wf_status), TRUE);
   gtk_box_append(GTK_BOX(workflow_page), wf_status);
   g_settings_form->workflow_status = wf_status;
 
-  auto* sync_page = make_page("sync", "Sync & Updates");
-  auto* sync = settings_section(sync_page, "Sync & Updates");
-  settings_add_text(sync, "Sync folder (beta)", "sync-root", "empty = off");
-  settings_hint(sync,
-                "A folder a file sync service replicates (Syncthing, Nextcloud, "
-                "Dropbox); settings and snippets mirror there.");
-  settings_hint(sync,
-                "Fulcrum checks signed releases automatically. Use Check for "
-                "Updates from the tray menu to check now.");
+  auto* sync_page = make_page("sync", "settings.nav.sync");
+  auto* sync = settings_section(sync_page, "settings.nav.sync");
+  settings_add_text(sync, "Sync folder (beta)", "sync-root",
+                    "settings.sync-folder.placeholder", "settings.sync-folder");
+  settings_hint(sync, "settings.sync-folder.description");
+  settings_hint(sync, "settings.updates-note.linux");
+  GtkWidget* check_now = GTK_WIDGET(settings_button("settings.check-updates-now"));
+  gtk_accessible_update_property(GTK_ACCESSIBLE(check_now),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "settings-update-check", -1);
+  gtk_widget_set_halign(check_now, GTK_ALIGN_START);
+  gtk_widget_set_margin_start(check_now, 14);
+  gtk_widget_set_margin_bottom(check_now, 8);
+  g_signal_connect(check_now, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
+    show_update_window(true);
+  }), nullptr);
+  gtk_box_append(GTK_BOX(sync), check_now);
 
   auto* error = gtk_label_new("");
   gtk_label_set_xalign(GTK_LABEL(error), 0.0);
@@ -3134,7 +3155,8 @@ void settings_apply(std::map<std::string, std::string> values, std::string ai_st
     }
   }
   gtk_label_set_text(g_settings_form->ai_status,
-                     ai_status == "ready" ? "Ready" : ai_status.c_str());
+                     ai_status == "ready" ? tr("settings.ai-ready").c_str()
+                                          : ai_status.c_str());
   g_settings_form->loading = false;
 }
 
@@ -3178,7 +3200,8 @@ void settings_commit_binding(std::string id, std::string alias,
                              std::string hotkey, bool clear) {
   auto* api = Launcher::instance().api.get();
   if (!api || !g_settings_form) return;
-  gtk_label_set_text(GTK_LABEL(g_settings_form->commands_message), "Saving…");
+  gtk_label_set_text(GTK_LABEL(g_settings_form->commands_message),
+                     tr("settings.commands.saving").c_str());
   std::thread([api, id = std::move(id), alias = std::move(alias),
                hotkey = std::move(hotkey), clear] {
     std::string message;
@@ -3186,7 +3209,7 @@ void settings_commit_binding(std::string id, std::string alias,
       bool const ok = clear
           ? api->binding_clear(id).get()
           : api->binding_set(id, alias, hotkey).get();
-      if (!ok) message = "Binding rejected (shortcut conflict or invalid alias/key)";
+      if (!ok) message = tr("settings.commands.rejected");
     } catch (std::exception const& e) { message = e.what(); }
     g_idle_add([](gpointer data) -> gboolean {
       std::unique_ptr<std::string> error(static_cast<std::string*>(data));
@@ -3244,16 +3267,18 @@ void settings_load_commands() {
         gtk_widget_set_hexpand(title, TRUE);
         gtk_widget_set_size_request(title, 110, -1);
         auto* alias_entry = gtk_entry_new();
-        gtk_entry_set_placeholder_text(GTK_ENTRY(alias_entry), "Alias");
+        gtk_entry_set_placeholder_text(GTK_ENTRY(alias_entry),
+                                       tr("settings.commands.alias").c_str());
         gtk_editable_set_text(GTK_EDITABLE(alias_entry), alias.c_str());
         gtk_widget_set_size_request(alias_entry, 115, -1);
         auto* hotkey_entry = gtk_entry_new();
-        gtk_entry_set_placeholder_text(GTK_ENTRY(hotkey_entry), "ctrl+alt+k");
+        gtk_entry_set_placeholder_text(GTK_ENTRY(hotkey_entry),
+                                       tr("settings.commands.press-keys").c_str());
         gtk_editable_set_text(GTK_EDITABLE(hotkey_entry), hotkey.c_str());
         gtk_widget_set_size_request(hotkey_entry, 145, -1);
         gtk_widget_set_sensitive(hotkey_entry, FALSE);
-        auto* save = gtk_button_new_with_label("Save");
-        auto* clear = gtk_button_new_with_label("Clear");
+        auto* save = gtk_button_new_with_label(tr("settings.save").c_str());
+        auto* clear = gtk_button_new_with_label(tr("settings.commands.clear").c_str());
         auto* state = new LinuxCommandRow{command[0], alias_entry, hotkey_entry};
         g_object_set_data_full(G_OBJECT(row), "command-binding", state,
             [](gpointer data) { delete static_cast<LinuxCommandRow*>(data); });
@@ -3277,7 +3302,7 @@ void settings_load_commands() {
         gtk_box_append(GTK_BOX(list), row);
       }
       gtk_label_set_text(GTK_LABEL(g_settings_form->commands_message),
-          "Save aliases through the shared backend. Global command hotkeys are unavailable on Linux.");
+          tr("settings.commands.unavailable-linux").c_str());
       return G_SOURCE_REMOVE;
     }, payload);
   }).detach();
@@ -3327,7 +3352,7 @@ void workflow_load_list() {
       payload->rows = api->search("wf list " + std::to_string(page)).get();
     } catch (std::exception const& e) {
       payload->error = e.what();
-    } catch (...) { payload->error = "Workflow list unavailable"; }
+    } catch (...) { payload->error = tr("settings.wf.load-failed"); }
     g_idle_add([](gpointer data) -> gboolean {
       std::unique_ptr<WorkflowListPayload> payload(
           static_cast<WorkflowListPayload*>(data));
@@ -3366,7 +3391,7 @@ void workflow_load_list() {
       }
       if (count == 0)
         gtk_box_append(GTK_BOX(list),
-                       gtk_label_new("No workflows on this page."));
+                       gtk_label_new(tr("settings.wf.empty").c_str()));
       if (!payload->error.empty())
         gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
                            payload->error.c_str());
@@ -3381,7 +3406,7 @@ void workflow_load_detail() {
   std::string name = g_settings_form->workflow_selected;
   if (name.empty()) {
     gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_selected_label),
-                       "Select a workflow");
+                       tr("settings.wf.select").c_str());
     workflow_clear_rows(g_settings_form->workflow_steps);
     workflow_clear_rows(g_settings_form->workflow_trace);
     g_settings_form->workflow_copy_safe = false;
@@ -3403,7 +3428,7 @@ void workflow_load_detail() {
       payload->trace = api->search("wf trace " + name + " " +
                                    std::to_string(trace_page)).get();
     } catch (std::exception const& e) { payload->error = e.what(); }
-    catch (...) { payload->error = "Workflow detail unavailable"; }
+    catch (...) { payload->error = tr("settings.wf.load-failed"); }
     g_idle_add([](gpointer data) -> gboolean {
       std::unique_ptr<WorkflowDetailPayload> payload(
           static_cast<WorkflowDetailPayload*>(data));
@@ -3426,7 +3451,7 @@ void workflow_load_detail() {
         auto const last_space = row[1].find_last_of(' ');
         std::string index = last_space == std::string::npos
                                 ? "" : row[1].substr(last_space + 1);
-        auto* remove = gtk_button_new_with_label("Remove");
+        auto* remove = gtk_button_new_with_label(tr("settings.wf.remove").c_str());
         auto* action = new std::pair<std::string, std::string>(
             payload->name, std::move(index));
         g_object_set_data_full(G_OBJECT(remove), "workflow-step-action", action,
@@ -3465,20 +3490,20 @@ void workflow_action(std::string id, std::string arg) {
   auto* api = Launcher::instance().api.get();
   if (!api || !g_settings_form) return;
   gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
-                     "Running workflow request…");
+                     tr("settings.wf.running").c_str());
   std::thread([api, id = std::move(id), arg = std::move(arg)] {
     auto* payload = new WorkflowCommandPayload;
     payload->id = id;
     try { payload->status = api->run_action(id, arg).get(); }
     catch (std::exception const& e) { payload->error = e.what(); }
-    catch (...) { payload->error = "Workflow action unavailable"; }
+    catch (...) { payload->error = tr("settings.wf.action-failed"); }
     g_idle_add([](gpointer data) -> gboolean {
       std::unique_ptr<WorkflowCommandPayload> payload(
           static_cast<WorkflowCommandPayload*>(data));
       if (!g_settings_form) return G_SOURCE_REMOVE;
       gtk_label_set_text(GTK_LABEL(g_settings_form->workflow_status),
           payload->error.empty()
-              ? "Request processed; verify saved steps and redacted trace."
+              ? tr("settings.wf.done").c_str()
               : payload->error.c_str());
       if (payload->error.empty() && payload->id == "workflow.delete") {
         g_settings_form->workflow_selected.clear();
@@ -3509,6 +3534,492 @@ void show_settings_window() {
   workflow_load_list();
   workflow_load_detail();
   gtk_window_present(g_settings_form->window);
+}
+
+// ---- dedicated update window ----------------------------------------------
+//
+// Update-flow parity with macOS/Windows: every entry point (tray Check for
+// Updates, the launcher `update.*` rows, the Settings Sync & Updates button,
+// the silent launch check) converges on this one independent window. The
+// backend owns the signed transfer (no cancel RPC), so the window offers
+// Close — which hides it while a download continues — instead of Cancel.
+// AppImage installs hand off to the verified atomic replacement; tarball
+// installs stop at the manual-install guidance.
+
+enum class UpdatePhase {
+  idle, checking, up_to_date, available, downloading, downloaded, failed
+};
+
+struct UpdateWindowState {
+  GtkWindow* window{nullptr};
+  GtkLabel* title{nullptr};
+  GtkLabel* status{nullptr};
+  GtkWidget* spinner{nullptr};
+  GtkWidget* bar{nullptr};
+  GtkWidget* check{nullptr};
+  GtkWidget* close{nullptr};
+  GtkWidget* download{nullptr};
+  GtkWidget* install{nullptr};
+  GtkWidget* retry{nullptr};
+  UpdatePhase phase{UpdatePhase::idle};
+  int percent{0};
+  std::string version;
+  std::int64_t size{0};
+  std::string error;
+  std::uint64_t generation{0};
+  bool polling{false};
+};
+
+UpdateWindowState* g_update_window = nullptr;
+
+std::string update_size_label(std::int64_t bytes) {
+  char buffer[64];
+  if (bytes >= 1024 * 1024) {
+    std::snprintf(buffer, sizeof(buffer), "%.1f MB",
+                  static_cast<double>(bytes) / (1024.0 * 1024.0));
+  } else if (bytes >= 1024) {
+    std::snprintf(buffer, sizeof(buffer), "%.1f KB",
+                  static_cast<double>(bytes) / 1024.0);
+  } else {
+    std::snprintf(buffer, sizeof(buffer), "%lld B",
+                  static_cast<long long>(bytes));
+  }
+  return buffer;
+}
+
+void update_window_paint() {
+  auto* state = g_update_window;
+  if (state == nullptr) return;
+  using Phase = UpdatePhase;
+  bool const appimage = std::getenv("APPIMAGE") != nullptr &&
+                        *std::getenv("APPIMAGE") != '\0';
+  std::string title;
+  std::string status;
+  switch (state->phase) {
+    case Phase::idle:
+      break;
+    case Phase::checking:
+      status = tr("updateChecking");
+      break;
+    case Phase::up_to_date:
+      status = tr("updateUpToDate");
+      break;
+    case Phase::available:
+      title = tr("updateAvailableTitle");
+      status = tr_format("updateAvailableBody",
+                         {state->version, update_size_label(state->size)});
+      break;
+    case Phase::downloading:
+      status = tr_format("updateDownloadPercent",
+                         {std::to_string(state->percent)});
+      break;
+    case Phase::downloaded:
+      status = tr("update.downloaded");
+      if (!appimage) status += "\n" + tr("updateInstallHintLinux");
+      break;
+    case Phase::failed:
+      status = state->error;
+      break;
+  }
+  gtk_label_set_text(state->title, title.c_str());
+  gtk_widget_set_visible(GTK_WIDGET(state->title), !title.empty());
+  gtk_label_set_text(state->status, status.c_str());
+  gtk_widget_set_visible(GTK_WIDGET(state->status),
+                         state->phase != Phase::idle);
+  gtk_widget_set_visible(state->spinner, state->phase == Phase::checking);
+  if (state->phase == Phase::checking) {
+    gtk_spinner_start(GTK_SPINNER(state->spinner));
+  } else {
+    gtk_spinner_stop(GTK_SPINNER(state->spinner));
+  }
+  gtk_widget_set_visible(state->bar, state->phase == Phase::downloading);
+  if (state->phase == Phase::downloading) {
+    gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(state->bar),
+                                  std::clamp(state->percent, 0, 100) / 100.0);
+  }
+  gtk_widget_set_visible(state->check, state->phase == Phase::idle);
+  gtk_widget_set_visible(state->download, state->phase == Phase::available);
+  gtk_widget_set_visible(state->install,
+                         state->phase == Phase::downloaded && appimage);
+  gtk_widget_set_visible(state->retry, state->phase == Phase::failed);
+  gtk_widget_set_visible(state->close, state->phase != Phase::idle);
+  gtk_button_set_label(GTK_BUTTON(state->check), tr("updateCheckNow").c_str());
+  gtk_button_set_label(GTK_BUTTON(state->close), tr("updateClose").c_str());
+  gtk_button_set_label(GTK_BUTTON(state->download), tr("updateDownload").c_str());
+  gtk_button_set_label(GTK_BUTTON(state->install),
+                       tr("updateQuitAndInstall").c_str());
+  gtk_button_set_label(GTK_BUTTON(state->retry), tr("updateRetry").c_str());
+}
+
+void update_window_dismiss() {
+  auto* state = g_update_window;
+  if (state == nullptr) return;
+  ++state->generation;
+  if (state->phase != UpdatePhase::downloading) {
+    state->phase = UpdatePhase::idle;
+  }
+  gtk_widget_set_visible(GTK_WIDGET(state->window), FALSE);
+}
+
+gboolean update_window_close_request(GtkWindow*, gpointer) {
+  update_window_dismiss();
+  return TRUE;  // hide, never destroy: a download keeps running
+}
+
+struct UpdateCheckOutcome {
+  std::uint64_t generation{0};
+  std::string status;
+  std::string version;
+  std::int64_t size{0};
+  std::string error;
+};
+
+void update_window_start_check() {
+  auto* state = g_update_window;
+  auto* api_raw = Launcher::instance().api.get();
+  if (state == nullptr || api_raw == nullptr) return;
+  if (state->phase == UpdatePhase::downloading ||
+      state->phase == UpdatePhase::checking) {
+    return;
+  }
+  state->phase = UpdatePhase::checking;
+  std::uint64_t const generation = ++state->generation;
+  update_window_paint();
+  std::thread([api_raw, generation]() {
+    auto* outcome = new UpdateCheckOutcome;
+    outcome->generation = generation;
+    try {
+      auto const check = api_raw->update_check(true).get();
+      outcome->status = check.status;
+      outcome->version = check.available_version.value_or("?");
+      outcome->size = check.size_bytes.value_or(0);
+      outcome->error = check.error.value_or("");
+    } catch (std::exception const& e) {
+      outcome->status = "error";
+      outcome->error = e.what();
+    } catch (...) {
+      outcome->status = "error";
+    }
+    g_idle_add([](gpointer user_data) -> int {
+      std::unique_ptr<UpdateCheckOutcome> outcome(
+          static_cast<UpdateCheckOutcome*>(user_data));
+      auto* state = g_update_window;
+      if (state == nullptr || outcome->generation != state->generation) {
+        return G_SOURCE_REMOVE;
+      }
+      if (outcome->status == "available") {
+        state->version = outcome->version;
+        state->size = outcome->size;
+        state->phase = UpdatePhase::available;
+      } else if (outcome->status == "up-to-date") {
+        state->phase = UpdatePhase::up_to_date;
+      } else if (outcome->status == "throttled") {
+        state->phase = UpdatePhase::failed;
+        state->error = tr("update.check-throttled");
+      } else {
+        state->phase = UpdatePhase::failed;
+        state->error = tr_format(
+            "update.check-failed",
+            {outcome->error.empty() ? tr("updateUnknownError") : outcome->error});
+      }
+      update_window_paint();
+      return G_SOURCE_REMOVE;
+    }, outcome);
+  }).detach();
+}
+
+struct UpdateStateOutcome {
+  std::string phase;
+  int percent{0};
+  std::string message;
+};
+
+gboolean update_window_poll_tick(gpointer) {
+  auto* state = g_update_window;
+  if (state == nullptr || !state->polling) return G_SOURCE_REMOVE;
+  auto* api_raw = Launcher::instance().api.get();
+  if (api_raw == nullptr) {
+    state->polling = false;
+    return G_SOURCE_REMOVE;
+  }
+  // No generation guard here: Close hides the window but the download
+  // keeps running, and reopening must show live progress.
+  std::thread([api_raw]() {
+    auto* outcome = new UpdateStateOutcome;
+    try {
+      auto const snapshot = api_raw->update_state().get();
+      outcome->phase = snapshot.phase;
+      outcome->percent = static_cast<int>(snapshot.percent);
+      outcome->message = snapshot.message.value_or("");
+    } catch (...) {
+      outcome->phase = "error";
+    }
+    g_idle_add([](gpointer user_data) -> int {
+      std::unique_ptr<UpdateStateOutcome> outcome(
+          static_cast<UpdateStateOutcome*>(user_data));
+      auto* state = g_update_window;
+      if (state == nullptr || !state->polling ||
+          state->phase != UpdatePhase::downloading) {
+        return G_SOURCE_REMOVE;
+      }
+      if (outcome->phase == "downloading") {
+        state->percent = outcome->percent;
+        update_window_paint();
+      } else if (outcome->phase == "downloaded") {
+        state->polling = false;
+        state->phase = UpdatePhase::downloaded;
+        update_window_paint();
+      } else {
+        state->polling = false;
+        state->phase = UpdatePhase::failed;
+        state->error = outcome->message.empty()
+            ? tr("update.download-failed") : outcome->message;
+        update_window_paint();
+      }
+      return G_SOURCE_REMOVE;
+    }, outcome);
+  }).detach();
+  return G_SOURCE_CONTINUE;
+}
+
+void update_window_start_download() {
+  auto* state = g_update_window;
+  auto* api_raw = Launcher::instance().api.get();
+  if (state == nullptr || api_raw == nullptr ||
+      state->phase != UpdatePhase::available) {
+    return;
+  }
+  state->phase = UpdatePhase::downloading;
+  state->percent = 0;
+  if (!state->polling) {
+    state->polling = true;
+    g_timeout_add(700, update_window_poll_tick, nullptr);
+  }
+  update_window_paint();
+  // The backend owns the transfer; a refusal (e.g. package-managed Linux)
+  // surfaces through update_state as the error phase.
+  std::thread([api_raw]() {
+    try {
+      api_raw->update_download();
+    } catch (...) {
+    }
+  }).detach();
+}
+
+struct UpdateInstallOutcome {
+  bool handoff{false};
+  std::string path;
+  std::string version;
+  std::string sha256;
+  bool rollback_allowed{false};
+  std::string error;
+};
+
+void update_window_start_install() {
+  auto* state = g_update_window;
+  auto* api_raw = Launcher::instance().api.get();
+  if (state == nullptr || api_raw == nullptr ||
+      state->phase != UpdatePhase::downloaded) {
+    return;
+  }
+  gtk_widget_set_sensitive(state->install, FALSE);
+  std::thread([api_raw]() {
+    auto* outcome = new UpdateInstallOutcome;
+    try {
+      auto const status = api_raw->run_action("update.install", "").get();
+      if (status == "quit-and-install") {
+        // The signed manifest remains backend-owned. Never derive a
+        // handoff digest from the downloaded file itself.
+        auto const snapshot = api_raw->update_state().get();
+        if (snapshot.phase != "downloaded" || !snapshot.downloaded_path ||
+            !snapshot.available_version || !snapshot.artifact_sha256 ||
+            !snapshot.installer || *snapshot.installer != "appimage") {
+          outcome->error =
+              "signed AppImage install ticket is missing; check updates again";
+        } else {
+          outcome->handoff = true;
+          outcome->path = *snapshot.downloaded_path;
+          outcome->version = *snapshot.available_version;
+          outcome->sha256 = *snapshot.artifact_sha256;
+          outcome->rollback_allowed = snapshot.rollback_allowed;
+        }
+      } else {
+        outcome->error = status;
+      }
+    } catch (std::exception const& e) {
+      outcome->error = e.what();
+    } catch (...) {
+      outcome->error = tr("updateUnknownError");
+    }
+    g_idle_add([](gpointer user_data) -> int {
+      std::unique_ptr<UpdateInstallOutcome> outcome(
+          static_cast<UpdateInstallOutcome*>(user_data));
+      auto* state = g_update_window;
+      if (state == nullptr) {
+        return G_SOURCE_REMOVE;
+      }
+      if (!outcome->handoff) {
+        state->phase = UpdatePhase::failed;
+        state->error = outcome->error.empty()
+            ? tr("update.download-failed")
+            : tr_format("update.install-failed", {outcome->error});
+        gtk_widget_set_sensitive(state->install, TRUE);
+        update_window_paint();
+        return G_SOURCE_REMOVE;
+      }
+      // Main thread: the first-party helper detaches before this GTK
+      // process exits; shutdown releases the SingleInstanceLease before
+      // the live executable is replaced.
+      try {
+        auto* running_image = std::getenv("APPIMAGE");
+        if (running_image == nullptr || *running_image == '\0') {
+          throw std::runtime_error(
+              "AppImage replacement is only available from an AppImage");
+        }
+        std::filesystem::path const target(running_image);
+        if (!target.is_absolute() ||
+            !std::filesystem::is_regular_file(target)) {
+          throw std::runtime_error(
+              "cannot locate the running AppImage installation");
+        }
+        rivet::update::AppImageHandoffOptions options;
+        options.version = outcome->version;
+        options.artifact_sha256 = outcome->sha256;
+        options.rollback_allowed = outcome->rollback_allowed;
+        rivet::update::AppImageHandoff::LaunchReplacement(
+            "site.jrtx.fulcrum", std::filesystem::path(outcome->path),
+            target, {}, 30, options);
+        g_application_quit(G_APPLICATION(Launcher::instance().app));
+      } catch (std::exception const& e) {
+        state->phase = UpdatePhase::failed;
+        state->error = tr_format("update.install-failed", {e.what()});
+        gtk_widget_set_sensitive(state->install, TRUE);
+        update_window_paint();
+      }
+      return G_SOURCE_REMOVE;
+    }, outcome);
+  }).detach();
+}
+
+void update_window_build() {
+  auto* state = new UpdateWindowState;
+  g_update_window = state;
+  auto* window = gtk_window_new();
+  state->window = GTK_WINDOW(window);
+  gtk_window_set_title(GTK_WINDOW(window), "Fulcrum");
+  gtk_window_set_default_size(GTK_WINDOW(window), 380, 220);
+  gtk_window_set_hide_on_close(GTK_WINDOW(window), TRUE);
+  g_signal_connect(window, "close-request",
+                   G_CALLBACK(update_window_close_request), nullptr);
+  auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_margin_top(box, 18);
+  gtk_widget_set_margin_bottom(box, 18);
+  gtk_widget_set_margin_start(box, 18);
+  gtk_widget_set_margin_end(box, 18);
+  auto* title = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(title), 0.0);
+  gtk_label_set_wrap(GTK_LABEL(title), TRUE);
+  gtk_widget_add_css_class(title, "heading");
+  state->title = GTK_LABEL(title);
+  auto* status = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(status), 0.0);
+  gtk_label_set_wrap(GTK_LABEL(status), TRUE);
+  gtk_label_set_selectable(GTK_LABEL(status), TRUE);
+  gtk_accessible_update_property(GTK_ACCESSIBLE(status),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "fulcrum-update-status", -1);
+  state->status = GTK_LABEL(status);
+  auto* spinner = gtk_spinner_new();
+  gtk_widget_set_halign(spinner, GTK_ALIGN_START);
+  state->spinner = spinner;
+  auto* bar = gtk_progress_bar_new();
+  gtk_accessible_update_property(GTK_ACCESSIBLE(bar),
+                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                  "fulcrum-update-progress", -1);
+  state->bar = bar;
+  auto* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_halign(buttons, GTK_ALIGN_END);
+  gtk_widget_set_margin_top(buttons, 8);
+  auto make_button = [](char const* key, char const* a11y) -> GtkWidget* {
+    auto* button = gtk_button_new_with_label(tr(key).c_str());
+    gtk_accessible_update_property(GTK_ACCESSIBLE(button),
+                                    GTK_ACCESSIBLE_PROPERTY_LABEL, a11y, -1);
+    return button;
+  };
+  state->retry = make_button("updateRetry", "fulcrum-update-retry");
+  state->install = make_button("updateQuitAndInstall", "fulcrum-update-install");
+  state->download = make_button("updateDownload", "fulcrum-update-download");
+  state->check = make_button("updateCheckNow", "fulcrum-update-check");
+  state->close = make_button("updateClose", "fulcrum-update-close");
+  g_signal_connect(state->check, "clicked",
+                   G_CALLBACK(+[](GtkButton*, gpointer) {
+    update_window_start_check();
+  }), nullptr);
+  g_signal_connect(state->download, "clicked",
+                   G_CALLBACK(+[](GtkButton*, gpointer) {
+    update_window_start_download();
+  }), nullptr);
+  g_signal_connect(state->install, "clicked",
+                   G_CALLBACK(+[](GtkButton*, gpointer) {
+    update_window_start_install();
+  }), nullptr);
+  g_signal_connect(state->retry, "clicked",
+                   G_CALLBACK(+[](GtkButton*, gpointer) {
+    update_window_start_check();
+  }), nullptr);
+  g_signal_connect(state->close, "clicked",
+                   G_CALLBACK(+[](GtkButton*, gpointer) {
+    update_window_dismiss();
+  }), nullptr);
+  gtk_box_append(GTK_BOX(buttons), state->retry);
+  gtk_box_append(GTK_BOX(buttons), state->install);
+  gtk_box_append(GTK_BOX(buttons), state->download);
+  gtk_box_append(GTK_BOX(buttons), state->check);
+  gtk_box_append(GTK_BOX(buttons), state->close);
+  gtk_box_append(GTK_BOX(box), title);
+  gtk_box_append(GTK_BOX(box), status);
+  gtk_box_append(GTK_BOX(box), spinner);
+  gtk_box_append(GTK_BOX(box), bar);
+  gtk_box_append(GTK_BOX(box), buttons);
+  gtk_window_set_child(GTK_WINDOW(window), box);
+  update_window_paint();
+}
+
+void show_update_window(bool check) {
+  if (Launcher::instance().api == nullptr) {
+    Launcher::post_status("Update check once the backend is ready…");
+    return;
+  }
+  if (g_update_window == nullptr) update_window_build();
+  if (std::getenv("FULCRUM_ACCEPTANCE") != nullptr) {
+    // Offline acceptance fixture: the completed manual check, no network.
+    ++g_update_window->generation;
+    g_update_window->phase = UpdatePhase::up_to_date;
+    gtk_window_present(g_update_window->window);
+    update_window_paint();
+    return;
+  }
+  gtk_window_present(g_update_window->window);
+  if (check) update_window_start_check();
+  else update_window_paint();
+}
+
+void update_window_present_available(std::string version, std::int64_t size) {
+  if (g_update_window == nullptr) update_window_build();
+  auto* state = g_update_window;
+  if (state->phase == UpdatePhase::downloading ||
+      state->phase == UpdatePhase::checking) {
+    return;
+  }
+  state->version = std::move(version);
+  state->size = size;
+  state->phase = UpdatePhase::available;
+  gtk_window_present(state->window);
+  update_window_paint();
+}
+
+void update_window_refresh_language() {
+  if (g_update_window != nullptr) update_window_paint();
 }
 
 // ---- X11 launcher monitor placement --------------------------------------
@@ -3615,9 +4126,10 @@ void place_panel_on_pointer_monitor(GtkWindow* panel) {
 
   GdkRectangle usable = usable_x11_monitor_area(xdisplay, root, geometry);
   // Reset the preferred dimensions on each summon. Do not strand a tiny
-  // window after switching from a small monitor to a larger one.
+  // window after switching from a small monitor to a larger one. The clamp
+  // uses the design v2 geometry (680x640), not the pre-v2 460 height.
   int const width = std::min(680, usable.width);
-  int const height = std::min(460, usable.height);
+  int const height = std::min(640, usable.height);
   gtk_window_set_default_size(panel, width, height);
   PanelPlacement pos = upper_quarter_placement(usable, width, height);
 
@@ -3749,36 +4261,12 @@ void tray_fix_hotkey() {
   }
 }
 
-// Manual update check from the tray: manual=true bypasses the 4-hour
-// family throttle (the backend stamps the timestamp either way). The
-// result lands in the launcher status line; the `update` query rows drive
-// download and install from there.
+// Manual update check from the tray: opens the dedicated update window
+// (update-flow parity with macOS/Windows) and starts a manual check, which
+// bypasses the 4-hour family throttle. Download and install live in the
+// same window, reached from any entry point.
 void tray_check_updates() {
-  auto* api_raw = Launcher::instance().api.get();
-  if (api_raw == nullptr) {
-    Launcher::post_status("Update check once the backend is ready…");
-    return;
-  }
-  std::thread([api_raw]() {
-    std::string line;
-    try {
-      auto const check = api_raw->update_check(true).get();
-      if (check.status == "available") {
-        line = tr_format("updateAvailableStatus",
-                         {check.available_version.value_or("?")});
-      } else if (check.status == "up-to-date") {
-        line = tr("updateUpToDate");
-      } else {
-        line = tr_format("updateCheckFailed",
-                         {check.error.value_or("check failed")});
-      }
-    } catch (std::exception const& e) {
-      line = tr_format("updateCheckFailed", {e.what()});
-    } catch (...) {
-      line = tr("updateCheckFailed") + ": unknown error";
-    }
-    Launcher::post_status(std::move(line));
-  }).detach();
+  show_update_window(true);
 }
 
 std::vector<rivet::system::TrayMenuItem> tray_menu_items() {
