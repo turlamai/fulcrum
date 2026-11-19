@@ -201,6 +201,17 @@
 (check-true (string-contains? windows-update-source "allow_close_.load()")
             "the update window Closing handler must honor AllowClose")
 
+;; Bounded shutdown: a wedged backend worker must not keep the process
+;; alive after an explicit quit. A watchdog requests Application.Exit
+;; after a finite grace period, and the stop thread and watchdog share a
+;; once-only exit request.
+(check-true (string-contains? windows-main-source "Bounded shutdown")
+            "QuitApplication must bound the backend shutdown grace period")
+(check-true (string-contains? windows-main-source "exit_once->exchange(true)")
+            "the stop thread and watchdog must share a once-only exit request")
+(check-true (string-contains? windows-main-source "sleep_for(std::chrono::seconds(10))")
+            "the shutdown watchdog must fire after a finite grace period")
+
 ;; Linux: the tray check used to post into the hidden launcher's status
 ;; line (no visible feedback); it must open the same dedicated window.
 (check-true (string-contains? linux-source "void tray_check_updates() {\n  show_update_window(true);\n}")

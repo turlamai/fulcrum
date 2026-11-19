@@ -1594,11 +1594,25 @@ void MainWindow::QuitApplication() {
   if (backend_) {
     auto backend = backend_;
     auto dispatcher = DispatcherQueue();
-    std::thread([backend = std::move(backend), dispatcher]() mutable {
+    // Bounded shutdown: an explicit quit must always end the process. If a
+    // backend worker wedges past the grace period, exit anyway — the OS
+    // reclaims the remaining threads, and a stuck worker must not hold the
+    // tray, hotkey and instance lease hostage.
+    auto exit_once = std::make_shared<std::atomic_bool>(false);
+    auto request_exit = [dispatcher, exit_once]() {
+      if (!exit_once->exchange(true)) {
+        dispatcher.TryEnqueue([] {
+          Microsoft::UI::Xaml::Application::Current().Exit();
+        });
+      }
+    };
+    std::thread([backend = std::move(backend), request_exit]() mutable {
       try { backend->stop(); } catch (...) { /* still exit the host */ }
-      dispatcher.TryEnqueue([] {
-        Microsoft::UI::Xaml::Application::Current().Exit();
-      });
+      request_exit();
+    }).detach();
+    std::thread([request_exit]() {
+      std::this_thread::sleep_for(std::chrono::seconds(10));
+      request_exit();
     }).detach();
   } else {
     Microsoft::UI::Xaml::Application::Current().Exit();
