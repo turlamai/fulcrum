@@ -1,6 +1,6 @@
 #hasheq((name . "fulcrum")
         (display-name . "Fulcrum")
-        (version . "0.19.0")
+        (version . "0.19.1")
         (build . 34)
         (identifier . "site.jrtx.fulcrum")
         (release-channel . stable)

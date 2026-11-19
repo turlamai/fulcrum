@@ -249,6 +249,89 @@
               roots))
      (check-equal? (length roots) 2))))
 
+(test-case "root containment respects separator boundaries and drive roots"
+  ;; A plain string-prefix? let Desktop claim DesktopBackup (wrong root,
+  ;; wrong generation), and the drive root "C:\" never matched the
+  ;; stripped notification form "C:" — top-level drive files were always
+  ;; "outside". The reconcile guard re-adds the drive separator first.
+  (check-true (catalog-root-contains? "C:\\" "C:\\"))
+  (check-true (catalog-root-contains? "C:\\" "C:\\FulcrumTest"))
+  (check-true (catalog-root-contains? "C:\\Users\\me\\Desktop"
+                                      "C:\\Users\\me\\Desktop"))
+  (check-true (catalog-root-contains? "C:\\Users\\me\\Desktop"
+                                      "C:\\Users\\me\\Desktop\\work"))
+  (check-false (catalog-root-contains? "C:\\Users\\me\\Desktop"
+                                       "C:\\Users\\me\\DesktopBackup"))
+  (check-false (catalog-root-contains? "C:\\Users\\me\\Desktop"
+                                       "C:\\Users\\me\\DesktopBackup\\x"))
+  (check-false (catalog-root-contains? "D:\\" "C:\\Work"))
+  (check-true (catalog-root-contains? "/home/me/Documents"
+                                      "/home/me/Documents/notes"))
+  (check-false (catalog-root-contains? "/home/me/Documents"
+                                       "/home/me/DocumentsOld")))
+
+(test-case "reconcile refuses a sibling directory that merely shares a root's prefix"
+  (with-temp-tree
+   (lambda (dir)
+     (define root (build-path dir "Desktop"))
+     (define sibling (build-path dir "DesktopBackup"))
+     (define db (build-path dir "index.sqlite3"))
+     (touch (build-path root "plan.md"))
+     (make-directory sibling)
+     (define worker (start-file-catalog! db (list root)))
+     (check-equal? (file-catalog-status-state (file-catalog-wait worker 10))
+                   'ready)
+     (touch (build-path sibling "plan.md"))
+     (check-false (reconcile-directory-in-catalog! worker sibling))
+     (check-equal? (file-index-count db) 1)
+     (stop-file-catalog! worker))))
+
+(test-case "reconcile refuses ignored trees the walker never descends"
+  ;; A drive-root watcher reports changes inside node_modules/AppData too;
+  ;; reconciling them would index exactly the noise the scan excludes.
+  (with-temp-tree
+   (lambda (dir)
+     (define root (build-path dir "Documents"))
+     (define db (build-path dir "index.sqlite3"))
+     (touch (build-path root "keep.txt"))
+     (define worker (start-file-catalog! db (list root)))
+     (check-equal? (file-catalog-status-state (file-catalog-wait worker 10))
+                   'ready)
+     (touch (build-path root "project" "node_modules" "pkg" "secret.js"))
+     (check-false (reconcile-directory-in-catalog!
+                   worker (build-path root "project" "node_modules" "pkg")))
+     (check-false (reconcile-directory-in-catalog!
+                   worker (build-path root "project" "node_modules")))
+     (check-equal? (file-index-count db) 1)
+     ;; A normal subdirectory still reconciles.
+     (touch (build-path root "project" "src" "main.c"))
+     (check-not-false (reconcile-directory-in-catalog!
+                       worker (build-path root "project" "src")))
+     (check-equal? (map car (file-index-search db "main" 8)) '("main.c"))
+     (stop-file-catalog! worker))))
+
+(test-case "a watcher reconcile prunes deleted platform-learned rows"
+  ;; SYSTEMINDEX-learned rows carry root_id 0; before this fix no reconcile
+  ;; ever matched them, so a deleted platform-learned file stayed
+  ;; searchable for the whole process lifetime.
+  (with-temp-tree
+   (lambda (dir)
+     (define root (build-path dir "Desktop"))
+     (define db (build-path dir "index.sqlite3"))
+     (make-directory root)
+     (define worker (start-file-catalog! db (list root)))
+     (check-equal? (file-catalog-status-state (file-catalog-wait worker 10))
+                   'ready)
+     (define ghost (build-path root "ghost.txt"))
+     (touch ghost)
+     (file-index-upsert-hits!
+      db (list (cons "ghost.txt" (path->string (simple-form-path ghost)))))
+     (check-equal? (map car (file-index-search db "ghost" 8)) '("ghost.txt"))
+     (delete-file ghost)
+     (check-not-false (reconcile-directory-in-catalog! worker root))
+     (check-equal? (file-index-search db "ghost" 8) '())
+     (stop-file-catalog! worker))))
+
 (test-case "volume system metadata directories are ignored by the walker"
   (with-temp-tree
    (lambda (dir)

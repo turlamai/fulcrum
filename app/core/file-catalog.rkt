@@ -17,6 +17,7 @@
 (provide (struct-out file-catalog-status)
          (struct-out file-catalog-worker)
          default-file-catalog-roots
+         catalog-root-contains?
          start-file-catalog!
          stop-file-catalog!
          file-catalog-current-status
@@ -327,6 +328,20 @@
                      (thread-dead-evt (file-catalog-worker-thread worker)))
        (file-catalog-current-status worker)))
 
+;; Boundary-aware root containment: a root contains a directory only when
+;; the directory IS the root or sits below a separator. A plain
+;; string-prefix? let "…\Desktop" claim "…\DesktopBackup" (wrong root,
+;; wrong generation), and the drive root "C:\" never matched the stripped
+;; notification form "C:" — top-level drive files were always "outside".
+(define (catalog-root-contains? root-str dir-str)
+  (cond
+    [(string=? dir-str root-str) #t]
+    [(or (string-suffix? root-str "\\") (string-suffix? root-str "/"))
+     (string-prefix? dir-str root-str)]
+    [else
+     (or (string-prefix? dir-str (string-append root-str "\\"))
+         (string-prefix? dir-str (string-append root-str "/")))]))
+
 ;; Live-update reconcile (issue #99): after filesystem events touch
 ;; `directory`, re-list it and reconcile the catalog. The directory must
 ;; sit under one of the worker's scanned roots — the longest matching
@@ -336,33 +351,52 @@
 ;; events are healed by the next full scan. Returns #f when the
 ;; directory is outside every root or the catalog never scanned it.
 (define (reconcile-directory-in-catalog! worker directory)
-  (define dir-path
-    (simple-form-path
-     (if (string? directory) (string->path directory) directory)))
-  (define containing
-    ;; Root keys are strings (path->string of each scanned root); best
-    ;; accumulates the longest root-string prefixing this directory.
-    (for/fold ([best #f])
-              ([root-str (in-hash-keys (file-catalog-worker-root-generations worker))])
-      (if (and (string-prefix? (path->string dir-path) root-str)
-               (or (not best)
-                   (> (string-length root-str) (string-length best))))
-          root-str
-          best)))
-  (define root-str containing)
   ;; The reconcile dir can arrive with a trailing separator — Windows
-  ;; delete notifications derive it from a watcher root that already
-  ;; ends in one, and appending sep-string then doubles the separator,
-  ;; which never matches the single-separator paths stored in the
-  ;; index. Strip every trailing separator before building the prefix.
-  (define dir-str
-    (let strip ((s (path->string dir-path)))
+  ;; notifications derive it from a watcher root that already ends in
+  ;; one, and appending sep-string then doubles the separator, which
+  ;; never matches the single-separator paths stored in the index. Strip
+  ;; every trailing separator before matching; a bare drive letter
+  ;; ("C:") is the drive root and keeps its separator so simple-form-path
+  ;; cannot resolve it as a drive-relative path.
+  (define raw (if (string? directory) directory (path->string directory)))
+  (define stripped
+    (let strip ([s raw])
       (if (and (> (string-length s) 1)
                (or (string-suffix? s "\\") (string-suffix? s "/")))
           (strip (substring s 0 (sub1 (string-length s))))
           s)))
+  (define dir-str
+    (if (regexp-match? #rx"^[A-Za-z]:$" stripped)
+        (string-append stripped "\\")
+        stripped))
+  (define dir-path (simple-form-path (string->path dir-str)))
+  ;; Root keys are strings (path->string of each scanned root); best
+  ;; accumulates the longest root that actually contains this directory.
+  (define root-str
+    (for/fold ([best #f])
+              ([candidate (in-hash-keys
+                           (file-catalog-worker-root-generations worker))])
+      (if (and (catalog-root-contains? candidate dir-str)
+               (or (not best)
+                   (> (string-length candidate) (string-length best))))
+          candidate
+          best)))
   (cond
     [(not root-str) #f]
+    ;; The walker never descends ignored trees (node_modules, Windows,
+    ;; Users, …), but a drive-root watcher still reports changes inside
+    ;; them; reconciling those would index exactly the noise the scan
+    ;; excludes (AppData temp churn through the C:\ root, dependency
+    ;; trees under a home root). Judge the components BELOW the matched
+    ;; root — the home roots themselves sit under "Users" and must stay
+    ;; reconcilable through their own, longer root key.
+    [(for/or ([part (in-list
+                     (regexp-split #px"[/\\\\]+"
+                                   (substring dir-str
+                                              (string-length root-str))))]
+              #:unless (string=? part ""))
+       (and (member (string-foldcase part) ignored-directory-names) #t))
+     #f]
     [else
      (define listing (safe-directory-list dir-path))
      (and listing

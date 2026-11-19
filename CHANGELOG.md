@@ -4,7 +4,37 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
-## [Unreleased]
+## [0.19.1] - 2026-11-19
+
+### Fixed
+
+- **Windows: the live file catalog keeps updating after the first change.**
+  The native watcher's dedupe set was never released, so every directory
+  reconciled at most once per session and every later create/rename/delete
+  in it was silently dropped — `find` answered from a stale catalog for the
+  rest of the process (the packaged-build half of issue #211's symptom).
+  The slot now frees as the directory leaves the batch.
+- **Windows: deletions and cross-directory moves reach the index.** The
+  watcher ignored `FILE_ACTION_REMOVED` (the only event a pure deletion
+  produces) and `FILE_ACTION_RENAMED_NEW_NAME` (the destination half of a
+  move), leaving deleted files searchable and moved files missing at the
+  target. All five notification actions now reconcile their directory, and
+  a 2/4/6/8 s deferred re-check ladder spans the Windows delete-pending
+  window where a held handle delays the actual vanish.
+- **Windows: one canonical path spelling per file (index schema 5).**
+  SYSTEMINDEX `file:` URLs decoded to forward-slash paths while the catalog
+  scan stores backslashes, so the same file occupied two index rows,
+  painted twice in results, and never matched reconcile's prefix scans.
+  Drive and UNC paths now normalize to backslashes at ingest, results
+  dedupe on the case-insensitive Windows identity, and the rebuildable
+  cache rebuilds once to clear legacy mixed-spelling rows.
+- **All platforms: watcher reconciles stay inside the scanned coverage.**
+  Root matching now respects separator boundaries (Desktop no longer
+  claims DesktopBackup), drive-root notifications match their root, and
+  directories inside the walker's ignored trees (node_modules, AppData
+  through the drive root, OS trees) are refused instead of indexed.
+  Platform-learned rows under a changed directory are adopted or pruned,
+  so a deleted SYSTEMINDEX-learned file no longer stays searchable forever.
 
 ### Changed
 
