@@ -2669,9 +2669,11 @@ void refresh_settings_language() {
     gtk_entry_set_placeholder_text(entry, tr(key.c_str()).c_str());
   }
   for (auto const& [id, key] : g_settings_form->localized_pages) {
-    if (auto* page = gtk_stack_get_page_by_name(
-            GTK_STACK(g_settings_form->stack), id.c_str())) {
-      gtk_stack_page_set_title(page, tr(key.c_str()).c_str());
+    auto* stack = GTK_STACK(g_settings_form->stack);
+    if (auto* child = gtk_stack_get_child_by_name(stack, id.c_str())) {
+      if (auto* page = gtk_stack_get_page(stack, child)) {
+        gtk_stack_page_set_title(page, tr(key.c_str()).c_str());
+      }
     }
   }
   // Choice drop-downs: splice the string model in place so the current
