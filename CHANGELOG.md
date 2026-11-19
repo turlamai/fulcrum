@@ -36,6 +36,14 @@ independently per platform packaging run.
   update window's hide-on-close veto also cancelled the window close that
   `Application.Exit` performs, keeping the process alive after an explicit
   quit; `QuitApplication` now marks the window closable first.
+- **Windows: quitting while the file index is scanning no longer hangs.**
+  The native watcher's `Stop()` joined its reconcile worker on the UI
+  thread, but that worker can sit inside a synchronous fs-reconcile RPC
+  while a full catalog scan holds SQLite write locks — the message pump
+  stopped and the process never exited. `Stop()` now signals the workers
+  and hands the joins to a detached cleanup thread that owns the shared
+  state; `QuitApplication` additionally bounds the backend shutdown with
+  a 10 s watchdog so an explicit quit always ends the process.
 - **All platforms: the launcher sizes correctly on mixed-DPI multi-monitor
   desks.** On Windows, crossing monitors fired `WM_DPICHANGED` and WinUI
   applied the system suggested rect on top of the already monitor-aware
