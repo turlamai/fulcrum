@@ -1768,9 +1768,9 @@
                  #:plugin-manager plug-mgr
                  #:max-results (settings-get manager 'max-results)
                  #:file-index-path (file-index-path)
-                 ;; Windows data volumes ride the PowerShell drive-type
-                 ;; filter (fixed local volumes only); other platforms
-                 ;; contribute none through this call.
+                 ;; Windows data volumes ride the .NET DriveInfo
+                 ;; drive-type filter (fixed local volumes only, no WMI);
+                 ;; other platforms contribute none through this call.
                  #:file-catalog-roots
                  (default-file-catalog-roots
                    #:all-roots (windows-fixed-volume-roots))

@@ -8,11 +8,14 @@
          racket/path
          racket/async-channel
          racket/list
+         racket/runtime-path
          racket/string
          rackunit
          "../app/core/engine.rkt"
          "../app/core/files.rkt"
          "../app/core/search-normalize.rkt")
+
+(define-runtime-path files-source-path "../app/core/files.rkt")
 
 (define (row-id row) (list-ref row 0))
 (define (row-kind row) (list-ref row 3))
@@ -139,6 +142,15 @@
   (check-true (string-contains? script "SYSTEMINDEX"))
   (check-true (string-contains? script "CONTAINS(System.FileName,"))
   (check-true (string-contains? script "FREETEXT(System.FileName,"))
+  ;; Ready mapped network drives are a bounded explicit-find tier AFTER the
+  ;; OS index and BEFORE the user-profile fallback: files on a mapped work
+  ;; drive must not be invisible to every tier (the background catalog
+  ;; still never walks shares, issue #116).
+  (check-true (string-contains? script "$_.DriveType -eq 'Network'"))
+  (check-true (< (string-find script "SYSTEMINDEX")
+                 (string-find script "$_.DriveType -eq 'Network'")
+                 (string-find script "Get-ChildItem -Path $env:USERPROFILE"))
+              "network tier must sit between the OS index and the profile fallback")
   (check-true (string-contains? script "Get-ChildItem"))
   (check-true (string-contains? script "SELECT TOP 128"))
   (check-true (string-contains? script "Select-Object -First 128"))
@@ -607,6 +619,20 @@
                  #:run (lambda (program args #:timeout-ms t #:cancel-evt c)
                          'cancelled))
                 '()))
+
+(test-case "fixed-volume enumeration uses DriveInfo, never WMI Get-Volume"
+  ;; Get-Volume's CIM/WMI first call can exceed the 5 s budget on
+  ;; multi-drive workstations; a timeout silently dropped EVERY fixed
+  ;; drive from the catalog and find went blind outside the home folders.
+  ;; DriveInfo reads the drive table directly and cannot stall on WMI.
+  (define src (string-replace (file->string files-source-path) "\r\n" "\n"))
+  (define start (string-find src "(define (windows-fixed-volume-roots"))
+  (define end (string-find src "(define (windows-find-script"))
+  (define body (substring src start end))
+  (check-true (string-contains? body "[System.IO.DriveInfo]::GetDrives()")
+              "fixed-volume discovery must enumerate via .NET DriveInfo")
+  (check-false (string-contains? body "Get-Volume")
+               "the discovery script must not depend on WMI-backed Get-Volume"))
 
 (test-case "file rows reveal the containing folder as a secondary action"
   ;; Enter opens the file; the ⌘K panel answers "where is this file

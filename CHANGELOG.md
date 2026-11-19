@@ -56,6 +56,17 @@ independently per platform packaging run.
   clamps the panel to the pointer screen's visible frame like the other
   hosts. DESIGN.md declares the geometry contract, including the X11
   per-monitor scaling limitation.
+- **Windows: `find` reaches files outside the home folders again.** Two
+  coverage gaps: the fixed-drive enumeration used `Get-Volume`, whose
+  CIM/WMI first call can exceed the 5 s budget on multi-drive workstations
+  — a timeout silently dropped EVERY fixed drive from the catalog, leaving
+  only Desktop/Documents/Downloads indexed; it now uses .NET `DriveInfo`
+  (direct drive-table read, milliseconds, no WMI). And files on a ready
+  mapped network drive were invisible to every explicit-find tier (the
+  background catalog deliberately never walks shares, issue #116); an
+  explicit `find` now adds a bounded network tier (Depth 3, 128 hits, ready
+  mapped drives only) after the OS index and before the profile fallback.
+  The idle/empty status lines describe the real coverage honestly.
 
 ### Added
 
@@ -63,6 +74,13 @@ independently per platform packaging run.
   key inventory, six destinations and declared row order on every host,
   update-window routing (including the Linux tray entry and the Windows
   quit path), and the prototype / DESIGN.md declarations.
+- `tests/launcher-geometry-contract.rkt`: the 680×640 design size, the
+  pointer-monitor placement and work-area clamps on all three hosts, the
+  Windows `WM_DPICHANGED` re-assertion, and the DESIGN.md geometry
+  declaration.
+- `tests/files-test.rkt` gains source pins: fixed-drive enumeration must
+  use `DriveInfo` (never WMI `Get-Volume`), and the bounded network tier
+  must sit between the OS index and the profile fallback.
 
 ## [0.19.1] - 2026-11-19
 

@@ -107,6 +107,12 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 | Windows | PerMonitorV2；物理像素 = DIP × 目标显示器 DPI/96，每次唤醒重算 | 跨显示器触发 `WM_DPICHANGED`：先让 WinUI 更新渲染缩放，再立即重算 monitor-aware 几何，禁止系统建议矩形二次缩放（否则首次跨屏唤醒尺寸错误） |
 | Linux | GTK 应用像素 × 显示缩放因子 | X11 无逐显示器缩放（工具包限制，全局 Xft.dpi），按指针显示器工作区钳制位置与尺寸；Wayland 由合成器负责放置与逐 surface 缩放，客户端不控制坐标 |
 
+### Windows 文件搜索覆盖（2026-11-19 收口）
+
+- **后台 catalog**：home 已知文件夹（含 OneDrive 重定向）+ 全部**就绪固定盘**全深度索引。固定盘枚举用 .NET `DriveInfo`（直读驱动表，毫秒级），**不用** `Get-Volume`——其 CIM/WMI 首调在多盘工作站可超 5 s 预算，超时曾静默丢掉全部固定盘，使 find 对 home 之外的文件全盲。后台永不走网络共享（issue #116，防 NAS 磨盘）。
+- **显式 `find`（9 s 预算，逐层只在上一层零结果时触发）**：① 已知文件夹 Depth 4 → ② Windows Search SYSTEMINDEX → ③ **就绪映射网络盘**有界扫描（Depth 3、128 条上限；显式查询是用户意图，网络盘文件不再对每一层都不可见）→ ④ USERPROFILE Depth 3 兜底。
+- **诚实状态行**：idle/empty 文案如实描述覆盖（folders、fixed drives、OS index、ready mapped drives），不承诺未索引的范围；`file index` 行随时可查进度。
+
 
 ## 2026-11-15 · 原型交互补齐
 

@@ -327,9 +327,17 @@
 ;; filter matters: DriveType "Fixed" excludes mapped network shares and
 ;; removable/CD media — walking those uninvited could grind through a
 ;; terabyte NAS share for minutes on every refresh. On any failure
-;; (PowerShell missing, Storage module unavailable, timeout) this returns
-;; '(): the catalog then covers only the home roots, honestly, and the
-;; SYSTEMINDEX stage still answers for whatever the OS index reaches.
+;; (PowerShell missing, timeout) this returns '(): the catalog then
+;; covers only the home roots, honestly, and the SYSTEMINDEX stage still
+;; answers for whatever the OS index reaches.
+;;
+;; The enumeration uses .NET DriveInfo, NOT Get-Volume: Get-Volume goes
+;; through the Storage module's CIM/WMI providers, whose first call on a
+;; multi-drive workstation can take tens of seconds — past this budget —
+;; and a timeout silently dropped EVERY fixed drive from the catalog,
+;; leaving find blind to files outside the home folders. DriveInfo reads
+;; the drive table directly (GetLogicalDriveStrings + GetDriveType), no
+;; WMI, no module load, milliseconds even on many-drive machines.
 (define (windows-fixed-volume-roots
          #:os [os (system-type 'os)]
          #:run [runner run-command/cancellable])
@@ -339,9 +347,9 @@
        (define script
          (string-append
           "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
-          "Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and"
-          " $_.DriveLetter } | Sort-Object DriveLetter |"
-          " ForEach-Object { $_.DriveLetter }"))
+          "[System.IO.DriveInfo]::GetDrives() |"
+          " Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady } |"
+          " Sort-Object Name | ForEach-Object { $_.Name.Substring(0,1) }"))
        (define output
          (runner "powershell.exe"
                  (list "-NoProfile" "-NonInteractive" "-Command" script)
@@ -361,7 +369,10 @@
 ;;   1. User's shell-known Desktop, Documents and Downloads, including
 ;;      redirected OneDrive folders — avoid being starved by broken OLE DB.
 ;;   2. Windows Search (SYSTEMINDEX), but only if no known-folder matches.
-;;   3. Bounded user-profile fallback, when neither earlier tier found files.
+;;   3. Ready mapped network drives, bounded (Depth 3, 128 hits), only if
+;;      neither earlier tier found files — the background catalog never
+;;      walks shares (issue #116), but an explicit query is user intent.
+;;   4. Bounded user-profile fallback, when no earlier tier found files.
 ;; The script is defensive on purpose: any index failure lands in the
 ;; catch and the scan still answers. Two query spellings travel in the
 ;; script: $q is the raw text (the scan's -Filter wants it literal) and
@@ -404,6 +415,21 @@
    "}"
    "$c.Close()"
    "}catch{}};"
+   ;; Bounded mapped-network tier: explicit find only, and only when the
+   ;; known folders and the OS index found nothing. The background catalog
+   ;; still never walks network shares (issue #116); an explicit query is
+   ;; the user's intent, so ready mapped drives get a shallow, capped pass
+   ;; (Depth 3, 128 hits) instead of being invisible to every tier.
+   "if($out.Count -eq 0){"
+   "$net=@([System.IO.DriveInfo]::GetDrives()|"
+   "Where-Object{$_.DriveType -eq 'Network' -and $_.IsReady}|"
+   "ForEach-Object{$_.Name});"
+   "foreach($root in $net){"
+   "try{$out+=@(Get-ChildItem -LiteralPath $root -Recurse -Depth 3 -File "
+   "-Filter ('*'+$q+'*') -ErrorAction SilentlyContinue|"
+   "Select-Object -First 128 -ExpandProperty FullName)}catch{};"
+   "if($out.Count -ge 128){break}"
+   "}};"
    "if($out.Count -gt 0){"
    ;; Preserve the original file: URLs. parse-paths does the one and only
    ;; decode and knows how to retain UNC authorities and arbitrary drives.
