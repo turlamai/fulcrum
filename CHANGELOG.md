@@ -36,6 +36,16 @@ independently per platform packaging run.
   update window's hide-on-close veto also cancelled the window close that
   `Application.Exit` performs, keeping the process alive after an explicit
   quit; `QuitApplication` now marks the window closable first.
+- **All platforms: the launcher sizes correctly on mixed-DPI multi-monitor
+  desks.** On Windows, crossing monitors fired `WM_DPICHANGED` and WinUI
+  applied the system suggested rect on top of the already monitor-aware
+  size, so the first summon on a differently-scaled display came up tiny
+  (or huge) and only the second summon looked right; the host now
+  re-asserts its geometry after the DPI change. Linux's placement clamp
+  used the pre-v2 460 height instead of the design 640, and macOS now
+  clamps the panel to the pointer screen's visible frame like the other
+  hosts. DESIGN.md declares the geometry contract, including the X11
+  per-monitor scaling limitation.
 
 ### Added
 
