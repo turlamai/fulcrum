@@ -177,8 +177,13 @@ void UpdateWindow::EnsureWindow() {
         [weak](winrt::Microsoft::UI::Windowing::AppWindow const&,
                winrt::Microsoft::UI::Windowing::AppWindowClosingEventArgs const&
                    args) {
+          auto self = weak.lock();
+          // QuitApplication (and the install handoff) marks the window
+          // closable before Application.Exit; a veto here would keep the
+          // whole process alive after an explicit quit.
+          if (self != nullptr && self->allow_close_.load()) return;
           args.Cancel(true);
-          if (auto self = weak.lock()) self->Dismiss();
+          if (self != nullptr) self->Dismiss();
         });
   } catch (...) {
   }
@@ -240,6 +245,13 @@ void UpdateWindow::Dismiss() {
     window_.AppWindow().Hide();
   } catch (...) {
   }
+}
+
+void UpdateWindow::AllowClose() {
+  // Called by MainWindow::QuitApplication before Application.Exit so the
+  // hide-on-close veto does not block the shutdown of the whole host.
+  allow_close_.store(true);
+  StopPoll();
 }
 
 void UpdateWindow::RefreshLanguage(std::string const& language) {

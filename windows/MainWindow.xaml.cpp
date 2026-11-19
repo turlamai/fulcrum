@@ -1552,6 +1552,9 @@ void MainWindow::HideLauncher() { this->AppWindow().Hide(); }
 void MainWindow::QuitApplication() {
   if (quitting_) return;
   quitting_ = true;
+  // The update window hides on close; let an explicit quit close it for
+  // real, otherwise its Closing veto keeps the process alive.
+  if (update_window_) update_window_->AllowClose();
 
   // Release native resources before closing their owner HWND.
   if (expansion_hook_) {

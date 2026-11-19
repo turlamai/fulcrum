@@ -49,6 +49,9 @@ class UpdateWindow : public std::enable_shared_from_this<UpdateWindow> {
   void PresentCompletedCheckForAcceptance();
   // A backend language push repaints an open window.
   void RefreshLanguage(std::string const& language);
+  // QuitApplication calls this before Application.Exit: the hide-on-close
+  // veto must not block an explicit application shutdown.
+  void AllowClose();
 
  private:
   enum class Phase {
@@ -95,6 +98,7 @@ class UpdateWindow : public std::enable_shared_from_this<UpdateWindow> {
   // captures the generation it started under, Dismiss bumps it.
   std::atomic<std::uint64_t> check_generation_{0};
   std::atomic<bool> polling_{false};
+  std::atomic<bool> allow_close_{false};
 };
 
 }  // namespace winrt::RivetHost::implementation

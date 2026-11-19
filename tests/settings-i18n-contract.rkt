@@ -193,6 +193,13 @@
              "the old launcher status-line update poller must stay removed")
 (check-true (string-contains? windows-settings-source "SetUpdateOpener")
             "the Settings Sync button must open the dedicated update window")
+;; The hide-on-close veto must not block an explicit application quit:
+;; QuitApplication marks the update window closable first (the packaged
+;; acceptance demands a natural process exit after 0x8006).
+(check-true (string-contains? windows-main-source "update_window_->AllowClose()")
+            "QuitApplication must let the update window close for real")
+(check-true (string-contains? windows-update-source "allow_close_.load()")
+            "the update window Closing handler must honor AllowClose")
 
 ;; Linux: the tray check used to post into the hidden launcher's status
 ;; line (no visible feedback); it must open the same dedicated window.
