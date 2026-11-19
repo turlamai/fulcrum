@@ -4,6 +4,46 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [0.19.2] - 2026-11-19
+
+### Fixed
+
+- **All platforms: the settings pages match the design truth source again.**
+  The three hosts had drifted apart (Linux hardcoded English chrome,
+  Windows carried an inline update card inside Settings, macOS hardcoded
+  workflow notices and hotkey status strings, and the General row order /
+  language option order differed per host). The prototype is back to the
+  six-section sidebar (General / Features / AI / Commands / Workflows /
+  Sync & Updates, v0.2), DESIGN.md declares the 176px sidebar, the General
+  row order and the remaining platform differences explicitly, and every
+  settings string now comes from the single shared/i18n source (222 keys,
+  en/zh complete). An open Settings window repaints when the language
+  changes on all three hosts.
+- **Windows / Linux: "Check for Updates" opens a real window.** macOS has
+  always shown a dedicated update panel; Windows ran the check in the
+  hidden launcher's status line and the Linux tray check posted into a
+  status line nobody could see. Both hosts now have a dedicated update
+  window (WinUI / GTK4) with the same phases as macOS — check, up-to-date,
+  available, download progress, downloaded, failed — reached from the tray
+  menu, the launcher update rows, update-available events and the Settings
+  Sync & Updates button. Close hides the window without freezing a running
+  download; reopening shows live progress. Install keeps the signed
+  backend ticket (Windows: verified MSI handoff; Linux AppImage:
+  first-party replacement handoff). Cancel-download stays macOS-only,
+  where the host owns the transfer — now a declared platform difference
+  instead of silent drift.
+- **Windows: quitting with the update window open no longer hangs.** The
+  update window's hide-on-close veto also cancelled the window close that
+  `Application.Exit` performs, keeping the process alive after an explicit
+  quit; `QuitApplication` now marks the window closable first.
+
+### Added
+
+- `tests/settings-i18n-contract.rkt`: en/zh key-set equality, the settings
+  key inventory, six destinations and declared row order on every host,
+  update-window routing (including the Linux tray entry and the Windows
+  quit path), and the prototype / DESIGN.md declarations.
+
 ## [0.19.1] - 2026-11-19
 
 ### Fixed
