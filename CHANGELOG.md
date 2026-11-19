@@ -42,8 +42,10 @@ independently per platform packaging run.
   while a full catalog scan holds SQLite write locks — the message pump
   stopped and the process never exited. `Stop()` now signals the workers
   and hands the joins to a detached cleanup thread that owns the shared
-  state; `QuitApplication` additionally bounds the backend shutdown with
-  a 10 s watchdog so an explicit quit always ends the process.
+  state; `QuitApplication` additionally closes every owned window
+  explicitly before `Application.Exit` (which alone left the borderless
+  main window alive) and bounds the whole shutdown with a watchdog plus a
+  self-termination backstop, so an explicit quit always ends the process.
 - **All platforms: the launcher sizes correctly on mixed-DPI multi-monitor
   desks.** On Windows, crossing monitors fired `WM_DPICHANGED` and WinUI
   applied the system suggested rect on top of the already monitor-aware

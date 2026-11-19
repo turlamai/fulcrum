@@ -254,6 +254,12 @@ void UpdateWindow::AllowClose() {
   StopPoll();
 }
 
+void UpdateWindow::CloseForQuit() {
+  if (window_ != nullptr) {
+    window_.Close();
+  }
+}
+
 void UpdateWindow::RefreshLanguage(std::string const& language) {
   language_ = language.empty() ? "system" : language;
   if (window_ != nullptr) Paint();

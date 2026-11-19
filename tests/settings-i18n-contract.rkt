@@ -202,15 +202,21 @@
             "the update window Closing handler must honor AllowClose")
 
 ;; Bounded shutdown: a wedged backend worker must not keep the process
-;; alive after an explicit quit. A watchdog requests Application.Exit
-;; after a finite grace period, and the stop thread and watchdog share a
-;; once-only exit request.
-(check-true (string-contains? windows-main-source "Bounded shutdown")
+;; alive after an explicit quit. A watchdog requests the exit after a
+;; finite grace period, the stop thread and watchdog share a once-only
+;; exit request, the exit closes every owned window explicitly (Exit alone
+;; left the borderless main window alive in the packaged acceptance), and
+;; a final self-termination backstop guarantees the process dies.
+(check-true (string-contains? windows-main-source "watchdog bounds the whole shutdown")
             "QuitApplication must bound the backend shutdown grace period")
 (check-true (string-contains? windows-main-source "exit_once->exchange(true)")
             "the stop thread and watchdog must share a once-only exit request")
 (check-true (string-contains? windows-main-source "sleep_for(std::chrono::seconds(10))")
             "the shutdown watchdog must fire after a finite grace period")
+(check-true (string-contains? windows-main-source "this->Close();  // quitting_ == true")
+            "the exit request must close the main window explicitly before Application.Exit")
+(check-true (string-contains? windows-main-source "TerminateProcess(::GetCurrentProcess(), 0)")
+            "a wedged shutdown must end in self-termination, never a zombie process")
 
 ;; Linux: the tray check used to post into the hidden launcher's status
 ;; line (no visible feedback); it must open the same dedicated window.

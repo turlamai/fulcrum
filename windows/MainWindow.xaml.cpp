@@ -12,6 +12,8 @@
 #include "WindowsInstance.h"
 
 #include <shellapi.h>
+
+#include <cstdio>
 #include <commctrl.h>
 #include <shellscalingapi.h>
 #include <cstring>
@@ -1281,6 +1283,9 @@ void MainWindow::FinishNativeSetup() {
     // the process — the Linux host made the same call for its WM close
     // button. Explicit Quit bypasses hide-on-close via the quitting_ guard.
     appWindow.Closing([this](auto&&, auto&& args) {
+      std::fprintf(stderr, "window: main Closing (quitting=%d)\n",
+                   quitting_ ? 1 : 0);
+      std::fflush(stderr);
       if (quitting_) return;  // An explicit Application.Exit is not a hide.
       args.Cancel(true);
       this->HideLauncher();
@@ -1567,6 +1572,8 @@ void MainWindow::HideLauncher() { this->AppWindow().Hide(); }
 void MainWindow::QuitApplication() {
   if (quitting_) return;
   quitting_ = true;
+  std::fprintf(stderr, "quit: QuitApplication enter\n");
+  std::fflush(stderr);
   // The update window hides on close; let an explicit quit close it for
   // real, otherwise its Closing veto keeps the process alive.
   if (update_window_) update_window_->AllowClose();
@@ -1591,28 +1598,49 @@ void MainWindow::QuitApplication() {
 
   // RVT1 Shutdown can join Racket worker threads: never block WinUI's
   // event pump while stopping them. Exit the *application*, not one window.
+  //
+  // The exit request closes every owned window explicitly before leaving
+  // the message loop: in the packaged acceptance Application.Exit alone
+  // closed the settings and update windows but left the borderless main
+  // window alive with an idle pump. A watchdog bounds the whole shutdown:
+  // after the grace period it requests the exit again, and if the process
+  // is still alive five seconds later it terminates itself — an explicit
+  // quit must always end the process (the OS releases the instance lease).
   if (backend_) {
     auto backend = backend_;
     auto dispatcher = DispatcherQueue();
-    // Bounded shutdown: an explicit quit must always end the process. If a
-    // backend worker wedges past the grace period, exit anyway — the OS
-    // reclaims the remaining threads, and a stuck worker must not hold the
-    // tray, hotkey and instance lease hostage.
     auto exit_once = std::make_shared<std::atomic_bool>(false);
-    auto request_exit = [dispatcher, exit_once]() {
+    auto request_exit = [this, dispatcher, exit_once]() {
       if (!exit_once->exchange(true)) {
-        dispatcher.TryEnqueue([] {
+        std::fprintf(stderr, "quit: requesting window close + Application.Exit\n");
+        std::fflush(stderr);
+        dispatcher.TryEnqueue([this] {
+          std::fprintf(stderr, "quit: closing owned windows\n");
+          std::fflush(stderr);
+          if (settings_window_) settings_window_.Close();
+          if (update_window_) update_window_->CloseForQuit();
+          this->Close();  // quitting_ == true: the Closing handler allows it
+          std::fprintf(stderr, "quit: Application.Exit\n");
+          std::fflush(stderr);
           Microsoft::UI::Xaml::Application::Current().Exit();
         });
       }
     };
     std::thread([backend = std::move(backend), request_exit]() mutable {
       try { backend->stop(); } catch (...) { /* still exit the host */ }
+      std::fprintf(stderr, "quit: backend stop returned\n");
+      std::fflush(stderr);
       request_exit();
     }).detach();
     std::thread([request_exit]() {
       std::this_thread::sleep_for(std::chrono::seconds(10));
+      std::fprintf(stderr, "quit: watchdog grace elapsed\n");
+      std::fflush(stderr);
       request_exit();
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::fprintf(stderr, "quit: forcing termination after grace\n");
+      std::fflush(stderr);
+      ::TerminateProcess(::GetCurrentProcess(), 0);
     }).detach();
   } else {
     Microsoft::UI::Xaml::Application::Current().Exit();

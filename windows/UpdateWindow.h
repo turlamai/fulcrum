@@ -53,6 +53,10 @@ class UpdateWindow : public std::enable_shared_from_this<UpdateWindow> {
   // veto must not block an explicit application shutdown.
   void AllowClose();
 
+  // Close the window for real during an explicit application quit
+  // (AllowClose must have been called first; the Closing veto is lifted).
+  void CloseForQuit();
+
  private:
   enum class Phase {
     idle,
