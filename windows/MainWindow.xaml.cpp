@@ -1537,8 +1537,18 @@ void MainWindow::OnClipboardUpdate() {
 }
 
 void MainWindow::ShowLauncher(bool reset_query) {
-  // Never flash the blank XAML scaffold or show the UI mid-shutdown.
-  if (!startup_presented_ || quitting_) return;
+  // Never show the UI mid-shutdown.
+  if (quitting_) return;
+  // An explicit summon (hotkey, second launch, tray) must work even when
+  // the first search response never painted. The old startup_presented_
+  // gate silently swallowed every summon until some answer rendered — on
+  // a big disk the catalog crawl could starve that first paint for hours,
+  // leaving the launcher unreachable while the tray said "Ready". Show
+  // the panel and kick a search so rows arrive; the automatic startup
+  // show still waits for the first native rows (ApplyResults).
+  if (!startup_presented_) {
+    SearchAsync(std::wstring(QueryBox().Text()));
+  }
   if (reset_query) {
     actions_mode_ = false;
     HintBar().Text(t("navigationHint"));
@@ -1806,6 +1816,14 @@ void MainWindow::RefreshForRevision() {
 void MainWindow::OnRevisionTimerTick(
     winrt::Windows::Foundation::IInspectable const&,
     winrt::Windows::Foundation::IInspectable const&) {
+  // Never invalidate an in-flight answer to the same on-screen query:
+  // SearchAsync bumps the generation, so refreshing while an answer is
+  // still travelling discards it. During the initial catalog crawl that
+  // starvation could last the whole crawl — the first paint never
+  // happened, and with the old summon gate every hotkey/second-launch
+  // summon silently no-oped. Skip this tick; the next revision nudge
+  // (including the crawl's final forced one) reschedules the refresh.
+  if (search_in_flight_generation_.load() != 0) return;
   SearchAsync(std::wstring(QueryBox().Text()));
 }
 
@@ -2008,6 +2026,7 @@ winrt::fire_and_forget MainWindow::SearchAsync(std::wstring const& query) {
     co_return;
   }
   auto const generation = search_generation_.fetch_add(1) + 1;
+  search_in_flight_generation_.store(generation);
   auto const dispatcher = DispatcherQueue();
   auto const weak = get_weak();
   auto api = api_;
@@ -2023,6 +2042,11 @@ winrt::fire_and_forget MainWindow::SearchAsync(std::wstring const& query) {
     }
     dispatcher.TryEnqueue([weak, rows = std::move(rows), generation]() mutable {
       if (auto window = weak.get()) {
+        // This answer is no longer in flight even when a newer query
+        // superseded it; only the matching generation clears the marker.
+        auto expected = generation;
+        window->search_in_flight_generation_.compare_exchange_strong(
+            expected, 0);
         // Only the newest query may paint; stale completions are dropped.
         if (generation == window->search_generation_.load()) {
           window->ApplyResults(std::move(rows));
@@ -2033,6 +2057,9 @@ winrt::fire_and_forget MainWindow::SearchAsync(std::wstring const& query) {
     auto message = std::string(e.what());
     dispatcher.TryEnqueue([weak, message = std::move(message), generation] {
       if (auto window = weak.get()) {
+        auto expected = generation;
+        window->search_in_flight_generation_.compare_exchange_strong(
+            expected, 0);
         if (generation != window->search_generation_.load()) return;
         window->SetStatusError(to_wide(message));
         if (!window->startup_presented_) {

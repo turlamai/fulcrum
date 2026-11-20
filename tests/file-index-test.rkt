@@ -107,3 +107,28 @@
       (file-index-upsert-hits! path '(("recovered.md" . "/docs/recovered.md"))))
      (check-equal? (file-index-search path "recover" 8)
                    '(("recovered.md" . "/docs/recovered.md"))))))
+
+(test-case "infix fallback finds substring matches the prefix tiers miss"
+  (with-index
+   (lambda (path)
+     (file-index-upsert-hits!
+      path
+      '(("fulcrum_freshness_probe_20261120.txt"
+         . "C:\\Users\\me\\Documents\\fulcrum_freshness_probe_20261120.txt")
+        ("notepad-notes.md" . "/docs/notepad-notes.md")
+        ("report.md" . "/docs/report.md")))
+     ;; No name starts with "freshness"; the substring tier must find it
+     ;; from the catalog itself, without the platform stage's crawl.
+     (check-equal? (map car (file-index-search path "freshness" 8))
+                   '("fulcrum_freshness_probe_20261120.txt"))
+     (check-equal? (map car (file-index-search path "pad" 8))
+                   '("notepad-notes.md"))
+     ;; Prefix hits keep their priority; infix only supplements them.
+     (check-equal? (map car (file-index-search path "note" 8))
+                   '("notepad-notes.md"))
+     ;; LIKE metacharacters match literally, not as wildcards.
+     (check-equal? (file-index-search path "r%port" 8) '())
+     (check-equal? (file-index-search path "repo_t" 8) '())
+     ;; One character stays prefix-only: a %x% scan matches most of the
+     ;; disk for no useful gain.
+     (check-equal? (file-index-search path "e" 8) '()))))

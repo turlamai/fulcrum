@@ -105,6 +105,30 @@
   (check-equal? (rank-file-hits "report" candidates 2)
                 (take ranked 2)))
 
+(test-case "deleted trash copies rank below the live working file"
+  ;; Measured on a real index: `find aod192` put twelve D:\Notes\.trash
+  ;; rows above D:\Work\…\AOD192_DTC_LIST.xlsx because trash paths carried
+  ;; no noise penalty and shallow depth beat the deeper working folder.
+  (define ranked
+    (rank-file-hits
+     "aod192"
+     '(("aod192-a-sample-gantt.png" . "D:\\Notes\\.trash\\aod192-a-sample-gantt.png")
+       ("aod192-flash-map.png" . "D:\\Notes\\.trash\\aod192-flash-map.png")
+       ("AOD192_DTC_LIST.xlsx" . "D:\\Work\\3.AOD192\\4.sw\\docs\\AOD192_DTC_LIST.xlsx")
+       ("aod192-old.png" . "C:\\$Recycle.Bin\\S-1-5-21\\aod192-old.png"))
+     4))
+  (check-true
+   (< (index-of ranked
+                '("AOD192_DTC_LIST.xlsx" . "D:\\Work\\3.AOD192\\4.sw\\docs\\AOD192_DTC_LIST.xlsx"))
+      (index-of ranked
+                '("aod192-a-sample-gantt.png" . "D:\\Notes\\.trash\\aod192-a-sample-gantt.png"))))
+  (check-equal? (car (car ranked)) "AOD192_DTC_LIST.xlsx")
+  (check-true
+   (< (index-of ranked
+                '("AOD192_DTC_LIST.xlsx" . "D:\\Work\\3.AOD192\\4.sw\\docs\\AOD192_DTC_LIST.xlsx"))
+      (index-of ranked
+                '("aod192-old.png" . "C:\\$Recycle.Bin\\S-1-5-21\\aod192-old.png")))))
+
 (test-case "cross-platform reranking recognizes pinyin candidates"
   (define ranked
     (rank-file-hits

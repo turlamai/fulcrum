@@ -36,8 +36,10 @@
 
 ;; Platform indices are good candidate generators, but their first eight rows
 ;; are not a relevance contract.  Pull a modest bounded set and apply the same
-;; deterministic Fulcrum ranking on every host.
-(define file-search-candidate-limit 128)
+;; deterministic Fulcrum ranking on every host. 256 (not 128): the SQL tiers
+;; return rows in folded-name order, so a popular prefix can fill a smaller
+;; pool alphabetically before the ranker ever sees the best working files.
+(define file-search-candidate-limit 256)
 
 ;; At most one platform query per text is useful. Native hosts
 ;; generation-guard their UI, but without backend cancellation every
@@ -154,7 +156,11 @@
 
 (define noisy-path-components
   '(".git" ".hg" ".svn" "node_modules" "build" "dist" "target"
-    "cache" "caches" "__pycache__"))
+    "cache" "caches" "__pycache__"
+    ;; Deleted copies must not outrank the live working file: on a real
+    ;; machine `find aod192` showed twelve D:\Notes\.trash rows above the
+    ;; project's AOD192_DTC_LIST.xlsx because trash carried no penalty.
+    ".trash" ".trashes" "$recycle.bin"))
 
 (define (normalized-path-components path)
   (filter (lambda (part) (not (string=? part "")))
