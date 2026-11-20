@@ -1,6 +1,7 @@
 #lang racket/base
 
-(require racket/file
+(require db
+         racket/file
          racket/path
          rackunit
          "../app/core/file-index.rkt")
@@ -132,3 +133,33 @@
      ;; One character stays prefix-only: a %x% scan matches most of the
      ;; disk for no useful gain.
      (check-equal? (file-index-search path "e" 8) '()))))
+
+(test-case "concurrent first open keeps the first scan root's rows"
+  (with-index
+   (lambda (db)
+     (for ([i (in-range 6)])
+       (define path (build-path (path-only db) (format "race-~a.sqlite3" i)))
+       ;; Hold the write lock while two connections open a fresh database so
+       ;; both read user_version 0 before either can migrate; releasing the
+       ;; lock then forces the double migration the fix must survive. The
+       ;; second migration used to drop the first root's committed rows
+       ;; (packaged first launch lost its Desktop root exactly this way).
+       (define holder (sqlite3-connect #:database path #:mode 'create))
+       (query-exec holder "BEGIN IMMEDIATE")
+       (define writer
+         (thread
+          (lambda ()
+            (file-index-upsert-scan-hits!
+             path "C:\\Users\\me\\Desktop" 1
+             '(("desktop.ini" . "C:\\Users\\me\\Desktop\\desktop.ini")
+               ("notes.pdf" . "C:\\Users\\me\\Desktop\\notes.pdf"))))))
+       (define reader
+         (thread (lambda () (file-index-search path "desktop" 8))))
+       (sleep 0.25)
+       (query-exec holder "ROLLBACK")
+       (disconnect holder)
+       (sync writer)
+       (sync reader)
+       (check-equal? (file-index-count path) 2)
+       (check-equal? (map car (file-index-search path "notes" 8))
+                     '("notes.pdf"))))))
