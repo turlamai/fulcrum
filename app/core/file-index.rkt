@@ -89,46 +89,52 @@
     (call-with-transaction
      connection
      (lambda ()
-       (query-exec connection "DROP TABLE IF EXISTS files")
-       (query-exec connection "DROP TABLE IF EXISTS file_pinyin")
-       (query-exec connection "DROP TABLE IF EXISTS roots")
-       (query-exec
-        connection
-        "CREATE TABLE roots (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE)")
-       (query-exec
-        connection
-        (string-append
-         "CREATE TABLE files ("
-         "path TEXT PRIMARY KEY NOT NULL,"
-         "name TEXT NOT NULL,"
-         "folded_name TEXT NOT NULL,"
-         "root_id INTEGER NOT NULL DEFAULT 0,"
-         "generation INTEGER NOT NULL DEFAULT 0"
-         ") WITHOUT ROWID"))
-       (query-exec
-        connection
-        (string-append
-         "CREATE TABLE file_pinyin ("
-         "path TEXT NOT NULL,"
-         "term TEXT NOT NULL,"
-         "PRIMARY KEY(path,term)"
-         ") WITHOUT ROWID"))
-       (query-exec connection
-                   "CREATE INDEX files_name_prefix ON files(folded_name, path)")
-       (query-exec connection
-                   "CREATE INDEX file_pinyin_prefix ON file_pinyin(term,path)")
-       (query-exec
-        connection
-        (string-append
-         "CREATE TRIGGER files_delete_pinyin AFTER DELETE ON files "
-         "BEGIN DELETE FROM file_pinyin WHERE path=OLD.path; END"))
-       (query-exec
-        connection
-        (string-append
-         "CREATE TRIGGER files_rename_pinyin AFTER UPDATE OF path,name ON files "
-         "WHEN OLD.path <> NEW.path OR OLD.name <> NEW.name "
-         "BEGIN DELETE FROM file_pinyin WHERE path=OLD.path; END"))
-       (query-exec connection (format "PRAGMA user_version = ~a" schema-version)))))
+       ;; Re-check under the write lock. A concurrent connection can migrate
+       ;; (and commit scan rows) between the read above and this transaction
+       ;; acquiring the lock; dropping the tables then would erase the first
+       ;; root's freshly committed rows — the packaged first launch lost its
+       ;; Desktop root exactly this way.
+       (unless (= (query-value connection "PRAGMA user_version") schema-version)
+         (query-exec connection "DROP TABLE IF EXISTS files")
+         (query-exec connection "DROP TABLE IF EXISTS file_pinyin")
+         (query-exec connection "DROP TABLE IF EXISTS roots")
+         (query-exec
+          connection
+          "CREATE TABLE roots (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE)")
+         (query-exec
+          connection
+          (string-append
+           "CREATE TABLE files ("
+           "path TEXT PRIMARY KEY NOT NULL,"
+           "name TEXT NOT NULL,"
+           "folded_name TEXT NOT NULL,"
+           "root_id INTEGER NOT NULL DEFAULT 0,"
+           "generation INTEGER NOT NULL DEFAULT 0"
+           ") WITHOUT ROWID"))
+         (query-exec
+          connection
+          (string-append
+           "CREATE TABLE file_pinyin ("
+           "path TEXT NOT NULL,"
+           "term TEXT NOT NULL,"
+           "PRIMARY KEY(path,term)"
+           ") WITHOUT ROWID"))
+         (query-exec connection
+                     "CREATE INDEX files_name_prefix ON files(folded_name, path)")
+         (query-exec connection
+                     "CREATE INDEX file_pinyin_prefix ON file_pinyin(term,path)")
+         (query-exec
+          connection
+          (string-append
+           "CREATE TRIGGER files_delete_pinyin AFTER DELETE ON files "
+           "BEGIN DELETE FROM file_pinyin WHERE path=OLD.path; END"))
+         (query-exec
+          connection
+          (string-append
+           "CREATE TRIGGER files_rename_pinyin AFTER UPDATE OF path,name ON files "
+           "WHEN OLD.path <> NEW.path OR OLD.name <> NEW.name "
+           "BEGIN DELETE FROM file_pinyin WHERE path=OLD.path; END"))
+         (query-exec connection (format "PRAGMA user_version = ~a" schema-version))))))
   ;; A current-version database can predate the index if creation was
   ;; interrupted. These statements are idempotent and cheap at open time.
   (query-exec connection
@@ -164,6 +170,14 @@
     (initialize! connection)
     connection))
 
+;; One connect+initialize at a time per process. On a fresh database the
+;; first scan flush and the first search open connections concurrently;
+;; without serialization both can enter the schema migration, or trip the
+;; corrupt-recovery on a half-created file, and erase the first root's
+;; committed rows. The in-transaction version re-check covers other
+;; processes sharing the same index path.
+(define initialize-lock (make-semaphore 1))
+
 (define (call-with-index path default proc [recovery? #t])
   (with-handlers
       ([exn:fail?
@@ -173,7 +187,8 @@
                 (remove-index-files! path)
                 (call-with-index path default proc #f))
               default))])
-    (define connection (connect path))
+    (define connection
+      (call-with-semaphore initialize-lock (lambda () (connect path))))
     (dynamic-wind
       void
       (lambda () (proc connection))
