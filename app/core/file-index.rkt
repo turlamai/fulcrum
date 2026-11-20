@@ -77,6 +77,13 @@
   (query-exec connection "PRAGMA busy_timeout = 1000")
   (query-exec connection "PRAGMA journal_mode = WAL")
   (query-exec connection "PRAGMA synchronous = NORMAL")
+  ;; Memory-map the database for read-heavy scans. The SQLite bundled
+  ;; with Racket's db lib (3.36) reads pages through the VFS one pread
+  ;; at a time: on a real 518k-row / 282 MB index the infix LIKE scan
+  ;; took ~2.7 s per query; with mmap the same scan takes ~0.6 s on the
+  ;; same machine. This reserves address space, not committed RAM, and
+  ;; is compatible with WAL. Per-connection, like the pragmas above.
+  (query-exec connection "PRAGMA mmap_size = 300000000")
   (define version (query-value connection "PRAGMA user_version"))
   (unless (= version schema-version)
     (call-with-transaction
