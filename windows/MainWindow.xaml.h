@@ -192,6 +192,12 @@ struct MainWindow : MainWindowT<MainWindow> {
   // focus on the selected row while the list owns focus.
   std::vector<winrt::Microsoft::UI::Xaml::Controls::Border> selection_rings_;
   std::atomic<std::uint64_t> search_generation_{0};
+  // Generation of the search whose answer has not painted yet (0 = none
+  // in flight). A revision refresh must not discard an in-flight answer
+  // to the same on-screen query: during a long catalog crawl each refresh
+  // invalidated the previous answer before it could paint, starving the
+  // first paint (and with it every summon) for the whole crawl.
+  std::atomic<std::uint64_t> search_in_flight_generation_{0};
   // Coalesces bursts of search-revision pushes into one query re-run.
   // The initial catalog build nudges about once a second; repainting per
   // push tore the list down mid-keystroke (the jumping launcher).
