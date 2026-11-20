@@ -370,9 +370,9 @@
 
 (test-case "OS-managed directory names are anchored to the system drive root"
   ;; Name-only matching excluded every directory called "windows"/"users"
-  ;; at any depth on any drive. On one real machine that hid 43k source
-  ;; files on D: (including <repo>/windows) and 218k acceptance-fixture
-  ;; files under C:\fb\.rivet\acceptance\windows from `find`.
+  ;; at any depth on any drive. On one real machine that hid 12,632 files
+  ;; (3,809 on C:, 8,823 on D:), mostly sibling repos' platform/windows
+  ;; host trees and SDK prebuilts/windows folders, from `find`.
   (check-true (ignored-directory? "C:\\Windows" #:system-drive "C:"))
   (check-true (ignored-directory? "C:\\Users" #:system-drive "C:"))
   (check-true (ignored-directory? "C:\\Program Files" #:system-drive "C:"))

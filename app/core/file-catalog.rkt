@@ -46,7 +46,8 @@
 ;; or at any depth is user content (the WinUI host source tree lives in
 ;; <repo>/windows, acceptance fixtures in …/acceptance/windows). The old
 ;; name-only match silently dropped every such tree from `find` — on one
-;; real machine 43k source files on D: and 218k fixture files on C:.
+;; real machine 12,632 files (3,809 on C:, 8,823 on D:), mostly sibling
+;; repos' platform/windows host trees and SDK prebuilts/windows folders.
 ;; Their system-drive-root content stays reachable through SYSTEMINDEX.
 (define windows-os-directory-names
   '("windows" "program files" "program files (x86)" "programdata"
