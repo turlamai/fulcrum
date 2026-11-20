@@ -332,15 +332,22 @@
      (check-equal? (file-index-search db "ghost" 8) '())
      (stop-file-catalog! worker))))
 
-(test-case "volume system metadata directories are ignored by the walker"
+(test-case "volume metadata is ignored; nested OS-looking names are user content"
   (with-temp-tree
    (lambda (dir)
      (define root (build-path dir "data"))
      (make-directory* (build-path root "$RECYCLE.BIN" "SID"))
+     (touch (build-path root "$RECYCLE.BIN" "SID" "junk.txt"))
      (make-directory* (build-path root "System Volume Information"))
+     (touch (build-path root "System Volume Information" "junk2.txt"))
+     ;; A "Windows" or "Program Files" directory below a data root is user
+     ;; content: the old name-only rule dropped the WinUI host source tree
+     ;; (<repo>/windows) and acceptance fixtures this way. Only the system
+     ;; drive's root children carry the OS-tree exclusion (next test).
      (make-directory* (build-path root "Windows" "System32"))
      (touch (build-path root "Windows" "os-file.txt"))
      (make-directory* (build-path root "Program Files" "App"))
+     (touch (build-path root "Program Files" "App" "app-file.txt"))
      (touch (build-path root "keep-me.txt"))
      (make-directory* (build-path root "FulcrumTest"))
      (touch (build-path root "FulcrumTest" "partition-probe.txt"))
@@ -351,10 +358,60 @@
      (check-equal? (map car (file-index-search db "keep" 8))
                    '("keep-me.txt"))
      (check-equal? (file-index-search db "junk" 8) '())
-     ;; OS trees are never descended, but user-created trees on the same
-     ;; drive root are indexed full-depth (the C:\FulcrumTest probe from
-     ;; issue #116's acceptance).
-     (check-equal? (file-index-search db "os-file" 8) '())
+     (check-equal? (map car (file-index-search db "os-file" 8))
+                   '("os-file.txt"))
+     (check-equal? (map car (file-index-search db "app-file" 8))
+                   '("app-file.txt"))
+     ;; User-created trees on the same drive root are indexed full-depth
+     ;; (the C:\FulcrumTest probe from issue #116's acceptance).
      (check-equal? (map car (file-index-search db "partition-probe" 8))
                    '("partition-probe.txt"))
+     (stop-file-catalog! worker))))
+
+(test-case "OS-managed directory names are anchored to the system drive root"
+  ;; Name-only matching excluded every directory called "windows"/"users"
+  ;; at any depth on any drive. On one real machine that hid 43k source
+  ;; files on D: (including <repo>/windows) and 218k acceptance-fixture
+  ;; files under C:\fb\.rivet\acceptance\windows from `find`.
+  (check-true (ignored-directory? "C:\\Windows" #:system-drive "C:"))
+  (check-true (ignored-directory? "C:\\Users" #:system-drive "C:"))
+  (check-true (ignored-directory? "C:\\Program Files" #:system-drive "C:"))
+  (check-true (ignored-directory? "C:\\Program Files (x86)" #:system-drive "C:"))
+  (check-true (ignored-directory? "C:\\ProgramData" #:system-drive "C:"))
+  (check-true (ignored-directory? "C:\\PerfLogs" #:system-drive "C:"))
+  (check-false (ignored-directory? "D:\\Windows" #:system-drive "C:"))
+  (check-false (ignored-directory? "D:\\Users" #:system-drive "C:"))
+  (check-false (ignored-directory? "D:\\Codes\\fulcrum\\windows"
+                                 #:system-drive "C:"))
+  (check-false (ignored-directory? "C:\\fb\\.rivet\\acceptance\\windows"
+                                   #:system-drive "C:"))
+  (check-false (ignored-directory? "C:\\Users\\ren.ji\\Documents\\windows"
+                                   #:system-drive "C:"))
+  ;; Non-Windows paths have no drive root: the OS names never apply.
+  (check-false (ignored-directory? "/home/me/windows"))
+  (check-false (ignored-directory? "/home/me/users"))
+  ;; Dependency noise stays excluded at every depth on every platform.
+  (check-true (ignored-directory? "D:\\Codes\\fulcrum\\node_modules"))
+  (check-true (ignored-directory? "/home/me/project/.git"))
+  (check-true (ignored-directory? "C:\\project\\.cache"))
+  ;; Volume metadata stays excluded wherever it appears.
+  (check-true (ignored-directory? "D:\\$recycle.bin"))
+  (check-true (ignored-directory?
+               "C:\\Users\\me\\Desktop\\System Volume Information"))
+  ;; Without a SystemDrive value the drive-root guard stays conservative.
+  (check-true (ignored-directory? "C:\\Windows" #:system-drive #f)))
+
+(test-case "reconcile reaches user trees whose names look like OS directories"
+  (with-temp-tree
+   (lambda (dir)
+     (define root (build-path dir "data"))
+     (define db (build-path dir "index.sqlite3"))
+     (touch (build-path root "keep.txt"))
+     (define worker (start-file-catalog! db (list root)))
+     (check-equal? (file-catalog-status-state (file-catalog-wait worker 10))
+                   'ready)
+     (touch (build-path root "windows" "host.cpp"))
+     (check-not-false (reconcile-directory-in-catalog!
+                       worker (build-path root "windows")))
+     (check-equal? (map car (file-index-search db "host" 8)) '("host.cpp"))
      (stop-file-catalog! worker))))

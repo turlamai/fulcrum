@@ -18,6 +18,7 @@
          (struct-out file-catalog-worker)
          default-file-catalog-roots
          catalog-root-contains?
+         ignored-directory?
          start-file-catalog!
          stop-file-catalog!
          file-catalog-current-status
@@ -30,25 +31,53 @@
 (struct file-catalog-worker (thread cancel status root-generations index-path)
   #:transparent)
 
+;; Dependency/tool noise and volume metadata: excluded at every depth on
+;; every platform that has them.
 (define ignored-directory-names
   '(".git" ".hg" ".svn" ".cache" ".gradle" ".idea"
     "node_modules" "__pycache__" ".venv" "venv"
     ;; Volume system metadata: pure noise on every platform that has it.
     "$recycle.bin" "system volume information"
     ;; macOS noise on volumes a user might add as a root.
-    ".spotlight-v100" ".trashes" ".fseventsd" ".documentrevisions-v100"
-    ;; OS-managed Windows trees: never descended anywhere, so a system
-    ;; drive root contributes its top-level files and user-created trees
-    ;; without grinding through hundreds of thousands of OS records.
-    ;; Their content stays reachable through the SYSTEMINDEX stage.
-    "windows" "program files" "program files (x86)" "programdata"
+    ".spotlight-v100" ".trashes" ".fseventsd" ".documentrevisions-v100"))
+
+;; OS-managed Windows trees. These names are noise ONLY at the system
+;; drive's root: a directory called "windows" or "users" on another drive
+;; or at any depth is user content (the WinUI host source tree lives in
+;; <repo>/windows, acceptance fixtures in …/acceptance/windows). The old
+;; name-only match silently dropped every such tree from `find` — on one
+;; real machine 43k source files on D: and 218k fixture files on C:.
+;; Their system-drive-root content stays reachable through SYSTEMINDEX.
+(define windows-os-directory-names
+  '("windows" "program files" "program files (x86)" "programdata"
     "perflogs" "users"))
 
-(define (ignored-directory? path)
-  (define name (file-name-from-path path))
+;; True when raw is exactly one component below a lettered drive root
+;; (X:\name). Classify on the raw string form so Windows-style paths
+;; behave identically on every build platform (see drive-letter-of).
+(define (drive-root-child? raw)
+  (regexp-match? #rx"^[A-Za-z]:[\\\\/][^\\\\/]+$" raw))
+
+(define (system-drive-root-child? raw system-drive)
+  (and (drive-root-child? raw)
+       (let ([letter (drive-letter-of raw)]
+             [system-letter (and (string? system-drive)
+                                 (drive-letter-of system-drive))])
+         ;; Without a SystemDrive value keep the conservative drive-root
+         ;; guard; with one, only the system drive's root children match.
+         (or (not system-letter) (string=? letter system-letter)))))
+
+(define (ignored-directory? path
+                            #:system-drive [system-drive (getenv "SystemDrive")])
+  (define raw (if (string? path) path (path->string path)))
+  (define pieces (regexp-split #px"[/\\\\]+" raw))
+  (define name (and (pair? pieces) (last pieces)))
   (and name
-       (member (string-foldcase (path->string name))
-               ignored-directory-names)))
+       (not (string=? name ""))
+       (let ([folded (string-foldcase name)])
+         (or (and (member folded ignored-directory-names) #t)
+             (and (member folded windows-os-directory-names)
+                  (system-drive-root-child? raw system-drive))))))
 
 (define (existing-directory path)
   (and (directory-exists? path) (simple-form-path path)))
@@ -75,9 +104,11 @@
 ;; (C:\tools, C:\projects, anything outside known folders) unfindable, the
 ;; exact gap issue #116 exists for. The walker's ignore list carries the
 ;; cost instead: OS-managed trees (Windows, Program Files, ProgramData,
-;; Users, PerfLogs) are never descended, so the system drive contributes
-;; its top-level files and user-created trees at the same full-depth
-;; semantics as data volumes.
+;; Users, PerfLogs) are never descended AT THE SYSTEM DRIVE'S ROOT, so the
+;; system drive contributes its top-level files and user-created trees at
+;; the same full-depth semantics as data volumes. Same-named directories
+;; elsewhere (a repo's windows/ host tree, D:\Users, …) are user content
+;; and stay indexed.
 (define (data-volume-roots
          #:os [os (system-type 'os)]
          #:all-roots [all-roots
@@ -383,19 +414,32 @@
           best)))
   (cond
     [(not root-str) #f]
-    ;; The walker never descends ignored trees (node_modules, Windows,
-    ;; Users, …), but a drive-root watcher still reports changes inside
-    ;; them; reconciling those would index exactly the noise the scan
-    ;; excludes (AppData temp churn through the C:\ root, dependency
-    ;; trees under a home root). Judge the components BELOW the matched
-    ;; root — the home roots themselves sit under "Users" and must stay
-    ;; reconcilable through their own, longer root key.
-    [(for/or ([part (in-list
-                     (regexp-split #px"[/\\\\]+"
-                                   (substring dir-str
-                                              (string-length root-str))))]
-              #:unless (string=? part ""))
-       (and (member (string-foldcase part) ignored-directory-names) #t))
+    ;; The walker never descends ignored trees (node_modules, the system
+    ;; drive's Windows/Users roots, …), but a drive-root watcher still
+    ;; reports changes inside them; reconciling those would index exactly
+    ;; the noise the scan excludes (AppData temp churn through the C:\
+    ;; root, dependency trees under a home root). Judge the CUMULATIVE
+    ;; path of each component below the matched root with the same
+    ;; predicate the walker uses, so OS-name anchoring agrees: the home
+    ;; roots sit under "Users" and stay reconcilable through their own,
+    ;; longer root key, and a user tree named "windows" below a data root
+    ;; reconciles like any other directory.
+    [(let loop ([parts (regexp-split
+                        #px"[/\\\\]+"
+                        (substring dir-str (string-length root-str)))]
+                [prefix root-str])
+       (cond
+         [(null? parts) #f]
+         [(string=? (car parts) "") (loop (cdr parts) prefix)]
+         [else
+          (define child-str
+            (if (or (string-suffix? prefix "\\") (string-suffix? prefix "/"))
+                (string-append prefix (car parts))
+                (string-append prefix
+                               (if (string-contains? prefix "\\") "\\" "/")
+                               (car parts))))
+          (or (ignored-directory? child-str)
+              (loop (cdr parts) child-str))]))
      #f]
     [else
      (define listing (safe-directory-list dir-path))
