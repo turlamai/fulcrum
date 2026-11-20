@@ -4,6 +4,42 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [0.19.3] - 2026-11-20
+
+### Fixed
+
+- **All platforms: `find` keeps user trees whose names match OS directories.**
+  The catalog ignore list matched `windows`, `users`, `program files`,
+  `program files (x86)`, `programdata` and `perflogs` by name at every depth
+  on every drive, silently dropping sibling repos' `platform/windows` host
+  trees and SDK `prebuilts/windows` folders (12,632 files on the benchmark
+  machine). These names are now noise only at the system drive's root, and
+  the watcher reconcile guard judges cumulative component paths with the
+  same predicate so live updates agree with the walk.
+- **All platforms: substring file queries answer from the local catalog.**
+  `file-index-search` gained a bounded infix LIKE tier that runs only when
+  the exact/stem/prefix/pinyin tiers cannot fill the page and the query is
+  at least two characters; LIKE metacharacters are escaped. Previously such
+  queries fell through to the multi-second platform crawl even when the
+  catalog already held the file.
+- **All platforms: infix catalog scans are several times faster on large
+  indexes.** The embedded SQLite 3.36 read pages one pread at a time;
+  enabling `mmap_size` (300 MB, address space only, WAL-compatible) cut
+  end-to-end infix search on a 518k-row / 282 MB index from 2.7-4.0 s to
+  550-800 ms.
+- **Windows: the launcher answers summons before its first paint.**
+  `ShowLauncher` gated every summon on a first-paint flag that a generation
+  race during the initial catalog crawl could starve indefinitely, leaving
+  Alt+Space, second-launch and tray summons silent no-ops while the status
+  bar said Ready. Explicit summons now always show the panel, and revision
+  refresh skips while an answer to the on-screen query is in flight instead
+  of cancelling it.
+- **All platforms: deleted trash copies no longer outrank live files.**
+  `.trash`, `.trashes` and `$recycle.bin` paths carry the same relevance
+  penalty as dependency noise (still searchable, just demoted), and the
+  file-search candidate pool grew from 128 to 256 so a popular prefix family
+  is no longer truncated alphabetically before ranking.
+
 ## [0.19.2] - 2026-11-19
 
 ### Fixed
