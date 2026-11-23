@@ -85,6 +85,34 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 差异声明纪律：宿主特例必须先写进本节才能实现；未声明的宿主差异按违约处理
 （案例：taskly 漂移台账 D8）。
 
+### 已声明的平台差异（2026-11-20 设置页收口）
+
+- **设置 IA**：分组侧栏 Workspace / Features / Preferences，页面集合与行序以「2026-11-20 · 设置与搜索来源补齐」和 `prototype/settings.js` 为准；旧六区侧栏已退役。设置窗全部 chrome 文案走 `shared/i18n` 单源（含侧栏、页标题、hint、占位符、选项与动态行），改语言即时刷新已打开的设置窗。
+- **更新交互（统一层）**：任何入口（托盘/应用菜单「检查更新」、启动器 `update.*` 行、设置 Sync 页按钮）都唤起同一个独立更新窗并立即手动检查；窗内语义 checking → up-to-date / available → downloading（进度）→ downloaded（退出并安装）/ failed（重试）。Close 只隐藏窗口，下载继续。设置 Sync 页 = 自动检查说明 + 「立即检查更新」按钮，不再内联更新卡片。
+- **更新机制（因地制宜层）**：macOS 用原生 CryptoKit 校验 + RivetUpdate 下载后原子替换并自动重启（打包版 Racket 解不了签名公钥）；Windows/Linux 用后端签名下载，宿主执行安装交接（Windows MSI handoff、Linux AppImage 原子替换），安装前必须拿到后端已验证的票据。
+- **更新窗取消与完成态**：macOS 的传输由宿主自己持有，下载中可 Cancel，校验通过后自动重启；Windows/Linux 的传输由后端持有（无取消 RPC），更新窗不提供 Cancel，只有 Close（隐藏、下载继续），下载完成后停在「退出并安装」确认步。
+- **Linux 命令热键**：别名三端一致；全局命令热键在 Linux 暂未注册，录制控件置灰并展示声明文案（`settings.hint.commands.linux`）。
+- **Linux 片段自动展开**：设置项展示但置灰（`settings.hint.expansion.linux`），保持三端功能地图一致。
+- **Start at login**：三端均为本机原生机制（macOS Login Items / Windows 注册表 Run / Linux autostart desktop），不进同步 schema；错误文案按平台键（`settings.login.failed.*`）。
+
+### 启动窗几何与多显示器（2026-11-19 收口）
+
+统一层：启动窗设计尺寸 680×640（DIP/point/应用像素），结果区滚动、窗体不随结果伸缩；
+每次唤醒跟随**指针所在显示器**，水平居中、垂直置于工作区上方四分之一处，并按该显示器
+工作区钳制（小屏不溢出）。三宿主都不得用主显示器工作区代替指针显示器。
+
+| 平台 | 尺寸换算 | 混合 DPI/分辨率 |
+|---|---|---|
+| macOS | AppKit point，天然与 backing scale 无关 | 系统自动按屏幕缩放；唤醒时按目标屏 visibleFrame 钳制 |
+| Windows | PerMonitorV2；物理像素 = DIP × 目标显示器 DPI/96，每次唤醒重算 | 跨显示器触发 `WM_DPICHANGED`：先让 WinUI 更新渲染缩放，再立即重算 monitor-aware 几何，禁止系统建议矩形二次缩放（否则首次跨屏唤醒尺寸错误） |
+| Linux | GTK 应用像素 × 显示缩放因子 | X11 无逐显示器缩放（工具包限制，全局 Xft.dpi），按指针显示器工作区钳制位置与尺寸；Wayland 由合成器负责放置与逐 surface 缩放，客户端不控制坐标 |
+
+### Windows 文件搜索覆盖（2026-11-19 收口）
+
+- **后台 catalog**：home 已知文件夹（含 OneDrive 重定向）+ 全部**就绪固定盘**全深度索引。固定盘枚举用 .NET `DriveInfo`（直读驱动表，毫秒级），**不用** `Get-Volume`——其 CIM/WMI 首调在多盘工作站可超 5 s 预算，超时曾静默丢掉全部固定盘，使 find 对 home 之外的文件全盲。后台永不走网络共享（issue #116，防 NAS 磨盘）。
+- **显式 `find`（9 s 预算，逐层只在上一层零结果时触发）**：① 已知文件夹 Depth 4 → ② Windows Search SYSTEMINDEX → ③ **就绪映射网络盘**有界扫描（Depth 3、128 条上限；显式查询是用户意图，网络盘文件不再对每一层都不可见）→ ④ USERPROFILE Depth 3 兜底。
+- **诚实状态行**：idle/empty 文案如实描述覆盖（folders、fixed drives、OS index、ready mapped drives），不承诺未索引的范围；`file index` 行随时可查进度。
+
 
 ## 2026-11-15 · 原型交互补齐
 

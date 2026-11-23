@@ -6,13 +6,17 @@
          racket/string
          json)
 
-;; Static gate for the settings-page parity work (design/DESIGN.md "设置 IA"
-;; and "更新交互"): one shared/i18n source, six sidebar destinations on every
-;; host, the declared General row order, and one dedicated update window
-;; reached from every entry point. The hosts drifted apart (Linux hardcoded
-;; English chrome, Windows carried an inline update card, macOS hardcoded
-;; workflow notices); this contract pins the repaired invariants so a future
-;; edit cannot silently reintroduce the drift.
+;; Static gate for the settings-page contract (design/DESIGN.md "设置 IA"
+;; and "更新交互"): one shared/i18n source, a grouped settings sidebar
+;; (Workspace / Features / Preferences), the approved page set, and one
+;; dedicated update flow reached from every entry point. The hosts drifted
+;; apart (Linux hardcoded English chrome, Windows carried an inline update
+;; card, macOS hardcoded workflow notices); this contract pins the repaired
+;; invariants so a future edit cannot silently reintroduce the drift.
+;;
+;; The 2026-11-20 settings prototype replaced the older six-section IA with
+;; the grouped sidebar; the native hosts align through the normal
+;; prototype-first implementation slices.
 
 (define-runtime-path en-path "../shared/i18n/en.json")
 (define-runtime-path zh-path "../shared/i18n/zh.json")
@@ -26,6 +30,7 @@
 (define-runtime-path macos-workflow-path
   "../macos-host/Sources/RivetHost/WorkflowEditorView.swift")
 (define-runtime-path prototype-path "../design/prototype/settings.html")
+(define-runtime-path settings-js-path "../design/prototype/settings.js")
 (define-runtime-path design-path "../design/DESIGN.md")
 
 ;; Normalize line endings: checkouts may carry CRLF working copies.
@@ -42,6 +47,7 @@
 (define macos-settings-source (read-source macos-settings-path))
 (define macos-workflow-source (read-source macos-workflow-path))
 (define prototype-source (read-source prototype-path))
+(define settings-js-source (read-source settings-js-path))
 (define design-source (read-source design-path))
 
 ;; ---- one source, two complete languages ------------------------------------
@@ -237,15 +243,18 @@
 
 ;; ---- design truth source ----------------------------------------------------
 
-(for ([section '("General" "Features" "Commands" "Workflows"
-                 "Sync &amp; Updates")])
-  (check-true (string-contains? prototype-source section)
+(for ([section '("General" "File Search" "Applications" "Commands & Shortcuts"
+                 "Sync & Updates")])
+  (check-true (string-contains? settings-js-source section)
               (format "the settings prototype must show the ~a page" section)))
-(check-true (string-contains? prototype-source "六区侧栏")
-            "the settings prototype must declare the six-section sidebar")
-(check-true (string-contains? design-source "六区")
-            "DESIGN.md must declare the six-section settings IA")
-(check-true (string-contains? design-source "176")
-            "DESIGN.md must declare the 176px sidebar")
-(check-true (string-contains? design-source "更新窗取消与完成态")
-            "DESIGN.md must declare the cancel/downloaded platform difference")
+(check-true (string-contains? prototype-source "id=\"settings-nav\"")
+            "the settings prototype must mount the grouped sidebar")
+(for ([group '("Workspace" "Features" "Preferences")])
+  (check-true (string-contains? settings-js-source group)
+              (format "the settings sidebar must declare the ~a group" group)))
+(check-true (string-contains? design-source "分组侧栏")
+            "DESIGN.md must declare the grouped settings sidebar")
+(check-true (string-contains? design-source "Workspace：General")
+            "DESIGN.md must declare the Workspace page set")
+(check-true (string-contains? design-source "两处入口共用的样例流程")
+            "DESIGN.md must declare the shared update flow")
