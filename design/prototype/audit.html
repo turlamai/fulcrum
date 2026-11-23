@@ -434,6 +434,23 @@
   </div>
   <p class="note">窗口过矮（如分屏）时列表滚动，底部渐隐提示还有内容；面板充分高时 12 行刚好排满，不出现无意义的滚动条。计数写在 status line，用户始终知道被截掉多少。</p>
 
+  <h2 class="sec">开发交接 · 可操作流程</h2>
+  <p class="note">以下链接进入可操作原型。前面的多屏示意用于对照布局和状态，包含输入法、剪贴板、AI 及多步编排等原生验收项。</p>
+  <ul class="note" style="padding-inline-start: 24px">
+    <li><a href="panel.html?resident=1&amp;platform=win&amp;updateScenario=available">Windows 通知区 · 有新版本</a>。打开 Fulcrum 菜单，检查后选择安装并重启。也可进入更新设置，从另一入口继续。重新打开启动器时，收起前的查询与选中项仍在。</li>
+    <li><a href="panel.html?resident=1&amp;platform=mac&amp;updateScenario=current">macOS 菜单栏 · 已是最新版</a>。检查更新后关闭反馈，再从菜单退出。退出后应只剩原型的重新启动入口。</li>
+    <li><a href="panel.html?resident=1&amp;platform=win&amp;updateScenario=error">更新失败与重试</a>。首次检查会显示连接失败，重试返回可安装的样例版本。</li>
+    <li><a href="panel.html?q=fig">键盘与搜索设置</a>。Tab 从搜索框进入选中结果，↑↓ 更换结果，⌘K / Ctrl+K 打开当前结果操作，Esc 恢复原行。设置里更换主题或最大可见行数后返回。打开内容搜索后用 <code>find lobby</code> 查找文件正文样例；关闭后结果应消失。</li>
+  </ul>
+
+  <h2 class="sec">文件搜索 · 来源与恢复</h2>
+  <p class="note"><a href="panel.html?q=find%20quote">试用同名报价单</a>。用 ↑↓ 切换本地与共享版本，回车打开样例或查看离线说明。⌘K / Ctrl+K 查看完整路径与版本，Esc 返回当前结果。</p>
+  <ol class="note" style="padding-inline-start: 24px">
+    <li>选中 Studio NAS 的离线结果，从详情进入对应的来源设置。选择 Reconnect，完成模拟重连，用左上角返回键恢复查询与所选结果。</li>
+    <li>在来源的 Manage 菜单选择 Simulate disconnect。打开或关闭 Keep results from disconnected sources，返回搜索对照离线条目与隐藏状态。暂停 Documents 也会移除本地条目。</li>
+    <li>添加网络共享 <code>smb://studio-nas/bids</code>，选择 Manage → Rescan now。扫描完成后返回搜索，可看到该来源的样例。添加排除规则 <code>smb://studio-nas/bids</code> 后，该结果会从搜索中移除。</li>
+  </ol>
+
   <h2 class="sec">9 · 状态矩阵<span>Exit 条件的自检口径，每一行都要能在屏里找到</span></h2>
   <div class="wrap">
     <table class="matrix">
@@ -442,19 +459,24 @@
       </thead>
       <tbody>
         <tr><td>ready（空 query）</td><td>召唤后未输入</td><td>Suggestions / Applications / Commands 分组</td><td>↑↓ + ↵</td></tr>
-        <tr><td>搜索命中</td><td>有 query</td><td>命中字符高亮 + 类型 badge</td><td>↵ 执行 · Tab 补全</td></tr>
+        <tr><td>搜索命中</td><td>有 query</td><td>命中字符高亮 + 类型 badge</td><td>↵ 执行 · Tab 进入结果</td></tr>
         <tr><td>无本地结果（web 开）</td><td>0 本地命中</td><td>!g 兜底行 + 换引擎行</td><td>↵ 搜索</td></tr>
         <tr><td>无结果（web 关）</td><td>0 命中且 web 关闭</td><td>诚实空态，不留下死胡同</td><td>ai / ⌘, 开启 web search</td></tr>
         <tr><td>启动中</td><td>后端健康检查未过</td><td>居中状态 + 恢复键</td><td>⌘R 重启 · ⌘, 日志</td></tr>
         <tr><td>离线</td><td>网络断开</td><td>banner + 本地可用，联网行禁用</td><td>重连后 Retry</td></tr>
+        <tr><td>同名文件</td><td>本地与共享路径均命中</td><td>独立来源、位置和版本</td><td>回车打开样例 · ⌘K / Ctrl+K 看详情</td></tr>
+        <tr><td>文件来源离线</td><td>共享断开且保留缓存结果</td><td>Offline 标签，详情说明文件不可打开</td><td>到来源设置模拟重连，返回原查询</td></tr>
+        <tr><td>来源不在搜索范围</td><td>暂停、排除、移除或隐藏离线结果</td><td>对应条目从搜索结果移除</td><td>调整 File Search 设置</td></tr>
         <tr><td>AI running</td><td>请求进行中</td><td>流式光标 + 转轮，列表仍可用</td><td>Esc 收起</td></tr>
         <tr><td>AI done</td><td>完成</td><td>答案 +「已复制」提示</td><td>Esc 只关答案</td></tr>
-        <tr><td>AI 401</td><td>key 失效</td><td>可读原因 + 设置/重试</td><td>⌘, · ⌘R</td></tr>
-        <tr><td>AI 429</td><td>provider 限流</td><td>倒计时，重试禁用</td><td>等待 / 换 provider</td></tr>
+        <tr><td>AI 401 · 状态示意</td><td>key 失效</td><td>可读原因 + 设置/重试</td><td>⌘, · ⌘R</td></tr>
+        <tr><td>AI 429 · 状态示意</td><td>provider 限流</td><td>倒计时，重试禁用</td><td>等待 / 换 provider</td></tr>
         <tr><td>敏感剪贴板</td><td>检测到凭证</td><td>掩码 + Sensitive badge</td><td>⌘Y 本机揭示后才可复制</td></tr>
         <tr><td>超长标题</td><td>标题超出 1 行</td><td>省略号，行高不变</td><td>⌘Y 预览完整值</td></tr>
         <tr><td>结果超上限</td><td>命中 &gt; 12</td><td>12 行封顶 + 底部渐隐 + 计数</td><td>滚动 / 收窄 query</td></tr>
         <tr><td>输入法组合</td><td>preedit 未上屏</td><td>虚线下划线 + Composing</td><td>Enter / ↑↓ / Tab 归 IME</td></tr>
+        <tr><td>后台驻留 · 可操作</td><td>最小化或关闭启动器</td><td>窗口隐藏，状态入口仍在</td><td>菜单打开 · 设置 · 更新 · 退出</td></tr>
+        <tr><td>软件更新 · 可操作</td><td>从状态入口或设置检查</td><td>共享检查、发现新版本、安装、重启和失败状态</td><td>安装并重启 / 重试 / 关闭</td></tr>
         <tr><td>焦点层级</td><td>Tab / ⌘K / Esc</td><td>2px 焦点环，层级可辨</td><td>见第 3 节焦点表</td></tr>
       </tbody>
     </table>

@@ -35,9 +35,9 @@ body {
 }
 /* the launcher panel */
 .panel {
-  /* Native hosts keep a steady frame while the query and results change. */
-  position: relative; width: 680px; max-width: 100%; height: 640px;
-  max-height: min(640px, 100vh);
+  /* auto height: the panel grows with its results and stops scrolling at 12 rows */
+  position: relative; width: 680px; max-width: 100%; height: auto;
+  min-height: 240px; max-height: 640px;
   border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
   background: var(--glass); color: var(--ink); border: 1px solid var(--line);
   box-shadow: 0 1px 2px rgba(20,18,14,.12), 0 14px 36px rgba(20,18,14,.20), 0 36px 90px rgba(20,18,14,.24);
@@ -204,3 +204,59 @@ kbd {
   animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* File details and preview reuse launcher tokens. */
+.file-dialog {
+  margin:auto; width:min(520px,calc(100% - 32px)); max-height:85dvh; overflow:auto;
+  border:1px solid var(--line); border-radius:12px; padding:24px;
+  background:var(--glass); color:var(--ink); line-height:1.5;
+}
+.file-dialog::backdrop { background:#0008; }
+.file-dialog h2 { font-size:22px; margin-bottom:16px; overflow-wrap:anywhere; }
+.file-context,.file-dialog dt { color:var(--mute); font-size:13px; }
+.file-dialog dt { margin-top:8px; }
+.file-dialog dd,.file-explanation { font-size:16px; overflow-wrap:anywhere; }
+.file-explanation { margin-top:16px; }
+.file-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:24px; }
+.file-actions :is(button,a) {
+  display:inline-flex; align-items:center; min-height:44px; padding:8px 12px;
+  font:inherit; font-size:14px; text-decoration:none; cursor:pointer; color:var(--ink);
+  background:var(--hover); border:1px solid var(--line); border-radius:8px;
+}
+.file-actions :is(a,[data-preview]) { background:var(--sel); color:var(--accent-text); }
+.file-actions :focus-visible { outline:2px solid var(--accent-text); outline-offset:2px; }
+
+/* Desktop status strip and shared update states. */
+.resident-shell { display:flex; flex-direction:column; gap:8px; width:min(680px,100%); order:2; }
+.resident-shell[data-platform=mac] { order:0; }
+#app.panel.w-s { order:1; }
+.resident-caption,.resident-strip { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.resident-caption { flex-wrap:wrap; }
+.resident-strip { padding:8px 12px; border:1px solid var(--line); border-radius:8px; background:var(--glass); color:var(--ink); }
+.resident-location,.resident-state { font-size:13px; color:var(--mute); }
+.resident-anchor { position:relative; }
+.resident-shell[data-platform=mac] .resident-strip { border-radius:6px; padding-block:4px; }
+.resident-trigger { position:relative; display:grid; place-items:center; width:40px; height:36px; }
+.resident-trigger .od-icon { width:20px; height:20px; }
+.resident-trigger[data-update=available]::after { content:""; position:absolute; top:4px; right:4px; width:7px; height:7px; border-radius:50%; background:var(--accent); }
+.platform-choices { display:flex; gap:4px; }
+.resident-trigger,.platform-choices button,.update-button {
+  padding:6px 12px; background:var(--glass); color:var(--ink); font:inherit; font-size:13px;
+  border:1px solid var(--line); border-radius:6px; cursor:pointer;
+}
+.resident-trigger { padding:0; }
+.platform-choices button[aria-pressed=true],.update-button.is-primary { background:var(--sel); color:var(--accent-text); border-color:var(--accent-text); }
+.resident-menu { position:absolute; z-index:5; inset-inline-end:0; bottom:calc(100% + 8px); display:grid; width:min(248px,70vw);
+  padding:4px; border:1px solid var(--line); border-radius:8px; box-shadow:0 12px 32px #0003; background:var(--glass); }
+.resident-shell[data-platform=mac] .resident-menu { bottom:auto; top:calc(100% + 8px); }
+.resident-menu button { text-align:start; background:transparent; color:var(--ink); border:0; border-radius:4px; min-height:36px; padding:8px 12px; font:inherit; font-size:14px; cursor:pointer; }
+.resident-menu button:last-child { border-top:1px solid var(--hairline); }
+.resident-menu button:hover,.resident-menu button:focus-visible { background:var(--hover); }
+.resident-shell :focus-visible,.shared-update :focus-visible { outline:2px solid var(--accent-text); outline-offset:2px; }
+.shared-update { display:grid; gap:12px; line-height:1.5; justify-items:start; }
+.shared-update .update-version,.shared-update .update-state p { color:var(--mute); font-size:14px; }
+.update-state strong { display:block; font-size:16px; }
+.file-dialog:not([open]) { display:none; }
+#app.panel.w-s .foot { flex-wrap:wrap; gap:4px; }
+#app.panel.w-s .row:has(.match-note:not([hidden])) { min-height:56px; }
+.match-note { margin-top:2px; }

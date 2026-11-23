@@ -9,20 +9,47 @@
 <body>
   <header class="cap">
     <div class="t">Fulcrum — 主面板</div>
-    <div class="n">英雄屏 · query「fig」混合结果 · 680×460 · 原型 v0.1</div>
+    <div class="n">试用文件搜索 · 输入 find quote</div>
     <div class="sp"></div>
+    <button class="iconbtn" type="button" data-hide-launcher aria-label="Minimize to background" title="Minimize to background">−</button>
+    <button class="iconbtn" type="button" data-hide-launcher aria-label="Close launcher window" title="Close launcher window">×</button>
     <button class="iconbtn" aria-label="Toggle light or dark theme" id="themeBtn" title="切换亮暗主题">◐</button>
   </header>
+
+  <section class="resident-shell" id="desktop-status" aria-label="Desktop integration preview">
+    <div class="resident-caption">
+      <span class="resident-state" role="status"></span>
+      <div class="platform-choices" role="group" aria-label="Desktop preview">
+        <button type="button" data-platform-choice="win" aria-pressed="true">Windows</button>
+        <button type="button" data-platform-choice="mac" aria-pressed="false">macOS</button>
+      </div>
+    </div>
+    <div class="resident-strip">
+      <span class="resident-location">Windows notification area</span>
+      <div class="resident-anchor">
+        <button type="button" id="resident-trigger" class="resident-trigger" aria-label="Fulcrum menu" aria-haspopup="menu" aria-expanded="false" aria-controls="resident-menu">
+          <svg class="od-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 18h14M8 18l4-12 4 12M9 14h6"/></svg>
+        </button>
+        <div id="resident-menu" class="resident-menu" role="menu" aria-label="Fulcrum" hidden>
+          <button type="button" tabindex="-1" role="menuitem" data-resident-command="open">Open Fulcrum</button>
+          <button type="button" tabindex="-1" role="menuitem" data-resident-command="settings">Settings…</button>
+          <button type="button" tabindex="-1" role="menuitem" data-resident-command="update">Check for updates…</button>
+          <button type="button" tabindex="-1" role="menuitem" data-resident-command="quit">Quit Fulcrum</button>
+        </div>
+      </div>
+      <button class="update-button" type="button" id="relaunch" hidden>Launch Fulcrum</button>
+    </div>
+  </section>
 
   <div class="panel w-s" id="app">
     <div class="query">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
-      <div class="q">fig<span class="caret"></span></div>
+      <div class="q">find quote<span class="caret"></span></div>
     </div>
 
     <div class="list">
       <!-- Application：原型用中性 app 类别字形，实现端换成真实 dock 图标 -->
-      <div class="row selected" tabindex="0" aria-current="true">
+      <div class="row selected" data-action-label="Open application sample" data-action-result="Figma application launch simulated." tabindex="0" aria-current="true">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M6.5 6.5h.01M9.5 6.5h.01"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">Fig</mark>ma</div>
@@ -31,8 +58,8 @@
         <span class="chip">↵</span>
       </div>
       <!-- File：find 命中本地文件名索引 -->
-      <div class="row" tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+      <div class="row" data-file-template hidden>
+        <div class="tile"><svg class="od-icon" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">fig</mark>ma-tokens.json</div>
           <div class="sub">~/Projects/fulcrum/design</div>
@@ -40,7 +67,7 @@
         <span class="badge">File</span>
       </div>
       <!-- Clipboard：历史命中，badge 标时间 -->
-      <div class="row" tabindex="0">
+      <div class="row" data-action-label="Copy sample text" data-action-result="Copy simulated for the selected clipboard entry." tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">Fig</mark>ma frame 240×240 — hero card</div>
@@ -49,7 +76,7 @@
         <span class="badge">2m</span>
       </div>
       <!-- Snippet：命名文本扩展 -->
-      <div class="row" tabindex="0">
+      <div class="row" data-action-label="Expand sample snippet" data-action-result="Snippet expanded in this demo." tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 7H7.5A3.5 3.5 0 0 0 4 10.5v.5A3.5 3.5 0 0 0 7.5 14.5H9a1.5 1.5 0 0 1-1.5 1.5H6"/><path d="M19 7h-2.5A3.5 3.5 0 0 0 13 10.5v.5a3.5 3.5 0 0 0 3.5 3.5H18a1.5 1.5 0 0 1-1.5 1.5H15"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">fig</mark>ma-export</div>
@@ -58,7 +85,7 @@
         <span class="badge">Snip</span>
       </div>
       <!-- Quicklink：keyword 认领的 URL 模板 -->
-      <div class="row" tabindex="0">
+      <div class="row" data-action-label="Open sample link" data-action-result="Quicklink launch simulated for the selected destination." tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">Fig</mark>ma team templates</div>
@@ -67,7 +94,7 @@
         <span class="badge">Link</span>
       </div>
       <!-- Web search：!g 兜底行 -->
-      <div class="row" tabindex="0">
+      <div class="row" data-action-label="Search the web in this sample" data-action-result="Web search simulated for the selected query." tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">fig</mark></div>
@@ -76,7 +103,7 @@
         <span class="badge">!g</span>
       </div>
       <!-- Gallery：第一方插件可安装 -->
-      <div class="row" tabindex="0">
+      <div class="row" data-action-label="View sample plugin" data-action-result="Gallery opened for the selected plugin in this demo." tabindex="0">
         <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">fig</mark>let — Gallery plugin</div>
@@ -87,18 +114,22 @@
     </div>
 
     <div class="foot">
-      <span>↑↓ navigate · ↵ run · Tab complete · ⌘K actions · esc clear/hide</span>
+      <span>↑↓ select · ↵ open · Tab to results · ⌘K / Ctrl+K actions · Esc back</span>
       <span class="sp"></span>
-      <span class="status">Ready — press Option+Space anywhere</span>
+      <span class="status" role="status">Search by file name</span>
     </div>
   </div>
 
-  <script>
-    document.getElementById('themeBtn').addEventListener('click', () => {
-      document.getElementById('app').classList.toggle('dark');
-    });
-  </script>
+  <dialog class="file-dialog" id="resident-update" aria-labelledby="resident-update-title">
+    <h2 id="resident-update-title">Software Update</h2>
+    <div class="shared-update"></div>
+    <div class="file-actions"><a id="resident-update-settings" href="settings.html?page=sync">Open Update Settings</a><button type="button" data-close>Close</button></div>
+  </dialog>
 <script src="prototype-runtime.js"></script>
+<script src="search-settings.js"></script>
+<script src="file-search.js"></script>
+<script src="updates.js"></script>
+<script src="resident.js"></script>
 <script src="prototype-flow.js"></script>
 </body>
 </html>
