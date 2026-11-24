@@ -8,6 +8,22 @@ independently per platform packaging run.
 
 ### Fixed
 
+- **Windows: `find` answers in well under a second instead of 7–20 s.** The
+  platform stage (one PowerShell walk over known folders, the OS index,
+  mapped drives and the profile) ran on every `find` answer's critical path,
+  and was repeated per keystroke for the whole per-process catalog scan. On a
+  real machine (12 TB mapped share, 282 MB catalog) that was 9.2 s for a
+  miss, 8.3 s for a hit outside the known folders and 6.8 s even with a
+  ready catalog; users saw 20 s responses. `find` on Windows now answers from
+  the catalog alone — the persistent index is useful from the first scan
+  batch, so a fresh launch no longer discards it — and the platform stage
+  runs behind the answer: 0.6 s debounce, single flight, latest text only,
+  never for one-character queries. Its hits land in the persistent index and
+  the revision nudge repaints the open query; a miss shows "No matching
+  files yet" instead of pretending the search is over. Measured on the same
+  index: 0.5–0.8 s per `find`. macOS and Linux keep the synchronous stage
+  (mdfind/locate answer in milliseconds and their hosts do not repaint on a
+  revision nudge). The timeout row also said "3 seconds" for a 9 s budget.
 - **All platforms: the launcher no longer fills a low-resolution screen.**
   The 680×640 design size was only clamped to the monitor work area, so on a
   1280×800 display the panel still covered 85% of the height and half the

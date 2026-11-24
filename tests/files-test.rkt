@@ -12,6 +12,7 @@
          racket/string
          rackunit
          "../app/core/engine.rkt"
+         "../app/core/file-index.rkt"
          "../app/core/files.rkt"
          "../app/core/search-normalize.rkt")
 
@@ -672,3 +673,150 @@
   (check-equal? (list-ref (car actions) 4)
                 "/home/me/reports/fota_udp.xlsx")
   (check-equal? (list-ref (cadr actions) 0) "copy"))
+
+;; ---- find latency: the platform stage is never the critical path ----------
+
+;; A recording stand-in for file-search/status. The synchronous (catalog)
+;; call is tagged platform-stage? #f; the engine's background pass calls it
+;; with the default #t and posts to the done semaphore.
+(define (recording-platform-search log done
+                                   #:catalog-hits [catalog-hits '()]
+                                   #:platform-hits [platform-hits '()])
+  (lambda (text _limit #:os [_os 'windows] #:index-path [_index-path #f]
+                 #:catalog-ready? [_ready? #f] #:platform-stage? [stage? #t])
+    (set-box! log (append (unbox log) (list (cons text stage?))))
+    (when stage? (async-channel-put done 'pass))
+    (file-search-result (if stage? platform-hits catalog-hits)
+                        (if (or stage? (pair? catalog-hits)) 'ok 'deferred)
+                        (if stage? 'powershell 'fulcrum-index))))
+
+(define (find-rows engine query)
+  (map (lambda (row) (list-ref row 1)) (engine-search engine query)))
+
+(test-case "platform-stage? #f answers from the catalog and defers a miss"
+  (define dir (make-temporary-file "fulcrum-deferred-~a" 'directory))
+  (define index-path (build-path dir "index.sqlite3"))
+  (dynamic-wind
+    void
+    (lambda ()
+      (define missed
+        (file-search/status "report" 8 #:os 'windows
+                            #:resolve (lambda (_) #f)
+                            #:index-path index-path
+                            #:platform-stage? #f))
+      (check-equal? (file-search-result-status missed) 'deferred)
+      (check-equal? (file-search-result-hits missed) '())
+      (file-index-upsert-hits! index-path
+                               (list (cons "report.md" "/home/me/report.md")))
+      (define hit
+        (file-search/status "report" 8 #:os 'windows
+                            #:resolve (lambda (_) #f)
+                            #:index-path index-path
+                            #:platform-stage? #f))
+      (check-equal? (file-search-result-status hit) 'ok)
+      (check-equal? (file-search-result-backend hit) 'fulcrum-index)
+      (check-equal? (file-search-result-hits hit)
+                    '(("report.md" . "/home/me/report.md"))))
+    (lambda () (delete-directory/files dir))))
+
+(test-case "Windows find answers from the catalog; the platform pass runs behind"
+  (define log (box '()))
+  (define done (make-async-channel 1))
+  (define nudges (box 0))
+  (define engine
+    (make-engine #:clipboard-store #f
+                 #:snippet-store #f
+                 #:plugin-manager #f
+                 #:file-search-os 'windows
+                 #:file-platform-search
+                 (recording-platform-search log done
+                                             #:catalog-hits
+                                             (list (cons "report.md" "/home/me/report.md"))
+                                             #:platform-hits
+                                             (list (cons "platform-report.txt"
+                                                         "C:/Users/me/platform-report.txt")))
+                 #:file-catalog-nudge (lambda ()
+                                        (set-box! nudges (add1 (unbox nudges))))))
+  (dynamic-wind
+    void
+    (lambda ()
+      ;; The answer is on screen at once from the catalog; nothing waited
+      ;; for the platform stage.
+      (check-not-false (member "report.md" (find-rows engine "find report")))
+      (check-equal? (unbox log) '(("report" . #f)))
+      ;; A thin page (1 of 8) gets the background pass, which lands its
+      ;; hits in the index and nudges the open query to repaint.
+      (check-equal? (sync/timeout 5 done) 'pass "the platform pass must run behind")
+      (check-equal? (unbox log) '(("report" . #f) ("report" . #t)))
+      (check-equal? (unbox nudges) 1))
+    (lambda () (engine-stop! engine))))
+
+(test-case "Windows catalog miss paints 'still searching' and a quiet pass never nudges"
+  (define log (box '()))
+  (define done (make-async-channel 1))
+  (define nudges (box 0))
+  (define engine
+    (make-engine #:clipboard-store #f
+                 #:snippet-store #f
+                 #:plugin-manager #f
+                 #:file-search-os 'windows
+                 #:file-platform-search (recording-platform-search log done)
+                 #:file-catalog-nudge (lambda ()
+                                        (set-box! nudges (add1 (unbox nudges))))))
+  (dynamic-wind
+    void
+    (lambda ()
+        (check-equal? (car (find-rows engine "find nothing-here"))
+                      "No matching files yet")
+      (check-equal? (sync/timeout 5 done) 'pass)
+      (check-equal? (unbox nudges) 0 "no hits, nothing to repaint")
+      ;; One-character wildcards never start the pass.
+      (set-box! log '())
+      (find-rows engine "find x")
+      (check-false (sync/timeout 1.2 done) "one character must not crawl")
+      (check-equal? (unbox log) '(("x" . #f))))
+    (lambda () (engine-stop! engine))))
+
+(test-case "the platform pass is debounced and latest-wins"
+  (define log (box '()))
+  (define done (make-async-channel 1))
+  (define engine
+    (make-engine #:clipboard-store #f
+                 #:snippet-store #f
+                 #:plugin-manager #f
+                 #:file-search-os 'windows
+                 #:file-platform-search (recording-platform-search log done)
+                 #:file-catalog-nudge void))
+  (dynamic-wind
+    void
+    (lambda ()
+      (find-rows engine "find alpha")
+      (find-rows engine "find alphabeta")
+      (check-equal? (sync/timeout 5 done) 'pass)
+      ;; Only the settled text was searched behind the scenes.
+      (check-equal? (unbox log)
+                    '(("alpha" . #f) ("alphabeta" . #f) ("alphabeta" . #t))))
+    (lambda () (engine-stop! engine))))
+
+(test-case "mdfind/locate stay synchronous — no background pass off Windows"
+  (for ([os (in-list '(macosx unix))])
+    (define log (box '()))
+    (define done (make-async-channel 1))
+    (define engine
+      (make-engine #:clipboard-store #f
+                   #:snippet-store #f
+                   #:plugin-manager #f
+                   #:file-search-os os
+                   #:file-platform-search
+                   (recording-platform-search log done
+                                             #:platform-hits
+                                             (list (cons "report.md" "/home/me/report.md")))))
+    (dynamic-wind
+      void
+      (lambda ()
+        (check-not-false (member "report.md" (find-rows engine "find report")))
+        (check-equal? (unbox log) '(("report" . #t)))
+        ;; No second, background call follows on this platform.
+        (sleep 1)
+        (check-equal? (unbox log) '(("report" . #t))))
+      (lambda () (engine-stop! engine)))))

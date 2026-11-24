@@ -112,7 +112,8 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 ### Windows 文件搜索覆盖（2026-11-19 收口）
 
 - **后台 catalog**：home 已知文件夹（含 OneDrive 重定向）+ 全部**就绪固定盘**全深度索引。固定盘枚举用 .NET `DriveInfo`（直读驱动表，毫秒级），**不用** `Get-Volume`——其 CIM/WMI 首调在多盘工作站可超 5 s 预算，超时曾静默丢掉全部固定盘，使 find 对 home 之外的文件全盲。后台永不走网络共享（issue #116，防 NAS 磨盘）。
-- **显式 `find`（9 s 预算，逐层只在上一层零结果时触发）**：① 已知文件夹 Depth 4 → ② Windows Search SYSTEMINDEX → ③ **就绪映射网络盘**有界扫描（Depth 3、128 条上限；显式查询是用户意图，网络盘文件不再对每一层都不可见）→ ④ USERPROFILE Depth 3 兜底。
+- **显式 `find` 的平台阶段（9 s 预算，逐层只在上一层零结果时触发）**：① 已知文件夹 Depth 4 → ② Windows Search SYSTEMINDEX → ③ **就绪映射网络盘**有界扫描（Depth 3、128 条上限；显式查询是用户意图，网络盘文件不再对每一层都不可见）→ ④ USERPROFILE Depth 3 兜底。
+- **平台阶段永不阻塞应答（2026-11-24）**：实测这段 PowerShell 在真实机器（12 TB 映射盘、282 MB catalog）上每次 7–9 s，且每次进程启动后的 catalog 扫描期间每个 `find` 都同步重跑一遍，用户看到 20 s 应答。现在 Windows 的 `find` **只从 catalog 应答**（持久索引从首批批次起就可用，不再等扫描完成），catalog 未命中或不满一页时，平台阶段由引擎在后台跑：0.6 s 去抖、单飞、只搜最新文本、单字符不触发；命中写入持久索引后通过 revision nudge 让宿主重绘当前查询（Windows 宿主已有该刷新路径）。未命中时先显示「No matching files yet」而非宣称搜索结束。macOS/Linux 的 mdfind/locate 仍同步（毫秒级，且其宿主不随 revision 重绘）。
 - **诚实状态行**：idle/empty 文案如实描述覆盖（folders、fixed drives、OS index、ready mapped drives），不承诺未索引的范围；`file index` 行随时可查进度。
 
 

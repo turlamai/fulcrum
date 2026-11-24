@@ -229,8 +229,12 @@
                             #:resolve [resolver resolve-program]
                             #:run [runner run-command/cancellable]
                             #:index-path [index-path #f]
-                            #:catalog-ready? [catalog-ready? #f])
-  (define backend (file-search-backend os resolver))
+                            #:catalog-ready? [catalog-ready? #f]
+                            #:platform-stage? [platform-stage? #t])
+  ;; platform-stage? #f answers from the catalog alone and reports a miss as
+  ;; 'deferred: the caller owns the platform stage (the engine runs it as a
+  ;; background pass on Windows, where it is a multi-second PowerShell crawl).
+  (define backend (and platform-stage? (file-search-backend os resolver)))
   ;; Claim before touching the persistent index. Otherwise an older request
   ;; delayed in SQLite could claim after a newer request and cancel the wrong
   ;; process when RVT1 workers run concurrently.
@@ -246,7 +250,8 @@
   ;; powershell.exe per query adds seconds of latency for coverage the
   ;; catalog already holds. A thin or still-scanning catalog keeps the
   ;; platform stage to fill the gaps and seed the index.
-  (define skip-platform? (and catalog-ready? (pair? cached)))
+  (define skip-platform? (or (not platform-stage?)
+                             (and catalog-ready? (pair? cached))))
   (if (or (false? backend) skip-platform?)
       (begin
         ;; No platform stage runs on this branch; a claimed handle must not
@@ -254,7 +259,9 @@
         (when cancel (release-file-search! cancel))
         (if (null? cached)
             (file-search-result '()
-                                (if cache-error? 'index-error 'unavailable)
+                                (cond [cache-error? 'index-error]
+                                      [platform-stage? 'unavailable]
+                                      [else 'deferred])
                                 #f)
             (file-search-result (rank-file-hits query cached limit)
                                 'ok 'fulcrum-index)))
