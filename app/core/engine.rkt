@@ -70,8 +70,86 @@
   #:transparent)
 
 (struct engine
-  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop workflows)
+  (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop workflows
+   file-search-os file-platform-search file-platform)
   #:mutable)
+
+;; Windows' platform stage for `find` — one PowerShell process walking known
+;; folders, the OS index, mapped drives and the profile — costs 7–9 s per
+;; query on a real machine (12 TB mapped share, 282 MB catalog), and it ran
+;; on the answer's critical path: every `find` paint waited for it, and
+;; while the per-process catalog scan was still running the same crawl was
+;; repeated per keystroke. Users saw 20 s responses.
+;;
+;; On Windows the engine therefore answers `find` from the catalog alone
+;; (the persistent index is useful from the first batch of a scan) and runs
+;; the platform stage as ONE background pass: debounced, single-flight and
+;; latest-wins. Its hits land in the persistent index through the normal
+;; upsert, then the revision nudge repaints the open query. macOS and Linux
+;; keep the synchronous stage: mdfind/locate answer in milliseconds and
+;; their hosts do not repaint on a revision nudge.
+(define file-platform-debounce-seconds 0.6)
+
+(struct file-platform-worker (pending thread custodian) #:mutable)
+
+(define (engine-schedule-file-platform! engine text)
+  (call-with-semaphore
+   (engine-file-catalog-lock engine)
+   (lambda ()
+     (define worker (unbox (engine-file-platform engine)))
+     (cond
+       [worker (set-box! (file-platform-worker-pending worker) text)]
+       [else
+        (define custodian (make-custodian))
+        (define worker (file-platform-worker (box text) #f custodian))
+        (set-box! (engine-file-platform engine) worker)
+        (set-file-platform-worker-thread!
+         worker
+         (parameterize ([current-custodian custodian])
+           (thread (lambda () (file-platform-loop! engine worker)))))]))))
+
+(define (engine-stop-file-platform! engine)
+  (define worker (unbox (engine-file-platform engine)))
+  (when worker
+    (set-box! (engine-file-platform engine) #f)
+    (custodian-shutdown-all (file-platform-worker-custodian worker))))
+
+(define (file-platform-loop! engine worker)
+  (define slot (engine-file-platform engine))
+  (define pending (file-platform-worker-pending worker))
+  (let loop! ()
+    (sleep file-platform-debounce-seconds)
+    (define text (unbox pending))
+    (cond
+      [text
+       (set-box! pending #f)
+       (with-handlers ([exn:fail? void])
+         (define search
+           ((engine-file-platform-search engine)
+            text
+            8
+            #:os (engine-file-search-os engine)
+            #:index-path (engine-file-index-path engine)
+            #:catalog-ready? (engine-catalog-ready? engine)))
+         ;; Hits were upserted into the persistent index by the search; a
+         ;; nudge makes the host re-run the open query, which now answers
+         ;; from the catalog in milliseconds.
+         (when (pair? (file-search-result-hits search))
+           ((engine-file-catalog-nudge engine))))
+       (loop!)]
+      [else
+       ;; Retire unless a newer request re-armed this worker between the
+       ;; read and the lock; the lock makes schedule and retire atomic.
+       (define again?
+         (call-with-semaphore
+          (engine-file-catalog-lock engine)
+          (lambda ()
+            (if (unbox pending)
+                #t
+                (begin (when (eq? (unbox slot) worker)
+                         (set-box! slot #f))
+                       #f)))))
+       (when again? (loop!))])))
 
 ;; Prepared application rows: the fuzzy fields are immutable per rebuild,
 ;; so pre-join the keywords once instead of on every keystroke for every
@@ -794,6 +872,10 @@
         '(ready partial)))
 
 (define (engine-stop! engine)
+  ;; Stop the background platform pass first: its custodian owns the
+  ;; PowerShell child, and a pass that completes after the engine stopped
+  ;; would upsert into an index the shutdown is about to delete.
+  (engine-stop-file-platform! engine)
   ;; Stop the worker first: its cancel semaphore doubles as the
   ;; arming thread's stop signal — the arm thread then skips the
   ;; armed reconcile (which would open the index DB after everything
@@ -856,6 +938,18 @@
        "find file search empty index scope"
        85)))
 
+;; Windows paints a catalog miss at once and keeps searching in the
+;; background (see file-platform-debounce-seconds): the row names that
+;; honestly instead of claiming the search is over.
+(define (file-search-pending-row)
+  (result
+   "noop"
+   "No matching files yet"
+   "Still searching the OS index and mapped drives — matching files appear here when found"
+   "File" "" "doc" "" "Searching"
+   "find file search pending"
+   85))
+
 ;; `find <query>` claims file search. All three platforms have a real
 ;; provider (files.rkt); the honest row below appears only when the
 ;; platform's search tool is missing entirely, naming what would restore it.
@@ -870,25 +964,50 @@
        (let ([text (string-trim (substring query (string-length find-file-prefix)))])
          (if (zero? (string-length text))
              '()
-             (begin
+             (let ()
                (engine-start-file-catalog! engine)
-               (let ([search (file-search/status
-                              text
-                              8
-                              #:index-path (engine-file-index-path engine)
-                              #:catalog-ready? (engine-catalog-ready? engine))])
-                 (case (file-search-result-status search)
-                   [(ok)
-                    (let ([hits (file-search-result-hits search)])
-                      (if (null? hits)
-                          (list (file-search-empty-row engine))
-                          (for/list ([hit (in-list hits)])
-                            (result "file.open" (car hit)
-                                    (cdr hit) "File"
-                                    (cdr hit) "doc" "" ""
-                                    (car hit)
-                                    85))))]
-                   [(index-error)
+               ;; Windows answers from the catalog alone; the platform
+               ;; stage is the engine's background pass (never the critical
+               ;; path). mdfind/locate stay synchronous: milliseconds.
+               (define background? (eq? (engine-file-search-os engine) 'windows))
+               (define search
+                 ((engine-file-platform-search engine)
+                  text
+                  8
+                  #:os (engine-file-search-os engine)
+                  #:index-path (engine-file-index-path engine)
+                  #:catalog-ready? (engine-catalog-ready? engine)
+                  #:platform-stage? (not background?)))
+               ;; A full catalog page needs nothing else. A miss or a thin
+               ;; page gets the background pass — for text of two
+               ;; characters or more; a one-character wildcard crawl over
+               ;; mapped drives finds noise and costs seconds of disk.
+               (when (and background?
+                          (>= (string-length text) 2)
+                          (memq (file-search-result-status search) '(ok deferred))
+                          (< (length (file-search-result-hits search)) 8))
+                 (engine-schedule-file-platform! engine text))
+               (case (file-search-result-status search)
+                 [(ok)
+                  (let ([hits (file-search-result-hits search)])
+                    (if (null? hits)
+                        (list (file-search-empty-row engine))
+                        (for/list ([hit (in-list hits)])
+                          (result "file.open" (car hit)
+                                  (cdr hit) "File"
+                                  (cdr hit) "doc" "" ""
+                                  (car hit)
+                                  85))))]
+                 [(deferred)
+                  ;; A catalog miss on Windows while the background pass
+                  ;; runs; once the scan is under way the progress row is
+                  ;; the more useful message.
+                  (if (member (file-catalog-status-state
+                               (engine-file-catalog-status engine))
+                              '(starting scanning))
+                      (list (file-index-status-row engine))
+                      (list (file-search-pending-row)))]
+                 [(index-error)
                     (list
                      (result "noop"
                              "Local file index cannot be read"
@@ -900,10 +1019,10 @@
                     (list
                      (result "noop"
                              "File search timed out"
-                             (if (and (eq? (system-type 'os) 'unix)
-                                      (eq? (file-search-result-backend search) 'find))
-                                 "the unindexed find fallback exceeded 3 seconds — install plocate for fast indexed search"
-                                 "the platform search tool did not respond within 3 seconds — try again")
+                           (if (and (eq? (engine-file-search-os engine) 'unix)
+                                    (eq? (file-search-result-backend search) 'find))
+                               "the unindexed find fallback exceeded 3 seconds — install plocate for fast indexed search"
+                               "the platform search tool did not respond within 9 seconds — try again")
                              "File" "" "doc" "" "Timed out"
                              "find file search timeout plocate"
                              85))]
@@ -917,14 +1036,14 @@
                    [else
                     (list
                      (result "noop"
-                             (case (system-type 'os)
-                               [(macosx) "File search needs mdfind (Spotlight CLI)"]
-                               [(windows) "File search needs PowerShell"]
-                               [else "File search needs locate or find — install plocate for indexed results"])
-                             "no search tool on PATH — install one and this turns into real results"
-                             "File" "" "doc" "" "Unavailable"
-                             "find file search"
-                             85))])))))])))
+                           (case (engine-file-search-os engine)
+                             [(macosx) "File search needs mdfind (Spotlight CLI)"]
+                             [(windows) "File search needs PowerShell"]
+                             [else "File search needs locate or find — install plocate for indexed results"])
+                           "no search tool on PATH — install one and this turns into real results"
+                           "File" "" "doc" "" "Unavailable"
+                           "find file search"
+                           85))]))))])))
 
 (define (window-provider engine)
   (lambda (query)
@@ -1105,7 +1224,9 @@
                   #:max-results [max-results 12]
                   #:file-index-path [file-index-path #f]
                   #:file-catalog-roots [file-catalog-roots '()]
-                  #:file-catalog-nudge [file-catalog-nudge void])
+                  #:file-catalog-nudge [file-catalog-nudge void]
+                  #:file-search-os [file-search-os (system-type 'os)]
+                  #:file-platform-search [file-platform-search file-search/status])
   (->* (#:clipboard-store (or/c clipboard-store? #f)
         #:snippet-store (or/c snippet-store? #f)
         #:plugin-manager (or/c plugin-manager? #f))
@@ -1115,7 +1236,15 @@
         #:max-results (and/c exact-integer? (>=/c 1) (<=/c 50))
         #:file-index-path (or/c path-string? #f)
         #:file-catalog-roots (listof path-string?)
-        #:file-catalog-nudge (-> any))
+        #:file-catalog-nudge (-> any)
+        #:file-search-os (or/c 'windows 'macosx 'unix)
+        #:file-platform-search
+        (->* (string? exact-nonnegative-integer?)
+             (#:os symbol?
+              #:index-path (or/c path-string? #f)
+              #:catalog-ready? boolean?
+              #:platform-stage? boolean?)
+             file-search-result?))
        engine?)
   (engine (make-hash) #f
           clipboard-store
@@ -1136,7 +1265,10 @@
           #f
           #f
           (box #f)
-          workflow-store))
+          workflow-store
+          file-search-os
+          file-platform-search
+          (box #f)))
 
 (define (engine-rebuild-index! engine)
   (define apps (discover-applications))
