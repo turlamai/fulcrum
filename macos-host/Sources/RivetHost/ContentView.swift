@@ -573,7 +573,9 @@ struct LauncherView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 9)
         }
-        .frame(minWidth: 680, minHeight: 240)
+        // 680 is the design width; the floor lets the panel narrow to the
+        // 55% work-area fit on small screens instead of clipping its rows.
+        .frame(minWidth: 480, minHeight: 240)
         .background(VisualEffectBackground())
         .onAppear { queryFocused = true }
         .onChange(of: model.listFocusRequest) { _, _ in

@@ -4029,6 +4029,18 @@ void update_window_refresh_language() {
 
 struct PanelPlacement { int x; int y; };
 
+struct PanelSize { int width; int height; };
+
+// 680x640 is the design ceiling, not a fixed frame. Clamping alone left
+// the panel covering 85% of a 1280x800 work area, so it keeps margins: at
+// most 55% of the work-area width and 65% of its height (design/DESIGN.md
+// "启动窗几何与多显示器"; the macOS and Windows fits use the same shares).
+// Screens with room keep the design size; the results list scrolls.
+PanelSize fit_panel_size(GdkRectangle const& work) {
+  return {std::min(680, work.width * 55 / 100),
+          std::min(640, work.height * 65 / 100)};
+}
+
 PanelPlacement upper_quarter_placement(GdkRectangle const& work,
                                        int width, int height) {
   // GDK/X11 uses a top-left origin. Same proportion as WinUI/AppKit:
@@ -4126,12 +4138,10 @@ void place_panel_on_pointer_monitor(GtkWindow* panel) {
 
   GdkRectangle usable = usable_x11_monitor_area(xdisplay, root, geometry);
   // Reset the preferred dimensions on each summon. Do not strand a tiny
-  // window after switching from a small monitor to a larger one. The clamp
-  // uses the design v2 geometry (680x640), not the pre-v2 460 height.
-  int const width = std::min(680, usable.width);
-  int const height = std::min(640, usable.height);
-  gtk_window_set_default_size(panel, width, height);
-  PanelPlacement pos = upper_quarter_placement(usable, width, height);
+  // window after switching from a small monitor to a larger one.
+  PanelSize const size = fit_panel_size(usable);
+  gtk_window_set_default_size(panel, size.width, size.height);
+  PanelPlacement pos = upper_quarter_placement(usable, size.width, size.height);
 
   auto* surface = gtk_native_get_surface(GTK_NATIVE(panel));
   if (!GDK_IS_X11_SURFACE(surface)) return;
@@ -4593,7 +4603,8 @@ void on_activate(GtkApplication* app, gpointer) {
   auto* window = gtk_application_window_new(app);
   launcher.window = GTK_WINDOW(window);
   gtk_window_set_title(launcher.window, "Fulcrum");
-  // Stable 680 x 640 panel; the result list scrolls when needed.
+  // Stable 680 x 640 panel ceiling; the result list scrolls when needed.
+  // place_panel_on_pointer_monitor fits it to the work area on every summon.
   gtk_window_set_default_size(launcher.window, 680, 640);
   gtk_window_set_resizable(launcher.window, FALSE);
   // Chromeless like the other hosts: the panel content IS the window, and

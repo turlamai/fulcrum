@@ -38,9 +38,11 @@ the panel has been active once, otherwise the summon operation can erase itself.
 
 ## Shared visual and language grammar
 
-- The panel holds a stable 680 × 640 frame (clamped for the monitor where
-  supported), and scrolls when its up-to-12 result rows or overlays need more
-  room. Changes in search results must not resize it. It uses the amber family — `#D97706` for fills and
+- The panel holds a stable 680 × 640 frame as its design ceiling. On every
+  summon it is fitted to the pointer monitor's work area — never wider than 55%
+  nor taller than 65% of it, so a 1280×800 screen gets 680 × 488 instead of a
+  panel covering 85% of the display — and scrolls when its up-to-12 result
+  rows or overlays need more room. Changes in search results must not resize it. It uses the amber family — `#D97706` for fills and
   `#9A4B06`/`#F0A64B` (light/dark) for text and icons — 44-point result rows, an
   inset rounded selection, a leading semantic icon and a trailing badge/Enter
   chip. Values live in [design-system.md](design-system.md).

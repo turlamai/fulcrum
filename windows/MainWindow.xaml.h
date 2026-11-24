@@ -95,7 +95,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   // Reveal lives in host memory until the next result rebuild.
   void RevealSensitiveSelection();
   void ApplyReveal(rivet_app::ResultRow const& row, std::string const& raw);
-  // Stable 680 x 640 search panel, clamped to the monitor on summon.
+  // Stable search panel: 680 x 640 ceiling, fitted to the monitor's work
+  // area (55% wide, 65% high) on summon.
   void UpdatePanelHeight();
   // IME composition guard: true while the thread's IMM32 context reports
   // an open composition string (docs/cross-platform-interaction.md).

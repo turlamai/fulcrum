@@ -48,8 +48,28 @@ constexpr int kHotkeyIdPrimary = 0xF11C;  // Alt+Space
 constexpr int kHotkeyIdFallback = 0xF11D; // Ctrl+Alt+Space
 constexpr int kWindowWidth = 680;  // WinUI device-independent pixels (96 DPI)
 // Stable launcher geometry: results must not resize the visible window.
-// position_launcher clamps to the active monitor's work area.
+// position_launcher fits the panel to the active monitor's work area.
 constexpr int kWindowHeight = 640;
+// The design size is a ceiling, not a fixed frame. Clamping alone left a
+// 680x640 panel covering 85% of a 1280x800 work area. The panel therefore
+// keeps margins: at most 55% of the work-area width and 65% of its height
+// (design/DESIGN.md "启动窗几何与多显示器"). Desktops with room keep the
+// design size; the results list scrolls in the shorter panel.
+constexpr int kWorkWidthPercent = 55;
+constexpr int kWorkHeightPercent = 65;
+
+struct LauncherSize {
+  int width;
+  int height;
+};
+
+LauncherSize fit_launcher_size(int workWidth, int workHeight, UINT dpiX,
+                               UINT dpiY) {
+  int const designWidth = ::MulDiv(kWindowWidth, dpiX, 96);
+  int const designHeight = ::MulDiv(kWindowHeight, dpiY, 96);
+  return {std::min(designWidth, workWidth * kWorkWidthPercent / 100),
+          std::min(designHeight, workHeight * kWorkHeightPercent / 100)};
+}
 
 // WinUI lays out in DIPs, but SetWindowPos receives physical pixels. Use
 // the target monitor's effective DPI, not the DPI of the monitor where the
@@ -75,11 +95,11 @@ void position_launcher(HWND hwnd) {
     dpiX = ::GetDpiForWindow(hwnd);
     dpiY = dpiX;
   }
-  int const width = std::min(workWidth, ::MulDiv(kWindowWidth, dpiX, 96));
-  int const height = std::min(workHeight, ::MulDiv(kWindowHeight, dpiY, 96));
-  int const x = work.left + (workWidth - width) / 2;
-  int const y = work.top + (workHeight - height) / 4;
-  ::SetWindowPos(hwnd, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+  LauncherSize const size = fit_launcher_size(workWidth, workHeight, dpiX, dpiY);
+  int const x = work.left + (workWidth - size.width) / 2;
+  int const y = work.top + (workHeight - size.height) / 4;
+  ::SetWindowPos(hwnd, HWND_TOPMOST, x, y, size.width, size.height,
+                 SWP_NOACTIVATE);
 }
 
 UINT tray_menu_alignment(POINT anchor) {
@@ -2282,9 +2302,9 @@ void MainWindow::ApplyReveal(rivet_app::ResultRow const& row,
 }
 
 void MainWindow::UpdatePanelHeight() {
-  // Stable 680 x 640 panel. Geometry is set on summon by
-  // position_launcher(), with a monitor work-area clamp. Row, action,
-  // detail and AI updates never resize the visible launcher.
+  // Stable panel: 680 x 640 at most, fitted to the work area (55% wide,
+  // 65% high) on summon by position_launcher(). Row, action, detail and AI
+  // updates never resize the visible launcher.
 }
 
 void MainWindow::MoveSelection(int delta) {

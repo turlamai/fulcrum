@@ -4,6 +4,23 @@ All notable changes to Fulcrum are documented here. Versions follow
 [SemVer](https://semver.org/); the `build` number in `rivet.rktd` increments
 independently per platform packaging run.
 
+## [Unreleased]
+
+### Fixed
+
+- **All platforms: the launcher no longer fills a low-resolution screen.**
+  The 680×640 design size was only clamped to the monitor work area, so on a
+  1280×800 display the panel still covered 85% of the height and half the
+  width — on every host. The design size is now a ceiling with the family fit
+  rule: on each summon the panel is fitted to the pointer monitor's work
+  area at most 55% wide and 65% high, so that display gets 680×488 and a
+  1080p screen at 125% gets 680×536 (DIP). Desktops with room keep the full
+  680×640; typography and row height are unchanged and the results list
+  scrolls in the shorter panel. Windows applies the shares in physical
+  pixels after the DPI conversion, macOS in points against `visibleFrame`,
+  Linux/X11 against the monitor work area. `tests/launcher-geometry-contract.rkt`
+  pins the three fits and the prototype mirrors them in `shared.css`.
+
 ## [0.19.3] - 2026-11-20
 
 ### Fixed

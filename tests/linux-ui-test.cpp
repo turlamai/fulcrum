@@ -123,6 +123,24 @@ int main() {
   auto small_pos = upper_quarter_placement(small, 500, 400);
   check(small_pos.x == 100 && small_pos.y == 50,
         "small work areas do not produce a negative placement offset");
+  // The fit rule (DESIGN.md 启动窗几何): 680x640 is a ceiling. A
+  // low-resolution work area gets at most 55% of its width and 65% of its
+  // height; a desktop with room keeps the design size.
+  GdkRectangle low_res{0, 0, 1280, 752};
+  auto fitted = fit_panel_size(low_res);
+  check(fitted.width == 680 && fitted.height == 488,
+        "1280x752 work area shrinks the panel to 65% height, keeps 680 width");
+  GdkRectangle narrow{0, 0, 1024, 600};
+  auto narrow_size = fit_panel_size(narrow);
+  check(narrow_size.width == 563 && narrow_size.height == 390,
+        "narrow screens also cap the panel at 55% width");
+  GdkRectangle desktop{0, 0, 1920, 1032};
+  auto full = fit_panel_size(desktop);
+  check(full.width == 680 && full.height == 640,
+        "desktop work area keeps the 680x640 design size");
+  auto low_res_pos = upper_quarter_placement(low_res, fitted.width, fitted.height);
+  check(low_res_pos.x == 300 && low_res_pos.y == 66,
+        "the fitted panel still sits at the top quarter of the work area");
 
   auto* app = gtk_application_new("site.jrtx.fulcrum.ui-test",
                                    G_APPLICATION_NON_UNIQUE);
