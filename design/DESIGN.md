@@ -145,6 +145,16 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 - 真实性：界面提供本地配置交互；开机启动、系统热键、窗口控制、截图、翻译、日历、联网 AI、更新与同步均未接通真实服务。AI 检查只检查必填配置，不宣称联网测试通过；更新改为两处入口共用的样例流程。此页没有账户、定价、支付或扩展市场。
 - 自检矩阵补充在 `prototype/audit.html`；记录可达状态与恢复路径，未执行浏览器预览、渲染或自动验收，未代用户标记设计冻结。
 
+## 2026-11-24 · 偏好设置 v2 后端契约（切片 1，#241）
+
+- 一份 schema 驱动一切：`app/core/settings.rkt` 每个键带 `(page section control options)` 元数据；`settings-ui` RPC 把页面/分组/行/控件/选项作为数据下发，三宿主的数据驱动设置窗（切片 2）只渲染、不自建功能表。行序由 `page-row-order` 声明，测试钉住。
+- i18n 单源：每个有行的键必须同时有 `settings.<key>`、`settings.hint.<key>`、所在 `settings.section.<x>` 与 `settings.nav.<page>`，每个选项有 `settings.opt.<key>.<option>`（空选项值命名为 `off`）。`tests/settings-v2-test.rkt` 对 en/zh 逐行断言，缺键在 CI 失败而不是在宿主上显示原始键。
+- 只加有消费者的键：本切片落地的偏好都已在引擎/剪贴板/后端生效（无结果回退、文件结果开关、剪贴板保留期/类型/默认动作/遮罩、计算器开关与复制格式、表情动作、系统与窗口命令开关、启动历史、自动检查更新）。没有消费者的原型偏好留到切片 3/4，不做死开关。
+- 对原型的四处删减（已同步 `prototype/settings.js`）：剪贴板默认动作只留 Paste / Copy；敏感内容只保留「Mask sensitive content」一个开关（移除密码管理器内容、私密会话暂停）；不做「Share usage diagnostics」；不做「Update channel」。
+- 命名列表：应用文件夹、隐藏应用、剪贴板排除应用、脚本文件夹、文件忽略规则统一存 `lists.json`（`app/core/lists.rkt`），经 `named-list-items/set/remove` 读写；校验失败以稳定码前缀报错（duplicate-name / path-required / pattern-required / unknown-kind / limit），宿主显示自己的文案。应用文件夹即时进入发现根目录，隐藏应用按名称即时从结果中过滤。
+- 导入/导出 JSON v2（`app/core/settings-transfer.rkt`）：`{"format":"fulcrum-settings","version":2,"groups":{appearance,features,commands,content}}`。导出只含 toggle/select（不出自由文本与设备绑定），永不含热键、AI、同步、路径、索引、历史。导入先校验（格式、1 MB 上限、字段类型、命令 ≤200、内容 ≤500、热键/别名冲突含召唤热键），`settings-import` 以 `apply=off` 返回 `plan:<分类>:<数量>`，`apply=on` 整类替换并返回 `applied:<摘要>`。线上不传布尔：开关参数用 `on`/`off`。
+- 引擎读偏好经 thunk、每次搜索读取，设置窗改动下一次击键即生效，无需重建引擎；未设置的键读作 `unset`（不是 `#f`），provider 以自己的默认值兜底。
+
 ## 文件搜索 · 来源联动
 
 - 主入口使用同名报价单作为样例。每条结果显示来源、目录和离线状态，文件详情显示完整路径和版本。回车打开可用文件的样例预览，⌘K / Ctrl+K 打开该文件的操作与详情。离线条目的回车操作进入详情和恢复路径。

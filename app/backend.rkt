@@ -20,6 +20,7 @@
          racket/format
          racket/list
          racket/base
+         racket/match
          racket/string
          (prefix-in rivet-info: rivet/app-info)
          rivet/backend
@@ -33,12 +34,14 @@
          "core/file-catalog.rkt"
          "core/fuzzy.rkt"
          "core/gallery.rkt"
+         (prefix-in lists: "core/lists.rkt")
          "core/paths.rkt"
          "core/plugins.rkt"
          "core/quicklinks.rkt"
          "core/revision-publisher.rkt"
          "core/store.rkt"
          (rename-in "core/settings.rkt" [settings-list core:settings-list])
+         "core/settings-transfer.rkt"
          (rename-in "core/snippets.rkt" [snippet-list core:snippet-list])
          "core/syscmd.rkt"
          "core/workflows.rkt"
@@ -71,6 +74,7 @@
          app-roots-fingerprint-cache
          refresh-app-index-if-stale!
          rebuild-app-index!
+         refresh-extra-app-roots!
          run-action)
 
 ;; Staged and packaged apps carry the true version in rivet-app-info.rktd
@@ -185,6 +189,9 @@
 
 (define current-engine (make-parameter #f))
 (define current-settings (make-parameter #f))
+;; The named lists (#241) and the command bindings, as built by boot!.
+(define current-lists (make-parameter #f))
+(define current-bindings (make-parameter #f))
 
 (define (engine!)
   (define e (current-engine))
@@ -195,6 +202,11 @@
   (define s (current-settings))
   (unless s (error 'backend "settings are not initialized; start was not called"))
   s)
+
+(define (bindings!)
+  (define b (current-bindings))
+  (unless b (error 'backend "bindings are not initialized; start was not called"))
+  b)
 
 ;; Emits backend events produced by engine-run as RVT1 Events. The notify
 ;; payload must be the bare message — stringifying the whole (notify
@@ -264,6 +276,18 @@
                   "About" "" "about" "" ""))
       '()))
 
+(define (engine-pref* key)
+  (if (current-engine) (engine-pref (current-engine) key) #f))
+
+(define (generic-web-fallback-row? row)
+  ;; The no-match web row (`Search the web for “…”`); an explicit bang
+  ;; (`!ddg x`, titled `Search: …`) is the user naming the web surface.
+  (and (string=? (list-ref row 0) "web.open")
+       (string-prefix? (list-ref row 1) "Search the web for")))
+
+(define (fallback-mode)
+  (settings-get (settings!) 'no-results-fallback))
+
 (define (rows-for engine query)
   (define rows (engine-search engine query))
   ;; Discoverability: an empty query always shows a Settings row so the
@@ -272,25 +296,46 @@
     (if (string=? (string-trim query) "")
         (settings-quick-rows)
         '()))
+  (define fallback (fallback-mode))
   (define filtered
-    (if (settings-get (settings!) 'web-search-enabled)
-        rows
-        (filter (lambda (row) (not (string=? (list-ref row 3) "Web Search")))
-                rows)))
+    (filter (lambda (row)
+              (and (or (settings-get (settings!) 'web-search-enabled)
+                       (not (string=? (list-ref row 3) "Web Search")))
+                   ;; "ai" and "none" do not offer the web row for an
+                   ;; unmatched query.
+                   (or (string=? fallback "web")
+                       (not (generic-web-fallback-row? row)))))
+            rows))
   (define backend-rows
-    (let ([pc (plugin-center-rows query)]
-          [sr (settings-rows query)]
-          [ar (append (ai-rows query) (ai-ask-row query))]
-          [ur (update-rows query)]
-          [ab (about-rows query)])
+    (let* ([pc (plugin-center-rows query)]
+           [sr (settings-rows query)]
+           [lowered (string-downcase (string-trim query))]
+           ;; An `ai …` query names the AI surface outright; the question
+           ;; form (`…?`) is a fallback offer and follows the preference.
+           [explicit-ai? (or (string=? lowered "ai")
+                             (string-prefix? lowered "ai "))]
+           [ai-rows* (if explicit-ai?
+                         (ai-rows query)
+                         (if (string=? fallback "none")
+                             '()
+                             ;; "ai": an unmatched query offers the prompt
+                             ;; in place of the web row.
+                             (append (if (and (string=? fallback "ai")
+                                              (null? filtered)
+                                              (non-empty-string? lowered))
+                                         (ai-prompt-row query)
+                                         '())
+                                     (ai-ask-row query))))]
+           [ur (update-rows query)]
+           [ab (about-rows query)])
       ;; The surface the query names leads its own rows.
       (case (string-trim (string-downcase query))
-        [("about") (append ab sr ar pc ur)]
-        [("plugins" "plugin") (append pc sr ar ur ab)]
-        [("ai") (append ar sr pc ur ab)]
-        [("update" "updates") (append ur sr ar pc ab)]
-        [("settings") (append sr ar pc ur ab)]
-        [else (append sr ar pc ur ab)])))
+        [("about") (append ab sr ai-rows* pc ur)]
+        [("plugins" "plugin") (append pc sr ai-rows* ur ab)]
+        [("ai") (append ai-rows* sr pc ur ab)]
+        [("update" "updates") (append ur sr ai-rows* pc ab)]
+        [("settings") (append sr ai-rows* pc ur ab)]
+        [else (append sr ai-rows* pc ur ab)])))
   (append settings-entry
     (if (member (string-trim (string-downcase query)) backend-surface-words)
       (append backend-rows filtered)
@@ -599,6 +644,20 @@
 
 ;; Natural questions (config "…?") deserve an AI row without the ai
 ;; prefix — only when the user has AI configured, never otherwise.
+;; With `no-results-fallback` = "ai" an unmatched query offers the prompt
+;; in place of the web row — only when AI is configured, like ai-ask-row.
+(define (ai-prompt-row query)
+  (define trimmed (string-trim query))
+  (define status
+    (ai-configured-status
+     (ai-effective-provider) (ai-get-key (ai-keys-path) (ai-effective-provider))))
+  (if (equal? status "ready")
+      (list (ai-row "ai.run"
+                    (format "Ask AI: ~a" trimmed)
+                    "↵ asks; the answer streams here and copies to your clipboard"
+                    trimmed "AI"))
+      '()))
+
 (define (ai-ask-row query)
   (define trimmed (string-trim query))
   (define lowered (string-downcase trimmed))
@@ -1224,10 +1283,23 @@
 
 ;; ---- clipboard ----------------------------------------------------------
 
+;; The host reports every pasteboard change; the Clipboard settings page
+;; decides what is worth keeping (content classes) and for how long
+;; (retention days for unpinned entries).
+(define (clipboard-retention-days)
+  (define days (settings-get (settings!) 'clipboard-retention-days))
+  (if (exact-nonnegative-integer? days) days 0))
+
+(define (clipboard-types)
+  (define types (settings-get (settings!) 'clipboard-types))
+  (if (member types '("all" "text" "links")) (string->symbol types) 'all))
+
 (define-rpc (clipboard-record [text String] : String)
   (define store (engine-clipboard (engine!)))
   (if (and store (settings-get (settings!) 'clipboard-enabled))
-      (let ([item (clipboard-record! store text)])
+      (let ([item (clipboard-record! store text
+                                     #:types (clipboard-types)
+                                     #:retention-days (clipboard-retention-days))])
         (if item (clipboard-item-id item) ""))
       ""))
 
@@ -1251,7 +1323,8 @@
         (define preview
           (let ([text (string-replace (clipboard-item-text item) "\n" " ")])
             (cond
-              [(clipboard-item-sensitive? item)
+              [(and (settings-get (settings!) 'clipboard-mask-sensitive)
+                    (clipboard-item-sensitive? item))
                (mask-sensitive-preview text)]
               [(> (string-length text) 200)
                (string-append (substring text 0 200) "…")]
@@ -1393,19 +1466,28 @@
 
 ;; ---- settings -----------------------------------------------------------
 
+;; Coercion is the schema's job (settings-coerce): a value that validates
+;; as-is is taken, then the on/off words settings-list emits, then a number.
 (define (coerce-setting-value key value)
+  (define coerced (settings-coerce (string->symbol key) value))
+  (if (car coerced)
+      (cdr coerced)
+      (raise-argument-error 'settings-set "value the schema accepts" value)))
+
+;; After a write, make the keys with a live consumer take effect now rather
+;; than at the next launch.
+(define (settings-applied! key)
+  (define engine (current-engine))
   (case key
-    [(max-results clipboard-limit plugins-timeout-ms update-last-check update-rollout-bucket)
-     (define n (string->number (string-trim value)))
-     (if n n (raise-argument-error 'settings-set "numeric string" value))]
-    [(clipboard-enabled web-search-enabled plugins-enabled expansion-enabled)
-     ;; on/off is what settings-list emits and the badges show; true/false
-     ;; and 1/0 stay accepted for scripts.
-     (cond
-       [(member (string-trim value) '("true" "1" "on")) #t]
-       [(member (string-trim value) '("false" "0" "off")) #f]
-       [else (raise-argument-error 'settings-set "boolean string" value)])]
-    [else value]))
+    [(theme) (state-set! theme (settings-get (settings!) 'theme))]
+    [(hotkey) (state-set! hotkey (settings-get (settings!) 'hotkey))]
+    [(language) (state-set! language (settings-get (settings!) 'language))]
+    [(max-results)
+     (when engine
+       (set-engine-max-results! engine (settings-get (settings!) 'max-results)))]
+    [(keep-history)
+     (when (and engine (not (settings-get (settings!) 'keep-history)))
+       (engine-clear-history! engine))]))
 
 (define private-setting-keys
   '(update-base-url update-last-check update-rollout-bucket))
@@ -1426,19 +1508,150 @@
           ""
           "")))
 
+;; The settings-window contract as data (#241): one row per section
+;; heading and per preference, in display order. Rows are positional
+;; strings:
+;;   ("section" <page> <section>)
+;;   ("setting" <key> <page> <section> <control> <options, comma-joined> <value>)
+;; Labels, hints and option names are the hosts' i18n keys
+;; (settings.nav.<page>, settings.section.<section>, settings.<key>,
+;; settings.hint.<key>, settings.opt.<key>.<option>) so the three native
+;; windows render one schema and one feature map.
+(define (settings-ui-rows->wire rows)
+  (for/list ([row (in-list rows)])
+    (match row
+      [(list 'section page section)
+       (list "section" (symbol->string page) (symbol->string section))]
+      [(list 'setting key _page section control options value)
+       (list "setting" (symbol->string key) (symbol->string _page)
+             (symbol->string section) (symbol->string control)
+             (string-join (map (lambda (o) (format "~a" o)) options) ",")
+             value)]
+      [else '()])))
+
+(define-rpc (settings-ui : (List (List String)))
+  (filter pair? (settings-ui-rows->wire (settings-ui-rows (settings!)))))
+
 (define-rpc (settings-set [key String] [value String] : Bool)
   ;; A settings form is an untrusted user-input boundary. Schema rejection
   ;; is a normal false result, not an internal Racket contract failure that
   ;; should leak through RVT1 into a native error label.
-  (with-handlers ([exn:fail:contract? (lambda (_) #f)])
+  (with-handlers ([exn:fail:contract? (lambda (_) #f)]
+                  [exn:fail? (lambda (_) #f)])
     (define sym (string->symbol key))
-    (settings-set! (settings!) sym (coerce-setting-value sym value))
-    ;; Reflect the host-rendered keys immediately across every open surface.
-    (case sym
-      [(theme) (state-set! theme (settings-get (settings!) 'theme))]
-      [(hotkey) (state-set! hotkey (settings-get (settings!) 'hotkey))]
-      [(language) (state-set! language (settings-get (settings!) 'language))])
+    (settings-set! (settings!) sym (coerce-setting-value key value))
+    (settings-applied! sym)
     #t))
+
+;; ---- named lists (#241) ---------------------------------------------------
+;;
+;; The lists the settings pages edit: application folders, applications
+;; hidden from search, applications excluded from clipboard history,
+;; script folders and file ignore rules. Rows are
+;; (id name path extra on|off). Validation failures surface as an error
+;; whose message starts with a stable code (duplicate-name, path-required,
+;; pattern-required, unknown-kind, limit) so a host shows its own text.
+;; The RPC names carry `named-` so they cannot be mistaken for the
+;; bindings / snippet / quicklink lists that each have their own RPC.
+
+(define (list-item->row item)
+  (list (lists:list-item-id item)
+        (lists:list-item-name item)
+        (lists:list-item-path item)
+        (lists:list-item-extra item)
+        (if (lists:list-item-enabled item) "on" "off")))
+
+;; Application folders feed app discovery and hidden applications feed the
+;; engine's apps provider: both take effect without a relaunch.
+(define (app-folder-paths)
+  (map lists:list-item-path
+       (filter lists:list-item-enabled
+               (lists:list-items (current-lists) "app-folders"))))
+
+(define (hidden-app-names)
+  (map lists:list-item-name
+       (filter (lambda (i) (not (lists:list-item-enabled i)))
+               (lists:list-items (current-lists) "apps"))))
+
+(define (refresh-extra-app-roots!)
+  (extra-discovery-roots (app-folder-paths))
+  ;; The roots changed: the next search must re-discover, not trust the
+  ;; fingerprint taken before the list changed.
+  (app-roots-fingerprint-cache #f)
+  (refresh-app-index-if-stale!))
+
+(define-rpc (named-list-items [kind String] : (List (List String)))
+  (map list-item->row (lists:list-items (current-lists) kind)))
+
+;; The wire carries no booleans: `enabled` is "on" or "off", the same words
+;; the rows carry.
+(define-rpc (named-list-set [kind String] [id String] [name String] [path String]
+                           [extra String] [enabled String] : String)
+  (define item
+    (lists:list-set! (current-lists) kind id name path extra
+                     (string=? enabled "on")))
+  (when (string=? kind "app-folders") (refresh-extra-app-roots!))
+  (lists:list-item-id item))
+
+(define-rpc (named-list-remove [kind String] [id String] : Bool)
+  (define removed? (lists:list-remove! (current-lists) kind id))
+  (when (and removed? (string=? kind "app-folders")) (refresh-extra-app-roots!))
+  removed?)
+
+;; ---- quicklinks ----------------------------------------------------------
+
+(define-rpc (quicklink-list : (List (List String)))
+  (define store (engine-quicklinks (engine!)))
+  (if store
+      (for/list ([l (in-list (link-list store))])
+        (list (quicklink-id l) (quicklink-name l) (quicklink-keyword l)
+              (quicklink-url l) "quicklink" (quicklink-id l) "" ""))
+      '()))
+
+(define-rpc (quicklink-save [id String] [name String] [keyword String] [url String]
+               : String)
+  (define store (engine-quicklinks (engine!)))
+  (if store
+      (quicklink-id (link-save! store name url keyword
+                                (if (string=? id "") #f id)))
+      ""))
+
+(define-rpc (quicklink-delete [id String] : Bool)
+  (define store (engine-quicklinks (engine!)))
+  (if store (link-delete! store id) #f))
+
+;; ---- launcher history ----------------------------------------------------
+
+(define-rpc (history-clear : Bool)
+  (engine-clear-history! (engine!))
+  #t)
+
+;; ---- settings import / export (JSON v2) ----------------------------------
+;;
+;; Contract and validation live in core/settings-transfer.rkt. `apply` "off"
+;; validates and returns "plan:<category>:<count>,…" so a host can show what
+;; will be replaced before asking; `apply` "on" replaces the selected
+;; categories and returns "applied:<summary>". A rejected file raises with a
+;; stable code prefix.
+
+(define (export-stores)
+  (values (engine-snippets (engine!)) (engine-quicklinks (engine!))))
+
+(define-rpc (settings-export [categories String] : String)
+  (define-values (snippets quicklinks) (export-stores))
+  (define wanted
+    (filter symbol? (map string->symbol (string-split (string-trim categories) ","))))
+  (settings-export-json (settings!) (bindings!) snippets quicklinks wanted))
+
+(define-rpc (settings-import [payload String] [apply String] : String)
+  (define plan (settings-import-plan (settings!) payload))
+  (if (string=? apply "on")
+      (let ()
+        (define-values (snippets quicklinks) (export-stores))
+        (transfer-apply! (settings!) (bindings!) snippets quicklinks plan
+                         (lambda (key) (settings-applied! key)))
+        (string-append "applied:" (plan-summary plan)))
+      (string-append "plan:" (plan-summary plan))))
 
 ;; Readiness of the configured AI provider, for the settings window's AI
 ;; section: "ready", or the honest reason it is not (no provider, no key).
@@ -1528,10 +1741,12 @@
   (if manual
       (update-check! #t)
       ;; Silent launch check: at most once per 4 hours (the family
-      ;; throttle, shared by every host through this one key).
+      ;; throttle, shared by every host through this one key), and only
+      ;; while the Sync & Updates page keeps automatic checks on.
       (let ([last (settings-get (settings!) 'update-last-check)])
-        (if (and (exact-integer? last)
-                 (< (- (current-seconds) last) update-throttle-seconds))
+        (if (or (not (settings-get (settings!) 'update-auto-check))
+                (and (exact-integer? last)
+                     (< (- (current-seconds) last) update-throttle-seconds)))
             (UpdateCheck "throttled" (void) app-version
                          (void) (void) (void) (void) (void))
             (update-check! #f)))))
@@ -1737,10 +1952,17 @@
   ;; parameter still unset that raised inside the loader — every installed
   ;; plugin stayed unloaded until some later reload (an install, a toggle).
   (current-settings manager)
+  ;; The named lists (#241) and the application folders they carry exist
+  ;; before the engine's first index build, so a custom folder is in the
+  ;; startup index rather than only after the first rebuild.
+  (define lists-store (lists:make-list-store (lists-path)))
+  (current-lists lists-store)
+  (extra-discovery-roots (app-folder-paths))
   (define clip-store
     (and (settings-get manager 'clipboard-enabled)
          (make-clipboard-store (clipboard-path)
-                               #:limit (settings-get manager 'clipboard-limit))))
+                               #:limit (settings-get manager 'clipboard-limit)
+                               #:retention-days (clipboard-retention-days))))
   (define snip-store
     (make-snippet-store (snippets-path)
                         #:sync-root (or (sync-root-override)
@@ -1758,6 +1980,7 @@
                               #:prefs-thunk plugin-prefs-for)))
   (define bindings-store
     (make-bindings-store (bindings-path)))
+  (current-bindings bindings-store)
   (define wf-store (make-workflow-store (workflows-path)))
   (define engine
     (make-engine #:clipboard-store clip-store
@@ -1767,6 +1990,13 @@
                  #:workflow-store wf-store
                  #:plugin-manager plug-mgr
                  #:max-results (settings-get manager 'max-results)
+                 ;; Preferences are read through the manager on every
+                 ;; search, so a settings change applies on the next
+                 ;; keystroke; hidden applications come from the list.
+                 #:pref-thunk (lambda (key)
+                                (with-handlers ([exn:fail? (lambda (_) 'unset)])
+                                  (settings-get manager key)))
+                 #:hidden-apps-thunk hidden-app-names
                  #:file-index-path (file-index-path)
                  ;; Windows data volumes ride the .NET DriveInfo
                  ;; drive-type filter (fixed local volumes only, no WMI);

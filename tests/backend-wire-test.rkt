@@ -621,6 +621,35 @@
                 (build-path (plugin-manager-path* mgr) "echo")))
           #t)
 
+  ;; Settings v2 (#241): the settings window rows, named lists, the history
+  ;; reset and JSON export / import, all over RVT1.
+  (define-values (ui ui-err _ui-ev) (call-rpc 141 (list "settings-ui")))
+  (check! "settings-ui no error" ui-err #f)
+  (check! "settings-ui leads with a section row"
+          (and (pair? ui) (string=? (list-ref (car ui) 0) "section") #t) #t)
+  (define-values (nset _n1 _n2)
+    (call-rpc 142 (list "named-list-set" "app-folders" "" "Tools" "/opt/tools" "" "on")))
+  (check! "named-list-set returns an id" (string? nset) #t)
+  (define-values (nitems _n3 _n4) (call-rpc 143 (list "named-list-items" "app-folders")))
+  (check! "named list keeps the folder"
+          (and (member "/opt/tools" (map (lambda (r) (list-ref r 2)) nitems)) #t) #t)
+  (define-values (_nbad nbad-err _n5)
+    (call-rpc 144 (list "named-list-set" "ignore-rules" "" "cache" "" "" "on")))
+  (check! "ignore rule without a pattern is refused"
+          (and (string? nbad-err) (regexp-match? #px"^pattern-required" nbad-err) #t) #t)
+  (define-values (nrem _n6 _n7) (call-rpc 145 (list "named-list-remove" "app-folders" nset)))
+  (check! "named-list-remove ok" nrem #t)
+  (define-values (exp _x1 _x2) (call-rpc 146 (list "settings-export" "appearance,features")))
+  (check! "settings-export is the v2 envelope"
+          (and (string? exp) (string-contains? exp "fulcrum-settings") #t) #t)
+  (define-values (plan plan-err _x3) (call-rpc 147 (list "settings-import" exp "off")))
+  (check! "settings-import dry run reports a plan"
+          (and (not plan-err) (regexp-match? #px"^plan:" plan) #t) #t)
+  (define-values (imp-bad imp-err _x4) (call-rpc 148 (list "settings-import" "not json" "on")))
+  (check! "a malformed import is refused"
+          (and (not imp-bad) (regexp-match? #px"^format" imp-err) #t) #t)
+  (define-values (hc _h1 _h2) (call-rpc 149 (list "history-clear")))
+  (check! "history-clear ok" hc #t)
   (delete-directory/files fixture-dir))
 
 (kill-thread srv)

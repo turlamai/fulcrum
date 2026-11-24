@@ -10,6 +10,13 @@
       }
     },
     {
+      "name": "bindings-changed",
+      "type": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
       "name": "copy-to-clipboard",
       "type": {
         "kind": "scalar",
@@ -268,15 +275,6 @@
       }
     },
     {
-      "arguments": [],
-      "name": "clipboard-clear",
-      "result": {
-        "kind": "scalar",
-        "name": "Int64"
-      }
-    },
-    {
-      "name": "clipboard-reveal",
       "arguments": [
         {
           "name": "id",
@@ -286,9 +284,76 @@
           }
         }
       ],
+      "name": "binding-clear",
       "result": {
         "kind": "scalar",
-        "name": "String"
+        "name": "Bool"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "alias",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "hotkey",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "binding-set",
+      "result": {
+        "kind": "scalar",
+        "name": "Bool"
+      }
+    },
+    {
+      "arguments": [],
+      "name": "bindings-commands",
+      "result": {
+        "element": {
+          "element": {
+            "kind": "scalar",
+            "name": "String"
+          },
+          "kind": "list"
+        },
+        "kind": "list"
+      }
+    },
+    {
+      "arguments": [],
+      "name": "bindings-list",
+      "result": {
+        "element": {
+          "element": {
+            "kind": "scalar",
+            "name": "String"
+          },
+          "kind": "list"
+        },
+        "kind": "list"
+      }
+    },
+    {
+      "arguments": [],
+      "name": "clipboard-clear",
+      "result": {
+        "kind": "scalar",
+        "name": "Int64"
       }
     },
     {
@@ -330,6 +395,38 @@
       }
     },
     {
+      "arguments": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "clipboard-reveal",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "dir",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "fs-reconcile",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
       "arguments": [],
       "name": "health",
       "result": {
@@ -339,10 +436,114 @@
     },
     {
       "arguments": [],
+      "name": "history-clear",
+      "result": {
+        "kind": "scalar",
+        "name": "Bool"
+      }
+    },
+    {
+      "arguments": [],
       "name": "index-rebuild",
       "result": {
         "kind": "scalar",
         "name": "Int64"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "kind",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "named-list-items",
+      "result": {
+        "element": {
+          "element": {
+            "kind": "scalar",
+            "name": "String"
+          },
+          "kind": "list"
+        },
+        "kind": "list"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "kind",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "named-list-remove",
+      "result": {
+        "kind": "scalar",
+        "name": "Bool"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "kind",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "path",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "extra",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "enabled",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "named-list-set",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
       }
     },
     {
@@ -388,6 +589,73 @@
       "result": {
         "kind": "scalar",
         "name": "Void"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "quicklink-delete",
+      "result": {
+        "kind": "scalar",
+        "name": "Bool"
+      }
+    },
+    {
+      "arguments": [],
+      "name": "quicklink-list",
+      "result": {
+        "element": {
+          "element": {
+            "kind": "scalar",
+            "name": "String"
+          },
+          "kind": "list"
+        },
+        "kind": "list"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "keyword",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "url",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "quicklink-save",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
       }
     },
     {
@@ -465,6 +733,45 @@
       }
     },
     {
+      "arguments": [
+        {
+          "name": "categories",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "settings-export",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "name": "payload",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "apply",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "settings-import",
+      "result": {
+        "kind": "scalar",
+        "name": "String"
+      }
+    },
+    {
       "arguments": [],
       "name": "settings-list",
       "result": {
@@ -499,6 +806,20 @@
       "result": {
         "kind": "scalar",
         "name": "Bool"
+      }
+    },
+    {
+      "arguments": [],
+      "name": "settings-ui",
+      "result": {
+        "element": {
+          "element": {
+            "kind": "scalar",
+            "name": "String"
+          },
+          "kind": "list"
+        },
+        "kind": "list"
       }
     },
     {

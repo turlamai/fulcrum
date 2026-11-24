@@ -6,6 +6,33 @@ independently per platform packaging run.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings v2, backend slice (#241).** One schema now drives the
+  preferences, the settings-window rows and the i18n keys the three hosts
+  resolve: the `settings-ui` RPC hands pages, sections, rows, controls and
+  options to the hosts as data, and `tests/settings-v2-test.rkt` fails CI when
+  a row lacks its en/zh label, hint or option name. Every key added in this
+  slice already has a consumer: the no-results fallback (web / AI / local
+  only), file results in the launcher, clipboard retention (1–90 days) and
+  content classes (text / links), the clipboard Enter action (paste or copy),
+  sensitive-content masking, the calculator switch and copy format, the emoji
+  Enter action, the system-command and window-command switches, launch
+  history (also clearable from the Privacy page) and automatic update checks.
+  The engine reads preferences on every search, so a change applies on the
+  next keystroke without a rebuild. Named lists (application folders, hidden
+  applications, clipboard-excluded applications, script folders, file ignore
+  rules) live in `lists.json` behind `named-list-items/set/remove`; an
+  application folder joins discovery at once and a hidden application leaves
+  the results at once. Settings import/export is JSON v2: export covers only
+  toggles and selects (appearance, features, commands, snippets and
+  quicklinks) and never a hotkey, AI, sync, path, index or history; import
+  validates format, size, field types and hotkey/alias conflicts, reports a
+  plan before applying, and replaces each chosen category wholesale.
+  Prototype reduced to match (#241): the clipboard Enter action keeps Paste
+  and Copy only, sensitive content keeps one mask switch, and there is no
+  usage-diagnostics switch and no update channel.
+
 ### Fixed
 
 - **Windows: `find` answers in well under a second instead of 7–20 s.** The

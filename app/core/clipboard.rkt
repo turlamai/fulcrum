@@ -26,6 +26,7 @@
          clipboard-list
          clipboard-search
          clipboard-count
+         clipboard-link?
          sensitive-text?
          mask-sensitive-preview)
 
@@ -105,18 +106,61 @@
       (take (filter (lambda (i) (not (clipboard-item-pinned? i))) items)
             (max 0 (- limit (count clipboard-item-pinned? items))))))))
 
+;; Content classes the Clipboard settings page can limit recording to.
+;; History is text-only, so "text" means text that is not a link.
+(define/contract (clipboard-link? text)
+  (-> string? boolean?)
+  (define trimmed (string-trim text))
+  (and (non-empty-string? trimmed)
+       (not (string-contains? trimmed "\n"))
+       (or (regexp-match? #px"^(?i:https?|ftp|file|smb)://" trimmed)
+           (regexp-match? #px"^(?i:www\\.)" trimmed))))
+
+(define/contract (clipboard-type-allowed? types text)
+  (-> (one-of/c 'all 'text 'links) string? boolean?)
+  (case types
+    [(all) #t]
+    [(links) (clipboard-link? text)]
+    [(text) (not (clipboard-link? text))]))
+
+;; Retention (#241): unpinned entries older than `retention-days` days
+;; drop out; 0 keeps them until the entry limit does. Runs at load and
+;; before every persist, so an idle machine still expires on its next copy.
+(define (expire-stale! store retention-days)
+  (when (> retention-days 0)
+    (define cutoff (- (current-inexact-milliseconds)
+                      (* retention-days 24 3600 1000)))
+    (define items (clipboard-store-items store))
+    (define kept
+      (filter (lambda (i)
+                (or (clipboard-item-pinned? i)
+                    (>= (clipboard-item-ts i) cutoff)))
+              items))
+    (unless (= (length kept) (length items))
+      (set-clipboard-store-items! store kept))))
+
 (define/contract (make-clipboard-store [path (clipboard-path)]
-                                       #:limit [limit 1000])
-  (() (path? #:limit (and/c exact-integer? (>=/c 1) (<=/c 100000)))
+                                       #:limit [limit 1000]
+                                       #:retention-days [retention-days 0])
+  (() (path? #:limit (and/c exact-integer? (>=/c 1) (<=/c 100000))
+              #:retention-days (and/c exact-nonnegative-integer? (<=/c 3650)))
    . ->* . clipboard-store?)
   (define store
     (clipboard-store path limit (load-items path limit) (make-semaphore 1)))
+  (expire-stale! store retention-days)
   (enforce-limit! store)
   store)
 
-(define/contract (clipboard-record! store text)
-  (-> clipboard-store? string? (or/c clipboard-item? #f))
-  (if (non-empty-string? (string-trim text))
+(define/contract (clipboard-record! store text
+                                    #:types [types 'all]
+                                    #:retention-days [retention-days 0])
+  (->* (clipboard-store? string?)
+       (#:types (one-of/c 'all 'text 'links)
+        #:retention-days (and/c exact-nonnegative-integer? (<=/c 3650)))
+       (or/c clipboard-item? #f))
+  (if (or (not (non-empty-string? (string-trim text)))
+          (not (clipboard-type-allowed? types text)))
+      #f
       (let ([capped
              (if (> (string-length text) max-item-chars)
                  (substring text 0 max-item-chars)
@@ -146,10 +190,10 @@
                   (filter (lambda (i) (not (string=? (clipboard-item-id i)
                                                      (clipboard-item-id item))))
                           items)))
+           (expire-stale! store retention-days)
            (enforce-limit! store)
            (persist! store)
-           item)))
-      #f))
+           item)))))
 
 (define/contract (clipboard-remove! store id)
   (-> clipboard-store? string? boolean?)

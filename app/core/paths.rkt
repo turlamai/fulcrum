@@ -26,6 +26,7 @@
          file-index-path
          rates-path
          bindings-path
+         lists-path
          plugins-dir
          plugin-prefs-path
          plugin-secrets-path
@@ -117,6 +118,12 @@
 ;; Per-command alias + global-hotkey bindings (#48).
 (define (bindings-path)
   (build-path (data-dir) "command-bindings.json"))
+
+;; Named lists the settings pages edit (#241): application folders, hidden
+;; applications, clipboard-excluded applications, script folders and file
+;; ignore rules. Device-local — paths and app names name this machine.
+(define (lists-path)
+  (build-path (data-dir) "lists.json"))
 
 (define (plugins-dir)
   (build-path (ensure-data-dir!) "plugins"))

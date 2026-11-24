@@ -29,6 +29,7 @@
 (provide (struct-out application)
          applications-from-dirs
          discovery-roots
+         extra-discovery-roots
          discover-applications
          application-roots-fingerprint
          apps-index-stale?
@@ -223,11 +224,19 @@
     [(windows) (windows-apps-from-dirs dirs)]
     [else (linux-apps-from-dirs dirs)]))
 
+;; Additional application folders the user added on the Applications
+;; settings page (#241). A parameter, not an argument: the backend updates
+;; it whenever the list changes, and every discovery path (startup, the
+;; staleness check, an explicit rebuild) reads the current value.
+(define extra-discovery-roots (make-parameter '()))
+
 (define (discovery-roots)
-  (case (system-type 'os)
-    [(macosx) (macos-app-roots)]
-    [(windows) (windows-app-roots)]
-    [else (filter directory-exists? (linux-app-roots))]))
+  (append
+   (case (system-type 'os)
+     [(macosx) (macos-app-roots)]
+     [(windows) (windows-app-roots)]
+     [else (filter directory-exists? (linux-app-roots))])
+   (filter directory-exists? (extra-discovery-roots))))
 
 (define/contract (discover-applications)
   (-> (listof application?))

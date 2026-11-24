@@ -58,6 +58,8 @@
          engine-file-catalog-status
          engine-reconcile-directory!
          engine-rebuild-index!
+         engine-pref
+         engine-clear-history!
          engine-app-count
          engine-record-use!
          engine-row-actions
@@ -71,8 +73,27 @@
 
 (struct engine
   (apps-index apps-prepared clipboard snippets quicklinks bindings plugins syscmds recents-path recents recents-lock max-results file-index-path file-catalog-roots file-catalog-worker file-catalog-lock file-catalog-nudge file-catalog-live catalog-arm-thread catalog-arm-stop workflows
-   file-search-os file-platform-search file-platform)
+   file-search-os file-platform-search file-platform prefs hidden-apps)
   #:mutable)
+
+;; Preferences (#241). The engine holds no settings manager — the backend
+;; owns preferences — so it reads them through a thunk on every search:
+;; a change in the settings window takes effect on the next keystroke, no
+;; engine rebuild. An unknown or absent key reads as `unset` (never #f, which
+;; is a legitimate stored value); providers substitute their own default.
+(define (engine-pref engine key)
+  ((engine-prefs engine) key))
+
+;; `key` as a boolean with the provider's default for an unset value.
+(define (engine-pref-boolean engine key default)
+  (define value (engine-pref engine key))
+  (if (boolean? value) value default))
+
+;; Applications the user hid on the Applications settings page, matched by
+;; display name (case-insensitive).
+(define (engine-hidden-app-names engine)
+  (define names ((engine-hidden-apps engine)))
+  (if (list? names) names '()))
 
 ;; Windows' platform stage for `find` — one PowerShell process walking known
 ;; folders, the OS index, mapped drives and the profile — costs 7–9 s per
@@ -235,6 +256,7 @@
   (when (pair? subtitle-ranges)
     (set! parts (cons (string-append "s:" (ranges->meta subtitle-ranges)) parts)))
   (when (and (string=? (result-kind r) "Clipboard")
+             (engine-pref-boolean engine 'clipboard-mask-sensitive #t)
              (engine-clipboard engine)
              (let ([item (clipboard-item-ref (engine-clipboard engine)
                                              (result-arg r))])
@@ -288,7 +310,10 @@
 
 (define (recents-boost engine id arg)
   (define key (recents-key id arg))
-  (define entry (and key (hash-ref (engine-recents engine) key #f)))
+  (define entry
+    (and key
+         (engine-pref-boolean engine 'keep-history #t)
+         (hash-ref (engine-recents engine) key #f)))
   (if entry
       (let* ([count (car entry)]
              [age-ms (- (current-inexact-milliseconds) (cdr entry))]
@@ -298,8 +323,20 @@
         (exact-floor (* (min 150 (* 25 (min 6 count))) recency)))
       0))
 
+;; The Privacy settings page can switch launch history off or clear it:
+;; ranking then runs without the recents boost, and the file goes away.
+(define (engine-clear-history! engine)
+  (set-engine-recents! engine (hash))
+  (with-handlers ([exn:fail? void])
+    (when (file-exists? (engine-recents-path engine))
+      (delete-file (engine-recents-path engine)))))
+
 (define (engine-record-use! engine id arg)
-  (define key (recents-key id arg))
+  (define key
+    (and (engine-pref-boolean engine 'keep-history #t) (recents-key id arg)))
+  (when (and (not (engine-pref-boolean engine 'keep-history #t))
+             (> (hash-count (engine-recents engine)) 0))
+    (engine-clear-history! engine))
   (when key
     (call-with-semaphore
      (engine-recents-lock engine)
@@ -335,8 +372,13 @@
         (let ([prepared (prepare-app-rows (engine-apps-index engine))])
           (set-engine-apps-prepared! engine prepared)
           prepared)))
+  (define hidden
+    (list->set (map string-downcase (engine-hidden-app-names engine))))
+  (define visible
+    (filter (lambda (r) (not (set-member? hidden (string-downcase (vector-ref r 1)))))
+            rows))
   (define sorted-rows
-    (sort rows string<? #:key (lambda (r) (vector-ref r 1))))
+    (sort visible string<? #:key (lambda (r) (vector-ref r 1))))
   (lambda (query)
     (define q0
       (and (> (string-length query) 0)
@@ -349,7 +391,7 @@
                     (vector-ref row 0) (vector-ref row 4) "" ""
                     (vector-ref row 3)
                     100)))
-        (for/list ([row (in-list rows)]
+        (for/list ([row (in-list visible)]
                    #:when (row-matches-first-char? row q0))
           (define score
             (fuzzy-score-fields query (vector-ref row 5)))
@@ -367,22 +409,31 @@
 (define (calc-provider engine)
   (lambda (query)
     (if (or (zero? (string-length query))
-            (not (calc-looks-like-expression? query)))
+            (not (calc-looks-like-expression? query))
+            ;; The Calculator settings page can switch inline arithmetic off.
+            (not (engine-pref-boolean engine 'calc-enabled #t)))
         '()
         (with-handlers ([exn:calc? (lambda (_) '())])
           (define answer (calculate-display query))
-          (list (result "calc.copy" answer query "Calculator" answer
+          ;; "expression" copies `12*12 = 144`; the default copies 144.
+          (define copy
+            (if (eq? (engine-pref engine 'calc-copy-format) 'expression)
+                (format "~a = ~a" query answer)
+                answer))
+          (list (result "calc.copy" answer query "Calculator" copy
                         "calculator" "" "Copy" "" 140))))))
 
 ;; Inline date/unit/currency answers share the Calculator kind and the
 ;; calc.copy action so every host renders and copies them like arithmetic
 ;; (convert.rkt returns plain title/subtitle pairs; the result struct and
-;; the wire stay here).
+;; the wire stay here). They follow the same on/off switch.
 (define (convert-provider engine)
-  (lambda (query)
-    (for/list ([pair (in-list (convert-row-data query))])
-      (result "calc.copy" (car pair) (cdr pair) "Calculator" (car pair)
-              "calculator" "" "Copy" "" 130))))
+  (if (not (engine-pref-boolean engine 'calc-enabled #t))
+      (lambda (_query) '())
+      (lambda (query)
+        (for/list ([pair (in-list (convert-row-data query))])
+          (result "calc.copy" (car pair) (cdr pair) "Calculator" (car pair)
+                  "calculator" "" "Copy" "" 130)))))
 
 (define clipboard-history-queries
   '("clip" "clipboard" "clipboard history" "剪贴板" "剪贴板历史"))
@@ -416,14 +467,17 @@
                   "copy some text, then type clip again"
                   "Empty"))
            (for/list ([item (in-list items)])
-             ;; Sensitive rows travel masked: the raw text stays in the
-             ;; store, reaches the UI only through clipboard-reveal, and is
-             ;; never logged or synced (design v2 invariant 9).
+             ;; Sensitive rows travel masked unless the user turned masking
+             ;; off on the Clipboard settings page: the raw text stays in
+             ;; the store, reaches the UI only through clipboard-reveal,
+             ;; and is never logged or synced (design v2 invariant 9).
+             (define masked?
+               (and (clipboard-item-sensitive? item)
+                    (engine-pref-boolean engine 'clipboard-mask-sensitive #t)))
              (define preview
                (let ([text (string-replace (clipboard-item-text item) "\n" " ")])
                  (cond
-                   [(clipboard-item-sensitive? item)
-                    (mask-sensitive-preview text)]
+                   [masked? (mask-sensitive-preview text)]
                    [(> (string-length text) 120)
                     (string-append (substring text 0 120) "…")]
                    [else text])))
@@ -476,19 +530,21 @@
               '())))))
 
 (define (system-provider engine)
-  (lambda (query)
-    (for/list ([cmd (in-list (engine-syscmds engine))])
-      (define id (string-append "sys.run:" (system-command-name cmd)))
-      (define score
-        (if (zero? (string-length query))
-            50
-            (fuzzy-score-fields query (list (cons 1.0 (system-command-name cmd))))))
-      (and score
-           (result "sys.run" (system-command-name cmd)
-                   "System command" "System"
-                   (system-command-name cmd) "system" "" ""
-                   (with-alias engine id "")
-                   (+ score 50 (alias-boost engine id query)))))))
+  (if (not (engine-pref-boolean engine 'system-enabled #t))
+      (lambda (_query) '())
+      (lambda (query)
+        (for/list ([cmd (in-list (engine-syscmds engine))])
+          (define id (string-append "sys.run:" (system-command-name cmd)))
+          (define score
+            (if (zero? (string-length query))
+                50
+                (fuzzy-score-fields query (list (cons 1.0 (system-command-name cmd))))))
+          (and score
+               (result "sys.run" (system-command-name cmd)
+                       "System command" "System"
+                       (system-command-name cmd) "system" "" ""
+                       (with-alias engine id "")
+                       (+ score 50 (alias-boost engine id query))))))))
 
 ;; Per-command aliases (#48) join the row's ranking fields: the alias is
 ;; the user's own shorthand for the command, so it ranks with the title.
@@ -954,6 +1010,12 @@
 ;; provider (files.rkt); the honest row below appears only when the
 ;; platform's search tool is missing entirely, naming what would restore it.
 (define (files-provider engine)
+  ;; The settings page can switch this surface off; an off provider
+  ;; answers nothing instead of building rows that are dropped.
+  (if (engine-pref-boolean engine 'files-in-launcher #t)
+      (files-provider* engine)
+      (lambda (_query) '())))
+(define (files-provider* engine)
   (lambda (query)
     (define lowered (string-downcase query))
     (cond
@@ -1046,25 +1108,35 @@
                            85))]))))])))
 
 (define (window-provider engine)
-  (lambda (query)
-    (if (zero? (string-length query))
-        '()
-        (for/list ([entry (in-list window-commands)]
-                   #:when (fuzzy-score-fields
-                           query
-                           (list (cons 1.0 (cadr entry))
-                                 (cons 0.6 (caddr entry)))))
-          (result (car entry) (cadr entry)
-                  "Tile the frontmost window" "Window"
-                  "" "window" "" ""
-                  (with-alias engine (car entry) (caddr entry))
-                  (+ 65 (alias-boost engine (car entry) query)))))))
+  (if (not (engine-pref-boolean engine 'window-enabled #t))
+      (lambda (_query) '())
+      (lambda (query)
+        (if (zero? (string-length query))
+            '()
+            (for/list ([entry (in-list window-commands)]
+                       #:when (fuzzy-score-fields
+                               query
+                               (list (cons 1.0 (cadr entry))
+                                     (cons 0.6 (caddr entry)))))
+              (result (car entry) (cadr entry)
+                      "Tile the frontmost window" "Window"
+                      "" "window" "" ""
+                      (with-alias engine (car entry) (caddr entry))
+                      (+ 65 (alias-boost engine (car entry) query))))))))
 
 ;; Emoji search: inline results while typing (Raycast-style), Enter
 ;; pastes the character straight into the frontmost app through the same
-;; host event a clipboard paste uses. Keyword-free and cheap: the dataset
+;; host event a clipboard paste uses — or copies it when the Emoji &
+;; Symbols settings page says so (the row id stays `emoji.paste`; the
+;; action follows the preference). Keyword-free and cheap: the dataset
 ;; is a few hundred entries scanned per keystroke.
 (define (emoji-provider engine)
+  ;; The settings page can switch this surface off; an off provider
+  ;; answers nothing instead of building rows that are dropped.
+  (if (engine-pref-boolean engine 'emoji-enabled #t)
+      (emoji-provider* engine)
+      (lambda (_query) '())))
+(define (emoji-provider* engine)
   (lambda (query)
     (define trimmed (string-trim query))
     (if (< (string-length trimmed) 2)
@@ -1174,10 +1246,17 @@
                  (action-row "copy" "Copy path" "Copy"
                              (application-path app)))
            '())]
-      ;; ↵ on a clipboard row already pastes; the panel keeps Copy for the
-      ;; times the frontmost app is not where the text belongs.
+      ;; ↵ on a clipboard row does what the Clipboard settings page says
+      ;; (paste by default); the panel keeps the other action for the times
+      ;; the frontmost app is not where the text belongs.
       [(string=? id "clip.paste")
-       (list (action-row "clip.copy" "Copy" "Copy" arg)
+       (list (action-row (if (eq? (engine-pref engine 'clipboard-default-action) 'copy)
+                            "clip.paste" "clip.copy")
+                         (if (eq? (engine-pref engine 'clipboard-default-action) 'copy)
+                            "Paste to frontmost" "Copy")
+                         (if (eq? (engine-pref engine 'clipboard-default-action) 'copy)
+                            "Paste" "Copy")
+                         arg)
              (action-row "clip.pin"
                          (clipboard-pin-label engine arg) "Pin" arg)
              (action-row "clip.delete" "Delete entry" "Delete" arg))]
@@ -1226,7 +1305,9 @@
                   #:file-catalog-roots [file-catalog-roots '()]
                   #:file-catalog-nudge [file-catalog-nudge void]
                   #:file-search-os [file-search-os (system-type 'os)]
-                  #:file-platform-search [file-platform-search file-search/status])
+                  #:file-platform-search [file-platform-search file-search/status]
+                  #:pref-thunk [pref-thunk (lambda (_key) 'unset)]
+                  #:hidden-apps-thunk [hidden-apps-thunk (lambda () '())])
   (->* (#:clipboard-store (or/c clipboard-store? #f)
         #:snippet-store (or/c snippet-store? #f)
         #:plugin-manager (or/c plugin-manager? #f))
@@ -1244,7 +1325,9 @@
               #:index-path (or/c path-string? #f)
               #:catalog-ready? boolean?
               #:platform-stage? boolean?)
-             file-search-result?))
+             file-search-result?)
+        #:pref-thunk (-> symbol? any/c)
+        #:hidden-apps-thunk (-> list?))
        engine?)
   (engine (make-hash) #f
           clipboard-store
@@ -1268,7 +1351,9 @@
           workflow-store
           file-search-os
           file-platform-search
-          (box #f)))
+          (box #f)
+          pref-thunk
+          hidden-apps-thunk))
 
 (define (engine-rebuild-index! engine)
   (define apps (discover-applications))
@@ -1683,7 +1768,12 @@
      (finish (cons "copied" (list (cons 'copy-to-clipboard arg))))]
     [(string=? id "copy")
      (finish (cons "copied" (list (cons 'copy-to-clipboard arg))))]
-    [(string=? id "clip.paste") (finish (clip-paste-event! engine arg))]
+    [(string=? id "clip.paste")
+     ;; The row id stays `clip.paste`; Enter follows the Clipboard settings
+     ;; page's default action.
+     (finish (if (eq? (engine-pref engine 'clipboard-default-action) 'copy)
+                 (clip-copy-event! engine arg)
+                 (clip-paste-event! engine arg)))]
     [(string=? id "clip.copy") (finish (clip-copy-event! engine arg))]
     [(string=? id "clip.pin")
      (finish
@@ -1758,7 +1848,9 @@
     [(string=? id "gallery.update")
      (finish (gallery-act! engine gallery-update! "Updated" arg))]
     [(string=? id "emoji.paste")
-     (finish (cons "copied" (list (cons 'paste-to-frontmost arg))))]
+     (finish (if (eq? (engine-pref engine 'emoji-action) 'copy)
+                 (cons "copied" (list (cons 'copy-to-clipboard arg)))
+                 (cons "copied" (list (cons 'paste-to-frontmost arg)))))]
     [(string-prefix? id "plugin:")
      (finish
       (let ([status (plugin-manager-run! (engine-plugins engine)
