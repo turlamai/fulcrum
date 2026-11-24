@@ -51,6 +51,8 @@
          boot!
          current-engine
          current-settings
+         current-lists
+         current-bindings
          app-version
          rows-for
          settings-act!
