@@ -629,7 +629,9 @@
           (and (pair? ui) (string=? (list-ref (car ui) 0) "section") #t) #t)
   (define-values (nset _n1 _n2)
     (call-rpc 142 (list "named-list-set" "app-folders" "" "Tools" "/opt/tools" "" "on")))
-  (check! "named-list-set returns an id" (string? nset) #t)
+  (check! "named-list-set returns an id"
+          (if (string? nset) #t (format "refused: ~a" _n1)) #t)
+  (check! "named-list-items no error" _n3 #f)
   (define-values (nitems _n3 _n4) (call-rpc 143 (list "named-list-items" "app-folders")))
   (check! "named list keeps the folder"
           (and (member "/opt/tools" (map (lambda (r) (list-ref r 2)) nitems)) #t) #t)
