@@ -444,8 +444,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onHide = { [weak self] in self?.hidePanel() }
     }
 
-    /// Keep the launcher at 680 x 640 while results, actions, AI and
-    /// detail panels change. Search edits must never move the bottom edge.
+    /// Keep the launcher within its 680 x 640 design ceiling while results,
+    /// actions, AI and detail panels change. Search edits must never move
+    /// the bottom edge.
     func updatePanelHeight(rowCount: Int, modebar: Bool, ai: Bool, detail: Bool) {
         // Geometry remains fixed; the results area scrolls.
         // Preserve the signature for the existing view state callbacks.
@@ -460,10 +461,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ?? NSScreen.main ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
         // AppKit sizes in points, so mixed backing scales need no manual DPI
-        // math; but a small secondary display must still clamp the panel the
-        // way Windows/X11 clamp to the work area (design v2: 680x640).
-        let size = NSSize(width: min(680, visible.width),
-                          height: min(640, visible.height))
+        // math. 680x640 is a ceiling with the family fit rule: at most 55%
+        // of the visible width and 65% of its height (the Windows/X11 fits
+        // use the same shares), so a low-resolution screen keeps a panel
+        // instead of a backdrop and the results list scrolls.
+        let size = NSSize(width: min(680, visible.width * 0.55),
+                          height: min(640, visible.height * 0.65))
         if panel.frame.size != size {
             panel.setContentSize(size)
         }
