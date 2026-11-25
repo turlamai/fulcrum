@@ -47,6 +47,8 @@
 (void (dynamic-require backend-path #f))
 (define current-engine (dynamic-require backend-path 'current-engine))
 (define current-settings (dynamic-require backend-path 'current-settings))
+(define current-lists (dynamic-require backend-path 'current-lists))
+(define current-bindings (dynamic-require backend-path 'current-bindings))
 
 (define make-settings-manager (get "app/core/settings.rkt" 'make-settings-manager))
 (define settings-path (get "app/core/paths.rkt" 'settings-path))
@@ -56,6 +58,8 @@
 (define make-snippets (get "app/core/snippets.rkt" 'make-snippet-store))
 (define make-workflows (get "app/core/workflows.rkt" 'make-workflow-store))
 (define workflows-path* (get "app/core/paths.rkt" 'workflows-path))
+(define make-lists (get "app/core/lists.rkt" 'make-list-store))
+(define lists-path* (get "app/core/paths.rkt" 'lists-path))
 (define make-engine (get "app/core/engine.rkt" 'make-engine))
 (define rebuild (get "app/core/engine.rkt" 'engine-rebuild-index!))
 (define app-count* (get "app/core/engine.rkt" 'engine-app-count))
@@ -73,6 +77,11 @@
 (void (rebuild eng))
 (current-settings manager)
 (current-engine eng)
+(current-bindings (make-bindings (bindings-path)))
+;; The named lists (#241) are boot!-built in production; the wire fixture
+;; sets them the same way on every platform, so the settings-v2 checks
+;; below run on Windows and macOS too (they were Unix-only once).
+(current-lists (make-lists (lists-path*)))
 
 (define-values (server-in client-out) (make-pipe))
 (define-values (client-in server-out) (make-pipe))
@@ -622,6 +631,37 @@
           #t)
 
   (delete-directory/files fixture-dir))
+
+;; Settings v2 (#241): the settings window rows, named lists, the history
+;; reset and JSON export / import, all over RVT1.
+(define-values (ui ui-err _ui-ev) (call-rpc 141 (list "settings-ui")))
+(check! "settings-ui no error" ui-err #f)
+(check! "settings-ui leads with a section row"
+        (and (pair? ui) (string=? (list-ref (car ui) 0) "section") #t) #t)
+(define-values (nset _n1 _n2)
+  (call-rpc 142 (list "named-list-set" "app-folders" "" "Tools" "/opt/tools" "" "on")))
+(check! "named-list-set returns an id"
+        (if (string? nset) #t (format "refused: ~a" _n1)) #t)
+(define-values (nitems _n3 _n4) (call-rpc 143 (list "named-list-items" "app-folders")))
+(check! "named list keeps the folder"
+        (and (member "/opt/tools" (map (lambda (r) (list-ref r 2)) nitems)) #t) #t)
+(define-values (_nbad nbad-err _n5)
+  (call-rpc 144 (list "named-list-set" "ignore-rules" "" "cache" "" "" "on")))
+(check! "ignore rule without a pattern is refused"
+        (and (string? nbad-err) (regexp-match? #px"^pattern-required" nbad-err) #t) #t)
+(define-values (nrem _n6 _n7) (call-rpc 145 (list "named-list-remove" "app-folders" nset)))
+(check! "named-list-remove ok" nrem #t)
+(define-values (exp _x1 _x2) (call-rpc 146 (list "settings-export" "appearance,features")))
+(check! "settings-export is the v2 envelope"
+        (and (string? exp) (string-contains? exp "fulcrum-settings") #t) #t)
+(define-values (plan plan-err _x3) (call-rpc 147 (list "settings-import" exp "off")))
+(check! "settings-import dry run reports a plan"
+        (and (not plan-err) (regexp-match? #px"^plan:" plan) #t) #t)
+(define-values (imp-bad imp-err _x4) (call-rpc 148 (list "settings-import" "not json" "on")))
+(check! "a malformed import is refused"
+        (and (not imp-bad) (regexp-match? #px"^format" imp-err) #t) #t)
+(define-values (hc _h1 _h2) (call-rpc 149 (list "history-clear")))
+(check! "history-clear ok" hc #t)
 
 (kill-thread srv)
 (delete-directory/files root)

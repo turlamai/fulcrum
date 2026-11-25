@@ -205,9 +205,25 @@ public struct RivetAPI: Sendable {
         let rivetResult = try await client.call("health", arguments: [])
         return try decode_String(rivetResult)
     }
+    public func history_clear() async throws -> Bool {
+        let rivetResult = try await client.call("history-clear", arguments: [])
+        return try decode_Bool(rivetResult)
+    }
     public func index_rebuild() async throws -> Int64 {
         let rivetResult = try await client.call("index-rebuild", arguments: [])
         return try decode_Int64(rivetResult)
+    }
+    public func named_list_items(kind: String) async throws -> [[String]] {
+        let rivetResult = try await client.call("named-list-items", arguments: [encode_String(kind)])
+        return try decode__List_List_String_(rivetResult)
+    }
+    public func named_list_remove(kind: String, id: String) async throws -> Bool {
+        let rivetResult = try await client.call("named-list-remove", arguments: [encode_String(kind), encode_String(id)])
+        return try decode_Bool(rivetResult)
+    }
+    public func named_list_set(kind: String, id: String, name: String, path: String, extra: String, enabled: String) async throws -> String {
+        let rivetResult = try await client.call("named-list-set", arguments: [encode_String(kind), encode_String(id), encode_String(name), encode_String(path), encode_String(extra), encode_String(enabled)])
+        return try decode_String(rivetResult)
     }
     public func plugin_detail(row_id: String, arg: String) async throws -> RivetTypes.DetailView {
         let rivetResult = try await client.call("plugin-detail", arguments: [encode_String(row_id), encode_String(arg)])
@@ -221,6 +237,18 @@ public struct RivetAPI: Sendable {
         let rivetResult = try await client.call("plugins-reload", arguments: [])
         return try decode_Void(rivetResult)
     }
+    public func quicklink_delete(id: String) async throws -> Bool {
+        let rivetResult = try await client.call("quicklink-delete", arguments: [encode_String(id)])
+        return try decode_Bool(rivetResult)
+    }
+    public func quicklink_list() async throws -> [[String]] {
+        let rivetResult = try await client.call("quicklink-list", arguments: [])
+        return try decode__List_List_String_(rivetResult)
+    }
+    public func quicklink_save(id: String, name: String, keyword: String, url: String) async throws -> String {
+        let rivetResult = try await client.call("quicklink-save", arguments: [encode_String(id), encode_String(name), encode_String(keyword), encode_String(url)])
+        return try decode_String(rivetResult)
+    }
     public func row_actions(id: String, arg: String) async throws -> [[String]] {
         let rivetResult = try await client.call("row-actions", arguments: [encode_String(id), encode_String(arg)])
         return try decode__List_List_String_(rivetResult)
@@ -233,6 +261,14 @@ public struct RivetAPI: Sendable {
         let rivetResult = try await client.call("search", arguments: [encode_String(query)])
         return try decode__List_List_String_(rivetResult)
     }
+    public func settings_export(categories: String) async throws -> String {
+        let rivetResult = try await client.call("settings-export", arguments: [encode_String(categories)])
+        return try decode_String(rivetResult)
+    }
+    public func settings_import(payload: String, apply: String) async throws -> String {
+        let rivetResult = try await client.call("settings-import", arguments: [encode_String(payload), encode_String(apply)])
+        return try decode_String(rivetResult)
+    }
     public func settings_list() async throws -> [[String]] {
         let rivetResult = try await client.call("settings-list", arguments: [])
         return try decode__List_List_String_(rivetResult)
@@ -240,6 +276,10 @@ public struct RivetAPI: Sendable {
     public func settings_set(key: String, value: String) async throws -> Bool {
         let rivetResult = try await client.call("settings-set", arguments: [encode_String(key), encode_String(value)])
         return try decode_Bool(rivetResult)
+    }
+    public func settings_ui() async throws -> [[String]] {
+        let rivetResult = try await client.call("settings-ui", arguments: [])
+        return try decode__List_List_String_(rivetResult)
     }
     public func snippet_delete(id: String) async throws -> Bool {
         let rivetResult = try await client.call("snippet-delete", arguments: [encode_String(id)])
