@@ -224,9 +224,15 @@ do {
             stringAttribute($0, kAXTitleAttribute) == "Fulcrum Settings"
         }
     }
-    for identifier in ["settings-sidebar-general", "settings-sidebar-features",
-                       "settings-sidebar-ai", "settings-sidebar-commands",
-                       "settings-sidebar-sync"] {
+    // The sidebar comes from the backend's settings-ui page rows.
+    for identifier in ["settings-search", "settings-sidebar-general", "settings-sidebar-files",
+                       "settings-sidebar-apps", "settings-sidebar-commands",
+                       "settings-sidebar-clipboard", "settings-sidebar-snippets",
+                       "settings-sidebar-quicklinks", "settings-sidebar-extensions",
+                       "settings-sidebar-workflows", "settings-sidebar-windows",
+                       "settings-sidebar-calculator", "settings-sidebar-symbols",
+                       "settings-sidebar-system", "settings-sidebar-ai",
+                       "settings-sidebar-privacy", "settings-sidebar-sync"] {
         guard findByIdentifier(settingsWindow, identifier) != nil else {
             throw DriverError.failure("settings sidebar is missing \(identifier)")
         }
@@ -252,7 +258,7 @@ do {
         contains(settingsWindow, fragment: "Fulcrum checks signed releases automatically") ? true : nil
     }
     try writeJSON(snapshot(application), to: output.appendingPathComponent("settings-accessibility.json"))
-    try writeJSON(["platform": "macos", "actions": ["copy:clipboard-fixture", "set:FulcrumQuery=clip", "set:FulcrumQuery=12*12", "press:Return", "press:CommandComma", "assert:settings-start-at-login", "press:settings-sidebar-sync", "press:completed-update", "press:update-close", "reopen:update-close"], "assertions": ["packaged SwiftUI window activated", "FulcrumQuery exposed through Accessibility", "macOS pasteboard watcher recorded text through RVT1", "clip query listed clipboard history", "query crossed RVT1 into the embedded backend", "native result list contains 144", "run-action emitted 144 to the native clipboard", "all five settings destinations are directly accessible", "global hotkey uses a recorder control", "OS-owned Start at login toggle available", "internal update feed is absent", "Sync & Updates opens without a toolbar overflow menu", "native update panel Close hides the actual AppKit window", "completed update panel can be reopened and closed again without a spinner"]], to: output.appendingPathComponent("interaction-trace.json"))
+    try writeJSON(["platform": "macos", "actions": ["copy:clipboard-fixture", "set:FulcrumQuery=clip", "set:FulcrumQuery=12*12", "press:Return", "press:CommandComma", "assert:settings-start-at-login", "press:settings-sidebar-sync", "press:completed-update", "press:update-close", "reopen:update-close"], "assertions": ["packaged SwiftUI window activated", "FulcrumQuery exposed through Accessibility", "macOS pasteboard watcher recorded text through RVT1", "clip query listed clipboard history", "query crossed RVT1 into the embedded backend", "native result list contains 144", "run-action emitted 144 to the native clipboard", "all sixteen settings destinations and the search box are directly accessible", "global hotkey uses a recorder control", "OS-owned Start at login toggle available", "internal update feed is absent", "Sync & Updates opens without a toolbar overflow menu", "native update panel Close hides the actual AppKit window", "completed update panel can be reopened and closed again without a spinner"]], to: output.appendingPathComponent("interaction-trace.json"))
     guard let running = NSRunningApplication(processIdentifier: pid), running.terminate() else { throw DriverError.failure("native application rejected termination") }
 } catch {
     if let application = diagnosticApplication, let output = diagnosticOutput { try? writeJSON(snapshot(application), to: output.appendingPathComponent("accessibility-failure.json")) }

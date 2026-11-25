@@ -124,6 +124,8 @@
   "settings.ai-api-key": "API 密钥",
   "settings.save": "保存",
   "settings.ai-ready": "就绪",
+  "settings.ai-status.no-provider": "请先在上方选择服务提供商。",
+  "settings.ai-status.no-key": "尚未保存此提供商的 API 密钥：",
   "settings.hotkey.placeholder": "聚焦后按下快捷键",
   "settings.ai-key.placeholder": "粘贴密钥",
   "settings.ai-model.placeholder": "留空使用提供商默认",
@@ -424,5 +426,6 @@
   "settings.transfer.features": "功能偏好",
   "settings.transfer.commands": "命令与快捷键",
   "settings.transfer.content": "片段与快速链接",
+  "settings.browse": "浏览…",
   "settings.keys.saved": "API 密钥已保存。"
 }

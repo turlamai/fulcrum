@@ -124,6 +124,8 @@
   "settings.ai-api-key": "API key",
   "settings.save": "Save",
   "settings.ai-ready": "Ready",
+  "settings.ai-status.no-provider": "Choose a provider above first.",
+  "settings.ai-status.no-key": "No API key saved for",
   "settings.hotkey.placeholder": "Focus and press a shortcut",
   "settings.ai-key.placeholder": "paste a key",
   "settings.ai-model.placeholder": "provider default",
@@ -424,5 +426,6 @@
   "settings.transfer.features": "Feature preferences",
   "settings.transfer.commands": "Commands & shortcuts",
   "settings.transfer.content": "Snippets & quicklinks",
+  "settings.browse": "Browse…",
   "settings.keys.saved": "API key saved."
 }
