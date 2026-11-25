@@ -24,6 +24,8 @@ Choose your Mac installer from [the latest GitHub Release](https://github.com/tu
 canonical; duplicate versionless installers are not published.
 Open the **DMG**, drag **Fulcrum** onto **Applications**, eject the disk image, then launch **Fulcrum from Applications**, not from the mounted installer. The icon on the right in the DMG is an Applications shortcut.
 
+Verify the checksum before running anything: download `SHA256SUMS` from the same release and run `shasum -a 256 --check --ignore-missing SHA256SUMS` with the installer in the same directory.
+
 **Signing note:** Current release jobs use development/ad-hoc signing, not an Apple-notarized Developer ID build. Gatekeeper may block the first launch. Verify the download comes from the official release before making any exception; see [Apple's guidance](https://support.apple.com/102445). Do **not** globally disable Gatekeeper or strip quarantine attributes. We are tracking signed/notarized distribution separately. On first use, grant Accessibility permission only when Fulcrum requests it for clipboard paste or snippets. See the [macOS first-run guide](docs/user-guide.md#install-and-first-launch-on-macos).
 
 ## What is Fulcrum?
