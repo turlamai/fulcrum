@@ -1193,7 +1193,7 @@ struct SettingsView: View {
                     // The empty option is the "Off" provider; its key
                     // spelling is `off`.
                     ForEach(row.options, id: \.self) { option in
-                        Text(t("settings.opt.\(row.key).\(option.isEmpty ? "off" : option))")
+                        Text(t("settings.opt.\(row.key).\(option.isEmpty ? "off" : option)"))
                             .tag(option)
                     }
                 }

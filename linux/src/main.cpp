@@ -3637,7 +3637,7 @@ void settings_build_schema() {
       }
     }
     std::string const nav_key = "settings.nav." + page.id;
-    auto* button = gtk_toggle_button_new_with_label(tr(nav_key.c_str()));
+    auto* button = gtk_toggle_button_new_with_label(tr(nav_key.c_str()).c_str());
     gtk_widget_add_css_class(button, "settings-nav");
     gtk_widget_set_halign(button, GTK_ALIGN_FILL);
     gtk_widget_set_valign(button, GTK_ALIGN_CENTER);
@@ -3667,7 +3667,7 @@ void settings_build_schema() {
     gtk_stack_add_named(stack, scrolled, page.id.c_str());
     std::string const description_key = "settings.page." + page.id;
     if (settings_has_i18n(description_key)) {
-      auto* description = gtk_label_new(tr(description_key.c_str()));
+      auto* description = gtk_label_new(tr(description_key.c_str()).c_str());
       gtk_label_set_xalign(GTK_LABEL(description), 0.0);
       gtk_label_set_wrap(GTK_LABEL(description), TRUE);
       gtk_widget_add_css_class(description, "dim-label");
@@ -3691,12 +3691,12 @@ void settings_build_schema() {
   // group was rebuilt).
   for (auto const& id_pair : form->localized_pages) {
     auto const& key = id_pair.second;
-    auto* button = gtk_toggle_button_new_with_label(tr(key.c_str()));
+    auto* button = gtk_toggle_button_new_with_label(tr(key.c_str()).c_str());
     gtk_widget_add_css_class(button, "settings-nav");
     gtk_widget_set_halign(button, GTK_ALIGN_FILL);
     gtk_accessible_update_property(GTK_ACCESSIBLE(button),
                                    GTK_ACCESSIBLE_PROPERTY_LABEL,
-                                   ("settings-sidebar-" + id).c_str(), -1);
+                                   ("settings-sidebar-" + id_pair.first).c_str(), -1);
     auto* id = new std::string(id_pair.first);
     g_object_set_data_full(G_OBJECT(button), "settings-page", id,
                            [](gpointer data) { delete static_cast<std::string*>(data); });
@@ -3978,7 +3978,7 @@ void on_app_switch(GObject* object, GParamSpec*, gpointer data) {
     if (api == nullptr) return {};
     SettingsOutcome outcome;
     try {
-      api->named_list_set("apps", (*item)[0], (*item)[1], (*item)[2], "",
+      api->named_list_set("apps", item[0], item[1], item[2], "",
                           enabled ? "on" : "off").get();
     } catch (std::exception const& e) {
       outcome.error = settings_list_refusal(e.what());
@@ -4214,7 +4214,7 @@ std::shared_ptr<SettingsFormDialog> settings_dialog_new(char const* title_key) {
   auto* window = gtk_window_new();
   gtk_window_set_transient_for(GTK_WINDOW(window), g_settings_form->window);
   gtk_window_set_modal(GTK_WINDOW(window), TRUE);
-  gtk_window_set_title(GTK_WINDOW(window), tr(title_key));
+  gtk_window_set_title(GTK_WINDOW(window), tr(title_key).c_str());
   auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
   gtk_widget_set_margin_top(box, 20);
   gtk_widget_set_margin_bottom(box, 20);
@@ -4222,7 +4222,7 @@ std::shared_ptr<SettingsFormDialog> settings_dialog_new(char const* title_key) {
   gtk_widget_set_margin_end(box, 20);
   gtk_widget_set_size_request(box, 440, -1);
   gtk_window_set_child(GTK_WINDOW(window), box);
-  auto* heading = gtk_label_new(tr(title_key));
+  auto* heading = gtk_label_new(tr(title_key).c_str());
   gtk_label_set_xalign(GTK_LABEL(heading), 0.0);
   gtk_widget_add_css_class(heading, "heading");
   gtk_box_append(GTK_BOX(box), heading);
@@ -4238,7 +4238,7 @@ std::shared_ptr<SettingsFormDialog> settings_dialog_new(char const* title_key) {
 
 GtkWidget* settings_dialog_field(SettingsFormDialog const& dialog, char const* label_key,
                                  std::string const& initial, bool multi_line = false) {
-  auto* label = gtk_label_new(tr(label_key));
+  auto* label = gtk_label_new(tr(label_key).c_str());
   gtk_label_set_xalign(GTK_LABEL(label), 0.0);
   gtk_widget_add_css_class(label, "caption");
   gtk_box_append(GTK_BOX(dialog.box), label);
@@ -4284,8 +4284,8 @@ void settings_dialog_present(std::shared_ptr<SettingsFormDialog> dialog) {
   gtk_box_append(GTK_BOX(dialog->box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
   auto* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_widget_set_halign(buttons, GTK_ALIGN_END);
-  auto* cancel = gtk_button_new_with_label(tr("settings.cancel"));
-  auto* primary = gtk_button_new_with_label(tr(dialog->primary_label.c_str()));
+  auto* cancel = gtk_button_new_with_label(tr("settings.cancel").c_str());
+  auto* primary = gtk_button_new_with_label(tr(dialog->primary_label.c_str()).c_str());
   gtk_widget_add_css_class(primary, "suggested-action");
   // The state lives as long as the window; the shared_ptr in flight keeps
   // it valid past a close.
@@ -4343,12 +4343,12 @@ void settings_edit_named_list(std::string kind, std::string id, std::string name
   GtkWidget* path_entry = nullptr;
   if (folders) {
     path_entry = settings_dialog_field(*dialog, "settings.list.path", path);
-    auto* browse = gtk_button_new_with_label(tr("settings.browse"));
+    auto* browse = gtk_button_new_with_label(tr("settings.browse").c_str());
     gtk_widget_set_halign(browse, GTK_ALIGN_START);
     settings_on_clicked(browse, [dialog, path_entry] {
       auto* chooser = gtk_file_chooser_native_new(
-          tr("settings.browse"), GTK_WINDOW(dialog->window),
-          GTK_FILE_CHOOSER_SELECT_FOLDER, tr("settings.cancel"), tr("settings.browse"));
+          tr("settings.browse").c_str(), GTK_WINDOW(dialog->window),
+          GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, tr("settings.cancel").c_str(), tr("settings.browse").c_str());
       g_signal_connect(GTK_NATIVE_DIALOG(chooser), "response",
                        G_CALLBACK(+[](GtkNativeDialog* native, gint response, gpointer data) {
         auto* entry = GTK_EDITABLE(data);
@@ -4467,7 +4467,7 @@ void settings_export_dialog() {
       "settings.transfer.commands", "settings.transfer.content"};
   std::array<char const*, 4> const categories{"appearance", "features", "commands", "content"};
   for (std::size_t i = 0; i < keys.size(); ++i) {
-    auto* check = gtk_check_button_new_with_label(tr(keys[i]));
+    auto* check = gtk_check_button_new_with_label(tr(keys[i]).c_str());
     gtk_check_button_set_active(GTK_CHECK_BUTTON(check), TRUE);
     gtk_widget_set_halign(check, GTK_ALIGN_START);
     gtk_box_append(GTK_BOX(dialog->box), check);
@@ -4491,8 +4491,8 @@ void settings_export_dialog() {
     };
     auto* state = new ChooserState{chosen, dialog};
     auto* chooser = gtk_file_chooser_native_new(
-        tr("settings.sync.export"), GTK_WINDOW(dialog->window),
-        GTK_FILE_CHOOSER_SAVE, tr("settings.cancel"), tr("settings.sync.export"));
+        tr("settings.sync.export").c_str(), GTK_WINDOW(dialog->window),
+        GTK_FILE_CHOOSER_ACTION_SAVE, tr("settings.cancel").c_str(), tr("settings.sync.export").c_str());
     gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(chooser), "fulcrum-settings.json");
     g_signal_connect(GTK_NATIVE_DIALOG(chooser), "response",
                      G_CALLBACK(+[](GtkNativeDialog* native, gint response, gpointer data) {
@@ -4541,8 +4541,8 @@ void settings_export_dialog() {
 void settings_import_file() {
   if (g_settings_form == nullptr) return;
   auto* chooser = gtk_file_chooser_native_new(
-      tr("settings.sync.import"), GTK_WINDOW(g_settings_form->window),
-      GTK_FILE_CHOOSER_OPEN, tr("settings.cancel"), tr("settings.sync.import"));
+      tr("settings.sync.import").c_str(), GTK_WINDOW(g_settings_form->window),
+      GTK_FILE_CHOOSER_ACTION_OPEN, tr("settings.cancel").c_str(), tr("settings.sync.import").c_str());
   auto* filters = gtk_file_filter_new();
   gtk_file_filter_set_name(filters, "JSON");
   gtk_file_filter_add_pattern(filters, "*.json");

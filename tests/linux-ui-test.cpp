@@ -196,18 +196,39 @@ int main() {
   launcher.show();
   check(gtk_widget_get_visible(GTK_WIDGET(launcher.window)),
         "a later explicit summon reopens the login-started launcher");
-  // The five navigation pages are real GtkStack children rather than
-  // unlabelled sections in a single 760px scrolling form.
+  // The stack owns the search page and the two native editors before the
+  // backend answers; the fifteen schema pages are built from settings-ui.
   settings_build();
   check(GTK_IS_STACK(g_settings_form->stack),
         "Settings uses a native GTK page stack");
-  for (auto const* name : {"general", "features", "ai", "commands", "sync"}) {
+  for (auto const* name : {"__search", "commands", "workflows"}) {
     check(gtk_stack_get_child_by_name(GTK_STACK(g_settings_form->stack), name) != nullptr,
-          "all five Settings destinations exist");
+          "search page and native editors exist before the backend answers");
   }
   check(g_settings_form->commands_list != nullptr &&
             g_settings_form->commands_message != nullptr,
         "Commands destination owns a real backend editor and status");
+  // Feed the shape settings-ui sends (page, section, setting rows): each
+  // page becomes a stack child with its nav toggle, and the device-local
+  // login row sits in General ahead of the hotkey row.
+  g_settings_form->schema = settings_parse_schema({
+      {"page", "general", "workspace"},
+      {"section", "general", "general"},
+      {"setting", "language", "general", "general", "select", "system,en,zh", "system"},
+      {"setting", "hotkey", "general", "general", "hotkey", "", "alt+space"},
+      {"page", "sync", "preferences"},
+      {"section", "sync", "configuration"},
+      {"setting", "sync-root", "sync", "configuration", "text", "", ""},
+  });
+  settings_build_schema();
+  for (auto const* name : {"general", "sync"}) {
+    check(gtk_stack_get_child_by_name(GTK_STACK(g_settings_form->stack), name) != nullptr,
+          "every settings-ui page becomes a Settings destination");
+  }
+  check(g_settings_form->nav_buttons.count("general") == 1 &&
+            g_settings_form->nav_buttons.count("sync") == 1 &&
+            g_settings_form->nav_buttons.count("__search") == 0,
+        "the sidebar lists schema pages and editors, never the search page");
   check(has_label(GTK_WIDGET(g_settings_form->window), "Start at login"),
         "device-local login control is discoverable in Settings");
   gtk_window_destroy(g_settings_form->window);
