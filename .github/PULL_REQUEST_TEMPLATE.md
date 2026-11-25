@@ -27,4 +27,4 @@ leg, or a new test added in the same commit.
 
 - [ ] CHANGELOG.md updated for user-visible changes
 - [ ] Docs updated in the same change (README / user-guide, both languages)
-- [ ] Security-relevant behavior flagged per [SECURITY.md](SECURITY.md)
+- [ ] Security-relevant behavior flagged per [SECURITY.md](../SECURITY.md)
