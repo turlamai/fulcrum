@@ -1,0 +1,607 @@
+/*
+ * Fulcrum — guide page stylesheet.
+ *
+ * guide.html expects this file ("the shared stylesheet's neutral
+ * defaults — family pattern"): it carries the neutral tokens and the
+ * manual-page layout; the page's own inline block re-asserts the
+ * accent values on top of it.
+ *
+ * Neutral values follow the current family spec (site-kit v1.0.3) so
+ * the guide page matches the homepage in both themes.
+ */
+
+:root {
+    /* Neutral tokens — family spec (light) */
+    --bg: #FAF8F5;
+    --surface: #FFFFFF;
+    --bg-elevated: #FFFFFF;
+    --bg-sidebar: #F3EFE9;
+    --ink: #201B16;
+    --text: var(--ink);
+    --text-2: #5D554C;
+    --text-3: #8A8177;
+    --muted: var(--text-2);
+    --line: rgba(32, 27, 22, 0.12);
+    --border: var(--line);
+    --border-strong: rgba(32, 27, 22, 0.24);
+    --nav-bg: rgba(250, 248, 245, 0.82);
+    --hover-wash: rgba(32, 27, 22, 0.05);
+
+    /* Layout & type */
+    --wrapper-width: 1080px;
+    --radius-s: 8px;
+    --radius-m: 12px;
+    --radius-l: 16px;
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
+        Consolas, "Liberation Mono", monospace;
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html[data-theme="dark"] {
+    --bg: #16120F;
+    --surface: #1F1A16;
+    --bg-elevated: #1F1A16;
+    --bg-sidebar: #262019;
+    --ink: #F1ECE5;
+    --text-2: #A89F93;
+    --text-3: #7A7166;
+    --line: rgba(241, 236, 229, 0.13);
+    --border-strong: rgba(241, 236, 229, 0.26);
+    --nav-bg: rgba(22, 18, 15, 0.82);
+    --hover-wash: rgba(241, 236, 229, 0.06);
+}
+
+/* Reset & base */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 80px;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    letter-spacing: -0.011em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+    text-decoration: none;
+    color: var(--accent);
+    transition: color 0.2s var(--ease);
+}
+
+ul {
+    list-style: none;
+}
+
+::selection {
+    background: var(--accent-soft);
+    color: var(--text);
+}
+
+/* Navigation */
+.nav-container {
+    position: sticky;
+    top: 0;
+    width: 100%;
+    height: 56px;
+    background: var(--nav-bg);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid var(--border);
+    z-index: 9999;
+}
+
+.nav-wrapper {
+    max-width: var(--wrapper-width);
+    margin: 0 auto;
+    height: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 24px;
+}
+
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 22px;
+    color: var(--text);
+    letter-spacing: -0.02em;
+}
+
+.nav-logo {
+    flex-shrink: 0;
+    border-radius: 6px;
+}
+
+.nav-menu {
+    display: flex;
+    gap: 28px;
+    align-items: center;
+}
+
+.nav-menu a {
+    font-size: 14px;
+    color: var(--text-2);
+    font-weight: 450;
+    transition: color 0.2s;
+}
+
+.nav-menu a:hover {
+    color: var(--accent);
+}
+
+/* Theme toggle */
+.theme-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-2);
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.theme-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--hover-wash);
+}
+
+/* Language dropdown (choice items styled inline by the page) */
+.lang-dropdown-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.lang-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    font-size: 13px;
+    color: var(--text-2);
+    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 7px;
+    transition: background 0.2s;
+    font-weight: 500;
+    font-family: var(--font-sans);
+}
+
+.lang-btn:hover {
+    background: var(--hover-wash);
+}
+
+.lang-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    background: var(--bg-elevated);
+    border-radius: 10px;
+    padding: 6px;
+    min-width: 130px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px);
+    transition: all 0.2s var(--ease);
+    z-index: 100;
+    border: 1px solid var(--border);
+}
+
+.lang-dropdown-wrapper:hover .lang-menu,
+.lang-dropdown-wrapper:focus-within .lang-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+/* Typography utilities */
+.eyebrow {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 550;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 18px;
+}
+
+.container {
+    max-width: var(--wrapper-width);
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+/* ============================================================
+   Manual page — documentation layout
+   ============================================================ */
+
+.manual-hero {
+    text-align: center;
+    padding: 88px 0 56px;
+}
+
+.manual-hero h1 {
+    font-family: var(--font-sans);
+    font-size: 56px;
+    line-height: 1.05;
+    font-weight: 500;
+    letter-spacing: -0.028em;
+    margin-bottom: 18px;
+    color: var(--text);
+}
+
+.manual-hero h1 .accent {
+    color: var(--accent);
+    font-style: italic;
+}
+
+.manual-hero p.lead {
+    font-size: 20px;
+    line-height: 1.5;
+    color: var(--text-2);
+    max-width: 620px;
+    margin: 0 auto;
+}
+
+.manual-layout {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 56px;
+    max-width: var(--wrapper-width);
+    margin: 0 auto;
+    padding: 0 24px;
+    text-align: left;
+}
+
+.manual-body {
+    padding-bottom: 110px;
+}
+
+/* Side TOC */
+.manual-toc {
+    position: sticky;
+    top: 80px;
+    align-self: start;
+    font-size: 13.5px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+}
+
+.manual-toc a {
+    display: block;
+    color: var(--text-2);
+    padding: 5px 0;
+    font-weight: 450;
+    border-left: 2px solid transparent;
+    padding-left: 14px;
+    margin-left: -14px;
+    transition: color 0.2s, border-color 0.2s;
+    line-height: 1.45;
+}
+
+.manual-toc a:hover {
+    color: var(--accent);
+}
+
+.manual-toc a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    font-weight: 550;
+}
+
+.manual-toc-group {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-3);
+    font-weight: 600;
+    margin: 16px 0 6px;
+}
+
+.manual-toc-group:first-child {
+    margin-top: 0;
+}
+
+/* Content sections */
+.manual-section {
+    padding-top: 14px;
+    padding-bottom: 52px;
+    scroll-margin-top: 80px;
+}
+
+.manual-section + .manual-section {
+    border-top: 1px solid var(--border);
+}
+
+.manual-h2 {
+    font-family: var(--font-sans);
+    font-size: 34px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    margin-bottom: 10px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.manual-h2 .h2-emoji {
+    font-size: 28px;
+}
+
+.manual-section > p {
+    font-size: 16.5px;
+    color: var(--text-2);
+    line-height: 1.65;
+    margin-bottom: 22px;
+    max-width: 680px;
+}
+
+.manual-section ol {
+    margin: 0 0 22px 0;
+    padding-left: 22px;
+    max-width: 680px;
+}
+
+.manual-section ol li {
+    font-size: 16.5px;
+    color: var(--text-2);
+    line-height: 1.65;
+    margin-bottom: 12px;
+}
+
+.manual-hint {
+    font-size: 13.5px;
+    color: var(--text-3);
+    margin-top: 0;
+}
+
+.manual-h3 {
+    font-family: var(--font-sans);
+    font-size: 19px;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 32px;
+    margin-bottom: 12px;
+}
+
+/* Syntax reference table */
+.syntax-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 22px;
+    font-size: 14.5px;
+}
+
+.syntax-table th,
+.syntax-table td {
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+.syntax-table th {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-3);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border-strong);
+}
+
+.syntax-table td:first-child {
+    white-space: nowrap;
+}
+
+.syntax-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* Wide example tables scroll inside themselves instead of widening the page. */
+@media (max-width: 640px) {
+    .syntax-table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+/* Inline code and keyboard keys */
+code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--accent-tint);
+    color: var(--accent-hover);
+    padding: 2px 7px;
+    border-radius: 5px;
+    border: 1px solid var(--accent-soft);
+}
+
+kbd {
+    display: inline-block;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    background: var(--bg-elevated);
+    color: var(--text);
+    line-height: 1.4;
+}
+
+/* Callout / note box (accent values come from the page's inline block) */
+.callout {
+    background: var(--accent-tint);
+    border: 1px solid var(--accent-soft);
+    border-radius: var(--radius-m);
+    padding: 16px 20px;
+    margin: 24px 0;
+    font-size: 14.5px;
+    color: var(--text);
+    line-height: 1.6;
+}
+
+.callout-title {
+    font-weight: 600;
+    color: var(--accent-hover);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Footer */
+footer {
+    background: var(--bg);
+    padding: 56px 0 28px;
+    font-size: 13px;
+    color: var(--text-3);
+}
+
+.footer-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 0;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.footer-brand {
+    font-family: var(--font-sans);
+    font-size: 17px;
+    color: var(--text-2);
+    font-weight: 500;
+}
+
+.footer-links {
+    display: flex;
+    gap: 24px;
+}
+
+.footer-links a {
+    color: var(--text-2);
+    font-weight: 450;
+}
+
+.footer-links a:hover {
+    color: var(--accent);
+}
+
+/* Responsive — tablet */
+@media (max-width: 860px) {
+    .nav-menu {
+        gap: 18px;
+    }
+
+    /* Optional destinations fold on narrow nav; brand, guide and the
+       language/theme controls stay. */
+    .nav-menu a.optional {
+        display: none;
+    }
+
+    .manual-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+    }
+
+    .manual-toc {
+        display: none;
+    }
+
+    .manual-hero h1 {
+        font-size: 38px;
+    }
+}
+
+/* Responsive — mobile */
+@media (max-width: 640px) {
+    .nav-container {
+        height: 52px;
+    }
+
+    .nav-brand {
+        font-size: 18px;
+    }
+
+    .nav-logo {
+        width: 24px;
+        height: 24px;
+    }
+
+    .manual-hero {
+        padding: 64px 0 48px;
+    }
+
+    .manual-hero h1 {
+        font-size: 34px;
+        line-height: 1.1;
+    }
+
+    .manual-hero p.lead {
+        font-size: 16px;
+        padding: 0 8px;
+    }
+
+    .eyebrow {
+        font-size: 11px;
+        margin-bottom: 14px;
+    }
+
+    .footer-content {
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+        align-items: center;
+    }
+
+    .container {
+        padding: 0 16px;
+    }
+
+    .manual-layout {
+        padding: 0 16px;
+    }
+}
+
+/* Responsive — small phones */
+@media (max-width: 380px) {
+    .manual-hero h1 {
+        font-size: 28px;
+    }
+
+    .nav-brand {
+        font-size: 16px;
+    }
+}
