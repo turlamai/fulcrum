@@ -1513,15 +1513,19 @@
 ;; The settings-window contract as data (#241): one row per section
 ;; heading and per preference, in display order. Rows are positional
 ;; strings:
+;;   ("page" <page> <group>)
 ;;   ("section" <page> <section>)
 ;;   ("setting" <key> <page> <section> <control> <options, comma-joined> <value>)
 ;; Labels, hints and option names are the hosts' i18n keys
-;; (settings.nav.<page>, settings.section.<section>, settings.<key>,
-;; settings.hint.<key>, settings.opt.<key>.<option>) so the three native
-;; windows render one schema and one feature map.
+;; (settings.group.<group>, settings.nav.<page>, settings.page.<page>,
+;; settings.section.<section>, settings.<key>, settings.hint.<key>,
+;; settings.opt.<key>.<option>) so the three native windows render one
+;; schema and one feature map.
 (define (settings-ui-rows->wire rows)
   (for/list ([row (in-list rows)])
     (match row
+      [(list 'page page group)
+       (list "page" (symbol->string page) (symbol->string group))]
       [(list 'section page section)
        (list "section" (symbol->string page) (symbol->string section))]
       [(list 'setting key _page section control options value)
@@ -1675,6 +1679,25 @@
        (for/list ([error (in-list (plugin-manager-errors manager))])
          (list "" error "" "Plugin" "" "plugin" "" "")))
       '()))
+
+;; The Extensions settings page's per-plugin switch. `enabled` is the wire
+;; spelling "on"/"off"; the disabled set lives in settings, so the change
+;; survives a relaunch, and a reload makes it effective now.
+(define-rpc (plugin-set-enabled [id String] [enabled String] : Bool)
+  (define engine (engine!))
+  (define manager (engine-plugins engine))
+  (unless (and manager
+               (member id (map plugin-id (plugin-manager-plugins manager))))
+    (error 'plugin-set-enabled "unknown plugin: ~a" id))
+  (define ids (plugins-disabled-ids))
+  (define want-enabled (string=? enabled "on"))
+  (unless (eq? (not (member id ids)) want-enabled)
+    (set-plugins-disabled!
+     (if want-enabled
+         (filter (lambda (x) (not (string=? x id))) ids)
+         (append ids (list id))))
+    (plugin-manager-reload! manager))
+  #t)
 
 (define-rpc (plugins-reload : Void)
   (define manager (engine-plugins (engine!)))

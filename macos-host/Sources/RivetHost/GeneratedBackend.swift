@@ -229,6 +229,10 @@ public struct RivetAPI: Sendable {
         let rivetResult = try await client.call("plugin-detail", arguments: [encode_String(row_id), encode_String(arg)])
         return try decode_DetailView(rivetResult)
     }
+    public func plugin_set_enabled(id: String, enabled: String) async throws -> Bool {
+        let rivetResult = try await client.call("plugin-set-enabled", arguments: [encode_String(id), encode_String(enabled)])
+        return try decode_Bool(rivetResult)
+    }
     public func plugins_list() async throws -> [[String]] {
         let rivetResult = try await client.call("plugins-list", arguments: [])
         return try decode__List_List_String_(rivetResult)
