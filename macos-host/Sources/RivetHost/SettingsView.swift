@@ -1238,7 +1238,7 @@ struct SettingsView: View {
             HStack {
                 Text(title)
                 Spacer()
-                TextField("", value: binding)
+                TextField("", value: binding, format: .number)
                     .multilineTextAlignment(.trailing)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 100)
