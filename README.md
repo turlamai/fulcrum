@@ -14,7 +14,7 @@ Existing launcher, clipboard, plugins and BYOK features remain free. No Pro chec
 
 [Installation, first use, privacy, backup and recovery](docs/user-guide.md) · [简体中文](docs/user-guide.zh-CN.md)
 
-[Release trust and platform signing policy](docs/release-signing-policy.md) — macOS is currently ad-hoc (not notarized), Windows packages are unsigned by default, and the update feed is independently Ed25519-signed.
+[Release trust and platform signing policy](docs/release-signing-policy.md) — current official macOS releases are Developer ID signed and notarized, Windows packages are unsigned by default, and the update feed is independently Ed25519-signed.
 
 ## Install on macOS (developer preview)
 
@@ -26,7 +26,7 @@ Open the **DMG**, drag **Fulcrum** onto **Applications**, eject the disk image, 
 
 Verify the checksum before running anything: download `SHA256SUMS` from the same release and run `shasum -a 256 --check --ignore-missing SHA256SUMS` with the installer in the same directory.
 
-**Signing note:** Current release jobs use development/ad-hoc signing, not an Apple-notarized Developer ID build. Gatekeeper may block the first launch. Verify the download comes from the official release before making any exception; see [Apple's guidance](https://support.apple.com/102445). Do **not** globally disable Gatekeeper or strip quarantine attributes. We are tracking signed/notarized distribution separately. On first use, grant Accessibility permission only when Fulcrum requests it for clipboard paste or snippets. See the [macOS first-run guide](docs/user-guide.md#install-and-first-launch-on-macos).
+**Signing note:** Official macOS releases use Developer ID signing and Apple notarization, as recorded in the release trust status. Local development builds may be ad-hoc signed. Verify official release checksums; see [Apple's guidance](https://support.apple.com/102445) if Gatekeeper reports a problem. Do **not** globally disable Gatekeeper or strip quarantine attributes. On first use, grant Accessibility permission only when Fulcrum requests it for clipboard paste or snippets. See the [macOS first-run guide](docs/user-guide.md#install-and-first-launch-on-macos).
 
 ## What is Fulcrum?
 
