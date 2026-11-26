@@ -121,14 +121,14 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 
 入口为 prototype/panel.html。搜索框可输入、筛选样例；上下键选择、Enter 操作、Esc 返回/清空、⌘/Ctrl+K 操作页、⌘/Ctrl+, 设置。其他 HTML 保留多状态对照用途，不代表后台 AI/系统集成已经接通。
 
-根级 index.html 原只负责首次进入主界面、不保留页面目录；2026-11-26 起改为目录页（见「2026-11-26 · 家族设计基线对齐」）。页面切换直接到目标界面。原型运行脚本 prototype-runtime.js / prototype-flow.js 只表达浏览器内的交互合同；正式产品业务仍由既定引擎实现。真实设备、模型和发布服务均未连接。凭据演示不保存密钥，破坏性示例与派发保留确认和取消。
+根级 index.html 只负责首次进入主界面；页面切换直接到目标界面，不再保留页面目录。原型运行脚本 prototype-runtime.js / prototype-flow.js 只表达浏览器内的交互合同；正式产品业务仍由既定引擎实现。真实设备、模型和发布服务均未连接。凭据演示不保存密钥，破坏性示例与派发保留确认和取消。
 
 这些是可评审的增量改动，未替用户勾选满意度、HIG 最终验收或设计冻结条件。
 
 
 ## Prototype source checkpoint — 2026-11-15
 
-`index.html` opens the primary prototype directly. Screen-directory launchers have been removed. (Superseded on 2026-11-26: `index.html` is now the overview page — see the dated section below.) All local scripts, styles and referenced assets needed by this checkpoint are versioned under this directory; OpenDesign metadata is excluded. This is an editable prototype checkpoint, not a claim that the native product or external services implement these interactions.
+`index.html` opens the primary prototype directly. Screen-directory launchers have been removed. All local scripts, styles and referenced assets needed by this checkpoint are versioned under this directory; OpenDesign metadata is excluded. This is an editable prototype checkpoint, not a claim that the native product or external services implement these interactions.
 
 
 ## 2026-11-20 · 设置与搜索来源补齐
@@ -171,7 +171,7 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 | R1 主题切换 | 通过 | 11 个 `◐` 字形换成 16px 线性日月图标（`data-theme-toggle`，`prototype-runtime.js` 按所在作用域重绘）；`.iconbtn` 改为 28px 安静图标按钮，同栏的最小化/关闭一并换成线性图标；英文页名称为目标主题 `Switch to dark / light theme`，自检页用中文，`aria-label` 与 `title` 随主题同步。设置页保留文字按钮 Theme，只补目标主题名称。 |
 | R2 12px 下限 | 通过 | `shared.css` 11 处、`settings.css` 3 处、`audit.html` 2 处、`workflow.html` 5 处提到 12px；源码声明 21 → 0，渲染小字 274 → 0（亮暗合计）。状态行不再省略，放不下时整行换到下一行；Retry 控件 ≥28px。无登记例外。 |
 | R3 动效与焦点 | 通过 | `shared.css` 加入通用 reduced-motion 规则；焦点环选择器补 `input / select / textarea / [contenteditable]`，查询框由浏览器默认环改为 2px `accent-text`。 |
-| R4 原型完整性 | 通过 | `index.html` 由重定向改为目录页（按 `<title>` 列出 7 页并链接本文），各页顶部导航与自检页页尾加「目录」；无远程依赖、本地链接全部可达；补暗色页面底色（`html.dark body, body.dark`、设置页 `--set-ground`）与 `color-scheme`；原型弹窗与 toast 改用亮暗成对 token；设置页加载即应用已保存主题与界面尺寸（此前要到首次改动才生效）。 |
+| R4 原型完整性 | 通过 | `index.html` 保持直达主界面（2026-11-15 的决定不变；家族的导航页规则不覆盖仓内契约）；无远程依赖、本地链接全部可达；补暗色页面底色（`html.dark body, body.dark`、设置页 `--set-ground`）与 `color-scheme`；原型弹窗与 toast 改用亮暗成对 token；设置页加载即应用已保存主题与界面尺寸（此前要到首次改动才生效）。 |
 | R5 可访问名称 | 通过 | 46 个装饰性 SVG 补 `aria-hidden="true"`；各页与设置 20 个子页均无名称缺失的控件。 |
 | R6 版式缺陷 | 通过 | AI 流式示例的代码记号（如 `-O2 -Wall`）不再行中断开；自检页正文链接由浏览器默认蓝改为 `accent-text`；1280×800、1024×768、800×600 均无横向溢出。 |
 | R7 契约同步 | 通过 | 上方「字号」行已更新；两处 2026-11-15「index 直接进入主界面」的说法已标注被取代。 |

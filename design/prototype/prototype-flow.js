@@ -10,7 +10,7 @@
      if(files) row.tabIndex=row===selected?0:-1;
    });
  }
- const context=document.createElement('nav');context.className='proto-context';context.setAttribute('aria-label','Fulcrum 原型');context.innerHTML='<a href="../index.html">目录</a><a href="panel.html">主面板</a><a href="settings.html">设置</a><a href="audit.html">状态对照</a>';document.body.prepend(context);
+ const context=document.createElement('nav');context.className='proto-context';context.setAttribute('aria-label','Fulcrum 原型');context.innerHTML='<a href="panel.html">主面板</a><a href="settings.html">设置</a><a href="audit.html">状态对照</a>';document.body.prepend(context);
  $$('.query .q').forEach(q=>{
    q.querySelector('.caret')?.remove();
    q.contentEditable='true';
