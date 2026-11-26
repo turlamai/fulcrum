@@ -44,7 +44,7 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 - **尺寸**：面板 680 宽、高随结果数增长（240–640，12 行封顶；设置「Maximum results」上限与可视行数一致）；小屏按工作区 55% 宽 / 65% 高收窄（见「启动窗几何与多显示器」）· 设置窗桌面宽 1080、最高 840，窄屏重排 · 圆角 12（窗）/ 8（行）/ 6（tile）· 行高 ≥44 · 图标 tile 28。
 - **图标**：全站功能图标统一为 2px stroke、round join/cap 的线性家族；不再用 `❝`/`✦`/`=`/`>_` 等文字字符充当图标。评审稿中的应用行用中性 app 类别字形，宿主实现替换为真实 dock 图标，不伪造品牌 mark。
 - **命中高亮**：query 命中字符用 `--accent-text` + 650 字重（颜色 + 字重双线索），不铺底色；命中发生在副标题或来源时，高亮落在对应字段，行语法不变。
-- **字号**：query 19 medium · 行标题 13 medium · 行副标题 11.5 · badge 10 semibold · hint/status 11 · AI/详情正文 12.5。
+- **字号**：query 19 medium · 行标题 13 medium · 行副标题 12 · badge / ↵ chip 12 semibold · hint / status / 分组标签 12（家族 12px 下限，无例外）· AI/详情正文 13。
 - **字体**：原型用 `system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`；实现端各用原生默认栈。
 - **语言**：界面文案单源 `shared/i18n/{en,zh}.json`，改语言即时生效、不重启；原型 UI 文案取 en（i18n canonical），键盘提示按平台语法（macOS ⌘K，Win/Linux Ctrl+K）。
 
@@ -121,14 +121,14 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 
 入口为 prototype/panel.html。搜索框可输入、筛选样例；上下键选择、Enter 操作、Esc 返回/清空、⌘/Ctrl+K 操作页、⌘/Ctrl+, 设置。其他 HTML 保留多状态对照用途，不代表后台 AI/系统集成已经接通。
 
-根级 index.html 只负责首次进入主界面；页面切换直接到目标界面，不再保留页面目录。原型运行脚本 prototype-runtime.js / prototype-flow.js 只表达浏览器内的交互合同；正式产品业务仍由既定引擎实现。真实设备、模型和发布服务均未连接。凭据演示不保存密钥，破坏性示例与派发保留确认和取消。
+根级 index.html 原只负责首次进入主界面、不保留页面目录；2026-11-26 起改为目录页（见「2026-11-26 · 家族设计基线对齐」）。页面切换直接到目标界面。原型运行脚本 prototype-runtime.js / prototype-flow.js 只表达浏览器内的交互合同；正式产品业务仍由既定引擎实现。真实设备、模型和发布服务均未连接。凭据演示不保存密钥，破坏性示例与派发保留确认和取消。
 
 这些是可评审的增量改动，未替用户勾选满意度、HIG 最终验收或设计冻结条件。
 
 
 ## Prototype source checkpoint — 2026-11-15
 
-`index.html` opens the primary prototype directly. Screen-directory launchers have been removed. All local scripts, styles and referenced assets needed by this checkpoint are versioned under this directory; OpenDesign metadata is excluded. This is an editable prototype checkpoint, not a claim that the native product or external services implement these interactions.
+`index.html` opens the primary prototype directly. Screen-directory launchers have been removed. (Superseded on 2026-11-26: `index.html` is now the overview page — see the dated section below.) All local scripts, styles and referenced assets needed by this checkpoint are versioned under this directory; OpenDesign metadata is excluded. This is an editable prototype checkpoint, not a claim that the native product or external services implement these interactions.
 
 
 ## 2026-11-20 · 设置与搜索来源补齐
@@ -161,6 +161,24 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 - 设置与搜索共用来源与样例索引状态。只有已启用、有索引且满足递归范围与排除规则的条目能出现；网络与外接来源还受相应总开关控制。离线结果是否出现由保留策略决定。排除规则匹配目录路径、来源相对路径或文件名。
 - 从结果进入设置时定位对应来源。模拟重连后用设置页返回键恢复原查询和仍可见的选中结果。如果选中项已隐藏，选择首个可见结果。
 - 搜索、授权、连接和扫描使用原型数据。通过自检页的「文件搜索 · 来源与恢复」可进入同名文件、离线恢复、添加和排除的操作场景。
+
+## 2026-11-26 · 家族设计基线对齐
+
+对齐家族规范修订 `2026-11-20-minimal-family`，基线 commit `ce303e5`。只动原型与本文：不改信息架构、强调色、布局结构、样例数据与交互逻辑。
+
+| 检查 | 结果 | 证据 / 边界 |
+|---|---|---|
+| R1 主题切换 | 通过 | 11 个 `◐` 字形换成 16px 线性日月图标（`data-theme-toggle`，`prototype-runtime.js` 按所在作用域重绘）；`.iconbtn` 改为 28px 安静图标按钮，同栏的最小化/关闭一并换成线性图标；英文页名称为目标主题 `Switch to dark / light theme`，自检页用中文，`aria-label` 与 `title` 随主题同步。设置页保留文字按钮 Theme，只补目标主题名称。 |
+| R2 12px 下限 | 通过 | `shared.css` 11 处、`settings.css` 3 处、`audit.html` 2 处、`workflow.html` 5 处提到 12px；源码声明 21 → 0，渲染小字 274 → 0（亮暗合计）。状态行不再省略，放不下时整行换到下一行；Retry 控件 ≥28px。无登记例外。 |
+| R3 动效与焦点 | 通过 | `shared.css` 加入通用 reduced-motion 规则；焦点环选择器补 `input / select / textarea / [contenteditable]`，查询框由浏览器默认环改为 2px `accent-text`。 |
+| R4 原型完整性 | 通过 | `index.html` 由重定向改为目录页（按 `<title>` 列出 7 页并链接本文），各页顶部导航与自检页页尾加「目录」；无远程依赖、本地链接全部可达；补暗色页面底色（`html.dark body, body.dark`、设置页 `--set-ground`）与 `color-scheme`；原型弹窗与 toast 改用亮暗成对 token；设置页加载即应用已保存主题与界面尺寸（此前要到首次改动才生效）。 |
+| R5 可访问名称 | 通过 | 46 个装饰性 SVG 补 `aria-hidden="true"`；各页与设置 20 个子页均无名称缺失的控件。 |
+| R6 版式缺陷 | 通过 | AI 流式示例的代码记号（如 `-O2 -Wall`）不再行中断开；自检页正文链接由浏览器默认蓝改为 `accent-text`；1280×800、1024×768、800×600 均无横向溢出。 |
+| R7 契约同步 | 通过 | 上方「字号」行已更新；两处 2026-11-15「index 直接进入主界面」的说法已标注被取代。 |
+| R8 仓库门禁 | 通过 | `raco test tests/settings-i18n-contract.rkt tests/launcher-geometry-contract.rkt` 298 项通过。 |
+
+- 渲染口径（1280×800，亮暗合计）：`small` 274 → 0，`overflowX` / `nameless` / `err` / `fail` 均为 0，英文页中文 `title` 22 → 0；`low` 50 → 50，全部在设置页，是渲染工具对半透明中性文字的近似值，未变。
+- 仍开放：`docs/design-system.md` 与三宿主的 badge 10 / chip 11 / hint 11 / 副标题 11.5 / AI 正文 12.5 尚未跟进 12px 下限；「字号」行的 query 19 与原型 `.query .q` 18px 是既有差异，未动；`.eact`（24px）、`.modebar .back`（约 18px）、设置 switch（24px 高）低于家族 28px 控件高度，宿主镜像该几何，留待产品决定；设置页标题栏 Theme 按钮与 General 的 Theme 下拉并存，是否去重属信息架构决策。
 
 ## 桌面驻留与开发交接
 

@@ -7,12 +7,6 @@
 <link rel="stylesheet" href="shared.css">
 <style>
   :root { --shell-w: 680px; }
-  body.dark {
-    background: radial-gradient(1200px 800px at 20% 0%, #2a2a2c, #1c1c1e 55%, #151516);
-  }
-  body.dark .iconbtn {
-    background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.20); color: rgba(242,242,242,.72);
-  }
   h2.sec {
     width: 680px; max-width: 100%; margin: 22px 0 -2px;
     display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
@@ -24,6 +18,7 @@
   }
   .note b { color: var(--ink); font-weight: 600; }
   .note code { font-family: inherit; color: var(--accent-text); }
+  .note a { color: var(--accent-text); }
   .rules {
     width: 680px; max-width: 100%; display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px;
@@ -33,7 +28,7 @@
     border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.55;
   }
   .rule h3 {
-    font-size: 10px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase;
+    font-size: 12px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase;
     color: var(--faint); margin-bottom: 5px;
   }
   .rule ol { margin: 0; padding-left: 16px; }
@@ -55,7 +50,7 @@
   }
   table.matrix { width: 100%; border-collapse: collapse; font-size: 12px; line-height: 1.5; color: var(--ink); }
   table.matrix th, table.matrix td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--hairline); }
-  table.matrix th { font-size: 10px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--faint); }
+  table.matrix th { font-size: 12px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--faint); }
   table.matrix td:first-child { font-weight: 600; }
   table.matrix td:nth-child(2) { color: var(--mute); }
   table.matrix tr:last-child td { border-bottom: none; }
@@ -84,7 +79,7 @@
     <div class="t">Fulcrum — 原型自检（状态矩阵）</div>
     <div class="n">命中高亮 · 输入法守卫 · 焦点顺序 · 异常与边界状态 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" aria-label="Toggle light or dark theme" id="themeBtn" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" type="button" data-theme-toggle aria-label="切换深色主题" id="themeBtn" title="切换深色主题"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"></path></svg></button>
   </header>
 
   <p class="note">这一页把散在各屏的状态集中起来逐条验收：<b>不是截图</b>，每个面板都是真实 DOM，亮暗一次切换全部生效。看的是「用户能否看懂为什么出现这条结果、能否安全地按对键」，其余视觉细节沿用既有契约。</p>
@@ -92,7 +87,7 @@
   <h2 class="sec">1 · 命中高亮<span>颜色 + 字重双线索，不铺底色</span></h2>
   <div class="panel w-s">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">fig<span class="caret"></span></div>
     </div>
     <div class="list">
@@ -112,7 +107,7 @@
         <span class="badge">Snip</span>
       </div>
       <div class="row" tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
         <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>let — Gallery plugin</div><div class="sub">Plugin · ASCII banner generator · not installed</div></div>
         <span class="badge">Gallery</span>
       </div>
@@ -128,7 +123,7 @@
   <h2 class="sec">2 · 输入法组合态<span>preedit 未上屏时，Enter / ↑ / ↓ / Tab 归输入法</span></h2>
   <div class="panel w-s">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">fig<span class="preedit">ma</span><span class="caret"></span></div>
       <span class="imeflag">Composing</span>
     </div>
@@ -155,12 +150,12 @@
   <h2 class="sec">3 · 焦点顺序<span>Tab 环、⌘K 进入、Esc 按 item id 回位</span></h2>
   <div class="panel w-s mode-actions">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">tokens</div>
     </div>
     <div class="modebar">
       <button class="back demo-focus" type="button" aria-label="Back to results">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
         esc
       </button>
       <div class="mt">Actions for <b>--accent-soft: #faeee5; --line: #e7e3da;</b></div>
@@ -168,17 +163,17 @@
     </div>
     <div class="list">
       <div class="row selected" tabindex="0" aria-current="true">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></div>
         <div class="txt"><div class="ttl">Copy</div><div class="sub">Put the clipboard text back on the pasteboard</div></div>
         <span class="chip">↵</span>
       </div>
       <div class="row" tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
         <div class="txt"><div class="ttl">Paste to frontmost app</div><div class="sub">Needs the Accessibility permission on macOS</div></div>
         <span class="badge">⌘V</span>
       </div>
       <div class="row" tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 17v5M9 3h6l1 7 3 2-2 2h-9l-2-2 3-2z"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5M9 3h6l1 7 3 2-2 2h-9l-2-2 3-2z"/></svg></div>
         <div class="txt"><div class="ttl">Pin</div><div class="sub">Keep at the top of clipboard history</div></div>
         <span class="badge">Pin</span>
       </div>
@@ -219,7 +214,7 @@
   <h2 class="sec">4 · 离线<span>本地结果照常工作，联网行禁用并写清原因</span></h2>
   <div class="panel w-s">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">fig<span class="caret"></span></div>
     </div>
     <div class="banner">
@@ -239,7 +234,7 @@
         <span class="badge">File</span>
       </div>
       <div class="row disabled" tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
         <div class="txt"><div class="ttl">fig</div><div class="sub">Search the web with Google · unavailable offline</div></div>
         <span class="badge">Offline</span>
       </div>
@@ -260,7 +255,7 @@
   <h2 class="sec">5 · AI 限流<span>429 带倒计时；重试禁用，而不是静默重复请求</span></h2>
   <div class="panel w-s">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">ai summarize this thread<span class="caret"></span></div>
     </div>
     <div class="slot error">
@@ -299,7 +294,7 @@
   <h2 class="sec">6 · 敏感剪贴板<span>掩码由字符表达，揭示后才能复制</span></h2>
   <div class="panel w-s">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">key<span class="caret"></span></div>
     </div>
     <div class="list">
@@ -328,7 +323,7 @@
   <h2 class="sec">7 · 超长标题<span>1 行截断，完整值始终有可达路径</span></h2>
   <div class="panel w-s">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">季度<span class="caret"></span></div>
     </div>
     <div class="list">
@@ -357,7 +352,7 @@
   <h2 class="sec">8 · 结果超上限 / 窗口过矮<span>12 行封顶，底部渐隐 + 计数</span></h2>
   <div class="panel short w-s">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">fig<span class="caret"></span></div>
       <span class="badge">12 max</span>
     </div>
@@ -379,17 +374,17 @@
           <span class="badge">Snip</span>
         </div>
         <div class="row" tabindex="0">
-          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
           <div class="txt"><div class="ttl"><mark class="qhit">Fig</mark>ma team templates</div><div class="sub">Quicklink · figma.com/files/team</div></div>
           <span class="badge">Link</span>
         </div>
         <div class="row" tabindex="0">
-          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
           <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>let — Gallery plugin</div><div class="sub">Plugin · ASCII banner generator</div></div>
           <span class="badge">Gallery</span>
         </div>
         <div class="row" tabindex="0">
-          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
           <div class="txt"><div class="ttl"><mark class="qhit">fig</mark></div><div class="sub">Search the web with Google</div></div>
           <span class="badge">!g</span>
         </div>
@@ -399,7 +394,7 @@
           <span class="badge">App</span>
         </div>
         <div class="row" tabindex="0">
-          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
           <div class="txt"><div class="ttl"><mark class="qhit">Fig</mark>ma Community</div><div class="sub">Quicklink · figma.com/community</div></div>
           <span class="badge">Link</span>
         </div>
@@ -414,7 +409,7 @@
           <span class="badge">Snip</span>
         </div>
         <div class="row" tabindex="0">
-          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+          <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
           <div class="txt"><div class="ttl"><mark class="qhit">fig</mark>ma-color-styles</div><div class="sub">Snippet · “list every local color style”</div></div>
           <span class="badge">Snip</span>
         </div>
@@ -486,6 +481,7 @@
     <a href="panel.html">← 返回主面板</a>
     <a href="states.html">关键状态三联</a>
     <a href="actions.html">⌘K 次级操作</a>
+    <a href="../index.html">原型目录</a>
     <a href="../DESIGN.md">DESIGN.md</a>
   </nav>
 

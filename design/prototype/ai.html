@@ -12,11 +12,11 @@
     <div class="t">a · AI running 态</div>
     <div class="n">▍流式光标 + 转轮 · 下方结果列表保持可用 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appA" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" type="button" data-theme-toggle aria-label="Switch to dark theme" data-theme="appA" title="Switch to dark theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"></path></svg></button>
   </header>
   <div class="panel w-s" id="appA">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">ai translate 简洁地解释这段 makefile<span class="caret"></span></div>
     </div>
     <div class="slot">
@@ -26,7 +26,7 @@
         <span class="sp"></span>
         <span class="spin"></span>
       </div>
-      <div class="body">这个 makefile 做三件事：① 用 `wildcard` 收集 `src/` 下全部 `.c` 文件；② 把每个文件编译为同名 `.o`（`-O2 -Wall`）；③ 链接成 `app`。`clean` 目标删除全部产物。 ▍</div>
+      <div class="body">这个 makefile 做三件事：① 用 <span class="nb">`wildcard`</span> 收集 <span class="nb">`src/`</span> 下全部 <span class="nb">`.c`</span> 文件；② 把每个文件编译为同名 <span class="nb">`.o`</span>（<span class="nb">`-O2 -Wall`</span>）；③ 链接成 <span class="nb">`app`</span>。<span class="nb">`clean`</span> 目标删除全部产物。 ▍</div>
     </div>
     <div class="list">
       <div class="row selected" tabindex="0" aria-current="true">
@@ -58,11 +58,11 @@
     <div class="t">b · AI done 态</div>
     <div class="n">答案已上剪贴板 · Esc 只收起答案面板 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appB" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" type="button" data-theme-toggle aria-label="Switch to dark theme" data-theme="appB" title="Switch to dark theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"></path></svg></button>
   </header>
   <div class="panel w-s" id="appB">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">ai translate 简洁地解释这段 makefile</div>
     </div>
     <div class="slot">
@@ -70,7 +70,7 @@
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 13.7 9.2 19.5 11 13.7 12.8 12 18.5 10.3 12.8 4.5 11 10.3 9.2z"/></svg>
         <span>AI answer</span>
       </div>
-      <div class="body">这个 makefile 做三件事：① 用 `wildcard` 收集 `src/` 下全部 `.c` 文件；② 把每个文件编译为同名 `.o`（`-O2 -Wall`）；③ 链接成 `app`。`clean` 目标删除全部产物。</div>
+      <div class="body">这个 makefile 做三件事：① 用 <span class="nb">`wildcard`</span> 收集 <span class="nb">`src/`</span> 下全部 <span class="nb">`.c`</span> 文件；② 把每个文件编译为同名 <span class="nb">`.o`</span>（<span class="nb">`-O2 -Wall`</span>）；③ 链接成 <span class="nb">`app`</span>。<span class="nb">`clean`</span> 目标删除全部产物。</div>
       <div class="hint">Answer copied to the clipboard · esc dismisses</div>
     </div>
     <div class="list">
@@ -97,11 +97,11 @@
     <div class="t">c · AI error 态</div>
     <div class="n">provider 401 · 不静默失败 · 重试与设置入口都在面板内 · 原型 v0.1</div>
     <div class="sp"></div>
-    <button class="iconbtn" aria-label="Toggle light or dark theme" data-theme="appC" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" type="button" data-theme-toggle aria-label="Switch to dark theme" data-theme="appC" title="Switch to dark theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"></path></svg></button>
   </header>
   <div class="panel w-s" id="appC">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">ai translate 简洁地解释这段 makefile</div>
     </div>
     <div class="slot error">

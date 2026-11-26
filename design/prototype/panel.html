@@ -11,9 +11,9 @@
     <div class="t">Fulcrum — 主面板</div>
     <div class="n">试用文件搜索 · 输入 find quote</div>
     <div class="sp"></div>
-    <button class="iconbtn" type="button" data-hide-launcher aria-label="Minimize to background" title="Minimize to background">−</button>
-    <button class="iconbtn" type="button" data-hide-launcher aria-label="Close launcher window" title="Close launcher window">×</button>
-    <button class="iconbtn" aria-label="Toggle light or dark theme" id="themeBtn" title="切换亮暗主题">◐</button>
+    <button class="iconbtn" type="button" data-hide-launcher aria-label="Minimize to background" title="Minimize to background"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path></svg></button>
+    <button class="iconbtn" type="button" data-hide-launcher aria-label="Close launcher window" title="Close launcher window"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+    <button class="iconbtn" type="button" data-theme-toggle aria-label="Switch to dark theme" id="themeBtn" title="Switch to dark theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"></path></svg></button>
   </header>
 
   <section class="resident-shell" id="desktop-status" aria-label="Desktop integration preview">
@@ -43,7 +43,7 @@
 
   <div class="panel w-s" id="app">
     <div class="query">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
       <div class="q">find quote<span class="caret"></span></div>
     </div>
 
@@ -68,7 +68,7 @@
       </div>
       <!-- Clipboard：历史命中，badge 标时间 -->
       <div class="row" data-action-label="Copy sample text" data-action-result="Copy simulated for the selected clipboard entry." tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">Fig</mark>ma frame 240×240 — hero card</div>
           <div class="sub">Clipboard · from Figma</div>
@@ -86,7 +86,7 @@
       </div>
       <!-- Quicklink：keyword 认领的 URL 模板 -->
       <div class="row" data-action-label="Open sample link" data-action-result="Quicklink launch simulated for the selected destination." tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">Fig</mark>ma team templates</div>
           <div class="sub">Quicklink · figma.com/files/team</div>
@@ -95,7 +95,7 @@
       </div>
       <!-- Web search：!g 兜底行 -->
       <div class="row" data-action-label="Search the web in this sample" data-action-result="Web search simulated for the selected query." tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.9 5.7 3.9 9s-1.4 6.4-3.9 9c-2.5-2.6-3.9-5.7-3.9-9s1.4-6.4 3.9-9z"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">fig</mark></div>
           <div class="sub">Search the web with Google</div>
@@ -104,7 +104,7 @@
       </div>
       <!-- Gallery：第一方插件可安装 -->
       <div class="row" data-action-label="View sample plugin" data-action-result="Gallery opened for the selected plugin in this demo." tabindex="0">
-        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <div class="tile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
         <div class="txt">
           <div class="ttl"><mark class="qhit">fig</mark>let — Gallery plugin</div>
           <div class="sub">Plugin · ASCII banner generator · not installed</div>

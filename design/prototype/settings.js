@@ -46,7 +46,7 @@ function persist(message='Saved to this browser.'){
   if(message)notify(message);
 }
 function notify(message){$('#feedback').textContent=message;clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>$('#feedback').textContent='',6000)}
-function applyAppearance(){const t=state.values.theme;document.documentElement.classList.toggle('dark',searchSettings.isDark(t));$('#app').style.setProperty('--set-body',state.values.size==='Large'?'18px':'16px');$('#app').style.setProperty('--set-gap',state.values.size==='Compact'?'16px':'24px');$('#app').style.setProperty('--row-space',state.values.size==='Compact'?'12px':'16px')}
+function applyAppearance(){const t=state.values.theme,themeName=searchSettings.isDark(t)?'Switch to light theme':'Switch to dark theme';document.documentElement.classList.toggle('dark',searchSettings.isDark(t));$('#theme-toggle').setAttribute('aria-label',themeName);$('#theme-toggle').title=themeName;$('#app').style.setProperty('--set-body',state.values.size==='Large'?'18px':'16px');$('#app').style.setProperty('--set-gap',state.values.size==='Compact'?'16px':'24px');$('#app').style.setProperty('--row-space',state.values.size==='Compact'?'12px':'16px')}
 function btn(label,action,id='',cls=''){return `<button type="button" class="button ${cls}" data-action="${action}" ${id?`data-id="${esc(id)}"`:''}>${esc(label)}</button>`}
 function toggle(label,value,attrs=''){return `<button type="button" class="switch" role="switch" aria-label="${esc(label)}" aria-checked="${!!value}" ${attrs}><span></span></button>`}
 function nav(){let group='';$('#settings-nav').innerHTML=pages.map(([id,name,g,i])=>{const heading=g!==group?`<div class="nav-group">${g}</div>`:'';group=g;return heading+`<button type="button" class="nav-item" data-page="${id}" ${current===id&&!query?'aria-current="page"':''}>${icon(i)}<span>${esc(name)}</span></button>`}).join('')}
@@ -147,6 +147,7 @@ if (previousQuery !== null) {
   $('#back-to-search').href = target.href;
   if (searchSettings.params.get('resident')==='1') $('#back-to-search').setAttribute('aria-label','Return to desktop status');
 }
+applyAppearance();
 render();
 persist('');
 const requestedSource = searchSettings.params.get('source');
