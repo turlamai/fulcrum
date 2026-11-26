@@ -12,7 +12,7 @@
   const read = (k, fallback) => { try { return JSON.parse(localStorage.getItem(key + k)) ?? fallback; } catch { return fallback; } };
   const save = (k, v) => { try { localStorage.setItem(key + k, JSON.stringify(v)); return true; } catch { return false; } };
   const style = document.createElement('style');
-  style.textContent = `[hidden]{display:none!important}button:disabled{opacity:.5;cursor:not-allowed}.proto-link{cursor:pointer!important}.proto-link:focus-visible{outline:2px solid var(--accent,currentColor);outline-offset:3px}.proto-dialog{font:14px/1.6 system-ui,sans-serif;width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;border:1px solid var(--line,#bbb);border-radius:12px;padding:24px;background:var(--surface,#fff);color:var(--ink,#222);box-shadow:0 20px 80px #0004}.proto-dialog::backdrop{background:#0006}.proto-dialog h2{font-size:20px;margin:0 0 12px}.proto-dialog p{white-space:pre-wrap}.proto-dialog label{display:grid;gap:6px;margin:16px 0}.proto-dialog input,.proto-dialog select,.proto-dialog textarea{font:inherit;color:inherit;background:var(--bg,#fff);border:1px solid var(--line,#bbb);padding:10px;border-radius:6px;width:100%}.proto-dialog textarea{min-height:110px}.proto-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}.proto-dialog button{font:inherit;padding:8px 16px;border:1px solid var(--line,#bbb);border-radius:7px;color:inherit;background:var(--bg,#fafafa);cursor:pointer}.proto-dialog button[type=submit]{background:var(--accent,#a94e31);color:white}.proto-status{position:fixed;z-index:99999;bottom:20px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 32px);background:var(--ink,#222);color:var(--surface,#fff);padding:10px 18px;border-radius:8px;box-shadow:0 4px 20px #0003;font:13px/1.5 system-ui}.proto-result{padding:16px;color:var(--mute,#666)}.proto-context{display:flex;gap:20px;padding:10px 16px;font:12px system-ui;color:var(--mute,#666)}.proto-context a{color:var(--accent,inherit)}`;
+  style.textContent = `[hidden]{display:none!important}button:disabled{opacity:.5;cursor:not-allowed}.proto-link{cursor:pointer!important}.proto-link:focus-visible{outline:2px solid var(--accent-text,currentColor);outline-offset:3px}.proto-dialog{font:14px/1.6 system-ui,sans-serif;width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;border:1px solid var(--line,#bbb);border-radius:12px;padding:24px;background:var(--glass,#fff);color:var(--ink,#222);box-shadow:0 20px 80px #0004}.proto-dialog::backdrop{background:#0006}.proto-dialog h2{font-size:20px;margin:0 0 12px}.proto-dialog p{white-space:pre-wrap}.proto-dialog label{display:grid;gap:6px;margin:16px 0}.proto-dialog input,.proto-dialog select,.proto-dialog textarea{font:inherit;color:inherit;background:var(--glass,#fff);border:1px solid var(--line,#bbb);padding:10px;border-radius:6px;width:100%}.proto-dialog textarea{min-height:110px}.proto-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}.proto-dialog button{font:inherit;padding:8px 16px;border:1px solid var(--line,#bbb);border-radius:7px;color:inherit;background:var(--glass,#fafafa);cursor:pointer}.proto-dialog button[type=submit]{background:var(--accent-text,#a94e31);color:var(--glass,#fff)}.proto-status{position:fixed;z-index:99999;bottom:20px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 32px);background:var(--ink,#222);color:var(--glass,#fff);padding:10px 18px;border-radius:8px;box-shadow:0 4px 20px #0003;font:13px/1.5 system-ui}.proto-result{padding:16px;color:var(--mute,#666)}.proto-context{display:flex;gap:20px;padding:10px 16px;font:12px system-ui;color:var(--mute,#666)}.proto-context a{color:var(--accent-text,inherit)}`;
   document.head.append(style);
   let timer;
   function status(s) { let el=$('#prototype-status'); if(!el){el=document.createElement('div');el.id='prototype-status';el.className='proto-status';el.setAttribute('role','status');document.body.append(el)} el.textContent=s;el.hidden=false;clearTimeout(timer);timer=setTimeout(()=>el.hidden=true,4200); }
@@ -32,6 +32,36 @@
   const app=$('#app')||document.body;
   if(read('dark',false))app.classList.add('dark');
   $('#themeBtn')?.addEventListener('click',()=>save('dark',app.classList.contains('dark')));
+  /* Prototype-chrome theme toggles ([data-theme-toggle]): the icon shows the theme
+     in use, the accessible name names the theme a click switches to. Pages keep
+     their own toggle logic; this only mirrors the resulting .dark state, so a
+     forced theme is followed as well. */
+  const THEME_ICON = {
+    light: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"></path></svg>',
+    dark: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 15.2A8.2 8.2 0 0 1 8.8 4a8.4 8.4 0 1 0 11.2 11.2Z"></path></svg>'
+  };
+  const THEME_NAME = /^zh/i.test(document.documentElement.lang) ? {light:'切换深色主题',dark:'切换浅色主题'} : {light:'Switch to dark theme',dark:'Switch to light theme'};
+  const themeToggles = $$('[data-theme-toggle]');
+  // data-theme names the frame a button flips; otherwise the page's own panel scope
+  const themeScope = btn => document.getElementById(btn.dataset.theme) || document.querySelector('.panel') || document.documentElement;
+  function paintTheme() {
+    themeToggles.forEach(btn => {
+      // data-theme names the frame this button flips; otherwise the page's own scope
+      const scope = themeScope(btn);
+      const state = scope.closest('.dark') ? 'dark' : 'light';
+      if (btn.dataset.painted === state) return;
+      btn.dataset.painted = state;
+      btn.innerHTML = THEME_ICON[state];
+      btn.setAttribute('aria-label', THEME_NAME[state]);
+      btn.title = THEME_NAME[state];
+    });
+  }
+  if (themeToggles.length) {
+    paintTheme();
+    const scopes = new Set([document.documentElement, document.body, ...themeToggles.flatMap(btn => [document.getElementById(btn.dataset.theme), themeScope(btn)])]);
+    const observer = new MutationObserver(paintTheme);
+    scopes.forEach(el => el && observer.observe(el, {attributes: true, attributeFilter: ['class']}));
+  }
   $$('button').forEach(b=>{if(!text(b)&&!b.getAttribute('aria-label'))b.setAttribute('aria-label',b.title||'操作')});
   window.Prototype={$, $$, text, esc, read, save, status, link, match, go, nav, modal, download, copy, choices, switches};
 })();
