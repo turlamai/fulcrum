@@ -21,7 +21,7 @@ body {
   min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 16px;
   padding: 44px 24px 56px;
   background: radial-gradient(1200px 800px at 20% 0%, #ece9e4, #dbd8d2 55%, #cbc8c2);
-  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   -webkit-font-smoothing: antialiased; color: var(--ink);
 }
 /* dark page ground: follows .dark on the root or on body, so the prototype chrome
@@ -121,6 +121,7 @@ mark.qhit { background: none; color: var(--accent-text); font-weight: 650; }
 /* status line carries feedback, so it is never cut: when it does not fit beside the
    hints it wraps whole onto its own (right-aligned) row instead of ending in an ellipsis */
 .foot .status { color: var(--faint); margin-left: auto; max-width: 100%; line-height: 1.4; }
+.status.issue { color: var(--ink); opacity: .8; }
 /* degraded / offline banner: local work continues, the reason stays on screen */
 .banner {
   flex: none; display: flex; align-items: center; gap: 8px; padding: 7px 18px;
@@ -285,3 +286,11 @@ kbd {
 #app.panel.w-s .foot { flex-wrap:wrap; gap:4px; }
 #app.panel.w-s .row:has(.match-note:not([hidden])) { min-height:56px; }
 .match-note { margin-top:2px; }
+
+/* ---- temperament profile pass ---- */
+/* typography baseline (family standard 2026-11-26-temperament-profiles): CJK/Latin spacing and kinsoku come from the rendering layer,
+   never from typed spaces (§4, §10). Values stay in the token block above. */
+body { text-autospace: normal; line-break: strict; }
+::selection { background: var(--sel); color: var(--ink); }
+/* Paired neutral scrollbar for both themes; thin and non-distracting. */
+html { scrollbar-color: var(--line) transparent; }
