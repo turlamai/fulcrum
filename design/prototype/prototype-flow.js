@@ -36,6 +36,8 @@
        selectRows(rows,selected);
        const count=visible.length===1?'1 result':visible.length+' results';
        $('.foot .status',panel).textContent=count+(visible.length>files.resultLimit?' · scroll for more':'');
+       resultsList.hidden=visible.length===0;
+       resultsList.style.maxHeight='';
        if(visible.length){
          const shown=visible.slice(0,files.resultLimit || 12);
          resultsList.style.maxHeight=shown.reduce((height,row)=>height+(row.querySelector('.match-note:not([hidden])')?56:44),14)+'px';
@@ -48,10 +50,12 @@
        $('.list',panel)?.after(empty);
      }
      empty.hidden=visible.length>0;
+     if(files&&visible.length&&!visible.includes(selection))resultsList.scrollTop=0;
    }
    q.addEventListener('compositionstart',()=>{composing=true});
    q.addEventListener('compositionend',()=>{composing=false;filter()});
    q.addEventListener('input',filter);
+   q.addEventListener('paste',e=>{if(!files)return;const value=e.clipboardData?.getData('text/plain');if(value==null)return;e.preventDefault();const selection=window.getSelection();if(!selection?.rangeCount||!q.contains(selection.anchorNode)||!q.contains(selection.focusNode))return;const range=selection.getRangeAt(0);range.deleteContents();const node=document.createTextNode(value.replace(/[\r\n]+/g,' '));range.insertNode(node);range.setStartAfter(node);range.collapse(true);selection.removeAllRanges();selection.addRange(range);filter()});
    if(files){
      rows.filter(row=>!row.dataset.fileId).forEach((row,i)=>{row.id='launcher-item-'+i});
      const preferred=rows.find(row=>(row.dataset.fileId||row.id)===files.selected);
@@ -75,8 +79,8 @@
    }));
    if(files)selectRows(rows,rows.find(row=>row.classList.contains('selected')));
    panel.addEventListener('keydown',e=>{
-     if(e.isComposing||e.keyCode===229||e.target.closest('dialog,input,select,textarea,button,a'))return;
-     if(files&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&files.open($('.row.selected',panel),true)){e.preventDefault();return}
+     if((e.repeat&&e.key==='Enter')||e.isComposing||e.keyCode===229||e.target.closest('dialog,input,select,textarea,button,a'))return;
+     if(files&&!e.repeat&&(e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&files.open($('.row.selected',panel),true)){e.preventDefault();return}
      if(e.metaKey||e.ctrlKey||e.altKey)return;
      const visible=rows.filter(r=>!r.hidden&&!r.classList.contains('disabled'));let i=visible.findIndex(r=>r.classList.contains('selected'));
      if((e.key==='ArrowDown'||e.key==='ArrowUp')&&visible.length){e.preventDefault();i=i<0?(e.key==='ArrowDown'?0:visible.length-1):(i+(e.key==='ArrowDown'?1:-1)+visible.length)%visible.length;selectRows(rows,visible[i]);if(files&&e.target.matches('[contenteditable]'))visible[i]?.scrollIntoView({block:'nearest'});else visible[i]?.focus()}
