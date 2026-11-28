@@ -294,3 +294,10 @@ body { text-autospace: normal; line-break: strict; }
 ::selection { background: var(--sel); color: var(--ink); }
 /* Paired neutral scrollbar for both themes; thin and non-distracting. */
 html { scrollbar-color: var(--line) transparent; }
+
+/* Search result refinement: preserve the established row geometry and token roles. */
+.panel .list[hidden],.panel .proto-result[hidden]{display:none!important}
+.panel .list{overscroll-behavior:contain}
+.panel .list + .proto-result:not([hidden]){margin:0;padding:28px 24px;min-height:96px;display:grid;place-items:center;text-align:center;font-size:13px;line-height:1.5;color:var(--mute);overflow-wrap:anywhere}
+.panel .query .q[contenteditable]{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel .query .q[contenteditable]:focus{ text-overflow:clip; }
