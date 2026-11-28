@@ -22,8 +22,10 @@
   (check-true (string-contains? (read win-app) "BackgroundLaunch()"))
   (check-true (string-contains? (read win-main) "BackgroundLaunch()"))
   (check-true (string-contains? (read win-settings) "SetAutostart(toggle.IsOn())"))
-  (check-true (string-contains? (read win-settings) "return;  // never send machine-local startup state over settings-set"))
-  (check-true (string-contains? (read win-xaml) "FulcrumStartAtLogin")))
+  (check-true (string-contains? (read win-settings) "Machine-local startup state never travels over settings-set"))
+  ;; The row is built in code (schema-driven page); its automation id is the
+  ;; one the packaged acceptance locates.
+  (check-true (string-contains? (read win-settings) "L\"FulcrumStartAtLogin\"")))
 
 (test-case "Linux XDG login startup is local and opt-in"
   (check-true (string-contains? (read linux-header) "XDG_CONFIG_HOME"))

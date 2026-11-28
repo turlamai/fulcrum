@@ -636,8 +636,8 @@
 ;; reset and JSON export / import, all over RVT1.
 (define-values (ui ui-err _ui-ev) (call-rpc 141 (list "settings-ui")))
 (check! "settings-ui no error" ui-err #f)
-(check! "settings-ui leads with a section row"
-        (and (pair? ui) (string=? (list-ref (car ui) 0) "section") #t) #t)
+(check! "settings-ui leads with the General page row"
+        (and (pair? ui) (equal? (car ui) (list "page" "general" "workspace")) #t) #t)
 (define-values (nset _n1 _n2)
   (call-rpc 142 (list "named-list-set" "app-folders" "" "Tools" "/opt/tools" "" "on")))
 (check! "named-list-set returns an id"

@@ -570,6 +570,29 @@
       }
     },
     {
+      "arguments": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        },
+        {
+          "name": "enabled",
+          "type": {
+            "kind": "scalar",
+            "name": "String"
+          }
+        }
+      ],
+      "name": "plugin-set-enabled",
+      "result": {
+        "kind": "scalar",
+        "name": "Bool"
+      }
+    },
+    {
       "arguments": [],
       "name": "plugins-list",
       "result": {

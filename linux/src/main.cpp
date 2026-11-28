@@ -42,6 +42,8 @@
 #include <vector>
 #include <unistd.h>
 #include <array>
+#include <cctype>
+#include <functional>
 
 #include "GeneratedBackend.hpp"
 #include "system_services.hpp"
@@ -2254,6 +2256,29 @@ void set_i18n_language(std::string const& lang) {
 
 enum class SettingKind { toggle, choice, number, text };
 
+// Settings v2 (design/DESIGN.md "偏好设置 v2 宿主契约"): the backend's
+// `settings-ui` rows after parsing. A page holds its sections in display
+// order; a row names its control and, for choices, the backend's option
+// values (empty = the "Off" provider) and for numbers the validator's
+// inclusive (min max).
+struct SettingsSchemaRow {
+  std::string key;
+  std::string section;
+  std::string control;
+  std::vector<std::string> options;
+};
+
+struct SettingsSchemaSection {
+  std::string id;
+  std::vector<SettingsSchemaRow> rows;
+};
+
+struct SettingsSchemaPage {
+  std::string id;
+  std::string group;
+  std::vector<SettingsSchemaSection> sections;
+};
+
 struct SettingBinding {
   std::string key;
   SettingKind kind{SettingKind::text};
@@ -2296,24 +2321,114 @@ struct SettingsForm {
   GtkLabel* key_notice{nullptr};
   GtkWidget* key_entry{nullptr};
   GtkLabel* error{nullptr};
+  GtkLabel* notice{nullptr};
   std::map<std::string, std::string> values;
   // True while apply pushes values into the controls, so their change
   // handlers do not write them straight back.
   bool loading{false};
+  // ---- settings v2 -------------------------------------------------------
+  // The schema pages are rebuilt on every language change, so what they
+  // register lives apart from the static Commands/Workflows pages above.
+  std::vector<SettingsSchemaPage> schema;
+  bool schema_scope{false};
+  bool dynamic_scope{false};
+  std::vector<std::tuple<GtkLabel*, std::string, std::string>> schema_labels;
+  std::vector<std::tuple<GtkButton*, std::string>> schema_buttons;
+  std::vector<std::tuple<GtkEntry*, std::string>> schema_placeholders;
+  std::vector<GtkWidget*> nav_headings;
+  std::string current_page{"general"};
+  // Last non-search page, restored when the search box empties.
+  std::string last_page{"general"};
+  std::map<std::string, GtkWidget*> nav_buttons;
+  // Buttons of the re-rendered list rows; dropped on every list render.
+  std::vector<std::tuple<GtkButton*, std::string>> dynamic_buttons;
+  GtkWidget* nav_box{nullptr};
+  GtkWidget* search_title{nullptr};
+  GtkWidget* search_empty{nullptr};
+  bool nav_sync{false};
+  // Row key → the row box (search jump highlight) and its refusal label.
+  std::map<std::string, GtkWidget*> row_widgets;
+  std::map<std::string, GtkWidget*> row_hints;
+  std::map<std::string, GtkLabel*> row_errors;
+  // Extras: kind → the box its entries render into.
+  std::map<std::string, GtkWidget*> list_hosts;
+  GtkWidget* search{nullptr};
+  bool search_silent{false};
+  GtkWidget* search_page{nullptr};
+  GtkWidget* search_results{nullptr};
+  std::string highlighted_key;
+  std::string ai_status_raw;
 };
 
 SettingsForm* g_settings_form = nullptr;
 
 void settings_load();
 void settings_load_commands();
+void settings_load_lists();
+void settings_render_search();
+void settings_build_schema();
 void workflow_load_list();
 void workflow_load_detail();
 void workflow_action(std::string id, std::string arg);
+
+// A key the shared table has text for (tr returns the key itself otherwise).
+bool settings_has_i18n(std::string const& key) { return tr(key.c_str()) != key; }
 
 void settings_show_error(std::string const& message) {
   if (g_settings_form == nullptr) return;
   gtk_label_set_text(g_settings_form->error, message.c_str());
   gtk_widget_set_visible(GTK_WIDGET(g_settings_form->error), !message.empty());
+}
+
+// Neutral footer line (what an export or clear did).
+void settings_show_notice(std::string const& message) {
+  if (g_settings_form == nullptr || g_settings_form->notice == nullptr) return;
+  gtk_label_set_text(g_settings_form->notice, message.c_str());
+  gtk_widget_set_visible(GTK_WIDGET(g_settings_form->notice), !message.empty());
+}
+
+// A refusal belongs next to its row, not in the footer.
+void settings_show_row_error(std::string const& key, std::string const& message) {
+  if (g_settings_form == nullptr) return;
+  auto& form = *g_settings_form;
+  auto it = form.row_errors.find(key);
+  if (it == form.row_errors.end()) {
+    if (message.empty()) return;
+    auto row = form.row_widgets.find(key);
+    if (row == form.row_widgets.end()) { settings_show_error(message); return; }
+    auto* parent = GTK_BOX(gtk_widget_get_parent(row->second));
+    auto* label = gtk_label_new(message.c_str());
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+    gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+    gtk_label_set_selectable(GTK_LABEL(label), TRUE);
+    gtk_widget_add_css_class(label, "error");
+    gtk_widget_set_margin_start(label, 14);
+    gtk_widget_set_margin_end(label, 14);
+    gtk_widget_set_margin_bottom(label, 8);
+    // Under the row's hint when it has one, else under the row itself.
+    GtkWidget* after = row->second;
+    if (auto hint = form.row_hints.find(key); hint != form.row_hints.end()) {
+      after = hint->second;
+    }
+    gtk_box_insert_child_after(parent, label, after);
+    form.row_errors[key] = GTK_LABEL(label);
+  } else if (message.empty()) {
+    gtk_label_set_text(it->second, "");
+  } else {
+    gtk_label_set_text(it->second, message.c_str());
+  }
+}
+
+std::string settings_ai_status_text(std::string const& raw) {
+  // The backend reports one of three states; the two refusals carry a
+  // reason, not a localized sentence.
+  if (raw == "ready") return tr("settings.ai-ready");
+  if (raw == "no provider configured") return tr("settings.ai-status.no-provider");
+  std::string const prefix = "no API key for ";
+  if (raw.rfind(prefix, 0) == 0) {
+    return tr("settings.ai-status.no-key") + " " + raw.substr(prefix.size());
+  }
+  return raw;
 }
 
 void settings_refresh_ai_status() {
@@ -2327,10 +2442,10 @@ void settings_refresh_ai_status() {
     }
     g_idle_add([](gpointer user_data) -> int {
       std::unique_ptr<std::string> text(static_cast<std::string*>(user_data));
-      if (g_settings_form != nullptr) {
+      if (g_settings_form != nullptr && g_settings_form->ai_status != nullptr) {
+        g_settings_form->ai_status_raw = *text;
         gtk_label_set_text(g_settings_form->ai_status,
-                           *text == "ready" ? tr("settings.ai-ready").c_str()
-                                            : text->c_str());
+                           settings_ai_status_text(*text).c_str());
       }
       return G_SOURCE_REMOVE;
     }, new std::string(std::move(status)));
@@ -2365,6 +2480,7 @@ void settings_write(std::string const& key, std::string const& value) {
       if (g_settings_form == nullptr) return G_SOURCE_REMOVE;
       if (written_error.empty()) {
         settings_show_error("");
+        settings_show_row_error(written_key, "");
         if (written_key == "ai-provider") {
           settings_refresh_ai_status();
         } else if (written_key == "language") {
@@ -2372,9 +2488,9 @@ void settings_write(std::string const& key, std::string const& value) {
           apply_tray_language();
         }
       } else {
-        // The backend refused the value (grammar, range): say so and fall
-        // back to what it actually holds.
-        settings_show_error(written_error);
+        // The backend refused the value (grammar, range): say so under the
+        // row and fall back to what it actually holds.
+        settings_show_row_error(written_key, written_error);
         settings_load();
       }
       return G_SOURCE_REMOVE;
@@ -2481,14 +2597,15 @@ GtkWidget* settings_row(GtkWidget* section, char const* label_text,
   auto* label = gtk_label_new(!lookup.empty() && translated != lookup
                                   ? translated.c_str() : label_text);
   if (!lookup.empty()) {
-    g_settings_form->localized_labels.emplace_back(
-        GTK_LABEL(label), lookup, label_text);
+    auto& labels = g_settings_form->schema_scope
+        ? g_settings_form->schema_labels : g_settings_form->localized_labels;
+    labels.emplace_back(GTK_LABEL(label), lookup, label_text);
   }
   gtk_label_set_xalign(GTK_LABEL(label), 0.0);
   gtk_label_set_wrap(GTK_LABEL(label), TRUE);
   gtk_widget_set_hexpand(label, TRUE);
-  gtk_widget_set_halign(control, GTK_ALIGN_END);
   gtk_widget_set_valign(control, GTK_ALIGN_CENTER);
+  gtk_widget_set_halign(control, GTK_ALIGN_END);
   gtk_box_append(GTK_BOX(row), label);
   gtk_box_append(GTK_BOX(row), control);
   gtk_box_append(GTK_BOX(section), row);
@@ -2498,7 +2615,9 @@ GtkWidget* settings_row(GtkWidget* section, char const* label_text,
 void settings_hint(GtkWidget* section, char const* key) {
   std::string const text = tr(key);
   auto* label = gtk_label_new(text.c_str());
-  g_settings_form->localized_labels.emplace_back(GTK_LABEL(label), key, "");
+  auto& labels = g_settings_form->schema_scope
+      ? g_settings_form->schema_labels : g_settings_form->localized_labels;
+  labels.emplace_back(GTK_LABEL(label), key, "");
   gtk_label_set_xalign(GTK_LABEL(label), 0.0);
   gtk_label_set_wrap(GTK_LABEL(label), TRUE);
   gtk_widget_add_css_class(label, "caption");
@@ -2507,16 +2626,29 @@ void settings_hint(GtkWidget* section, char const* key) {
   gtk_widget_set_margin_end(label, 14);
   gtk_widget_set_margin_bottom(label, 8);
   gtk_box_append(GTK_BOX(section), label);
+  // The row's hint, so its refusal lands under the hint, not between.
+  std::string const hint_key = key;
+  std::string const prefix = "settings.hint.";
+  if (g_settings_form->schema_scope && hint_key.rfind(prefix, 0) == 0) {
+    g_settings_form->row_hints[hint_key.substr(prefix.size())] = label;
+  }
 }
 
 GtkWidget* settings_section(GtkWidget* page, char const* title_key) {
-  auto* heading = gtk_label_new(tr(title_key).c_str());
-  g_settings_form->localized_labels.emplace_back(
-      GTK_LABEL(heading), title_key, "");
-  gtk_label_set_xalign(GTK_LABEL(heading), 0.0);
-  gtk_widget_add_css_class(heading, "heading");
-  gtk_widget_set_margin_top(heading, 14);
-  gtk_box_append(GTK_BOX(page), heading);
+  if (title_key != nullptr && *title_key != '\0') {
+    auto* heading = gtk_label_new(tr(title_key).c_str());
+    auto& labels = g_settings_form->schema_scope
+        ? g_settings_form->schema_labels : g_settings_form->localized_labels;
+    labels.emplace_back(GTK_LABEL(heading), title_key, "");
+    gtk_label_set_xalign(GTK_LABEL(heading), 0.0);
+    gtk_widget_add_css_class(heading, "heading");
+    gtk_widget_set_margin_top(heading, 14);
+    gtk_box_append(GTK_BOX(page), heading);
+  } else {
+    auto* gap = gtk_label_new("");
+    gtk_widget_set_margin_top(gap, 6);
+    gtk_box_append(GTK_BOX(page), gap);
+  }
   auto* frame = gtk_frame_new(nullptr);
   auto* body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_frame_set_child(GTK_FRAME(frame), body);
@@ -2527,8 +2659,26 @@ GtkWidget* settings_section(GtkWidget* page, char const* title_key) {
 // A button whose label follows the shared/i18n language live.
 GtkButton* settings_button(char const* key) {
   auto* button = gtk_button_new_with_label(tr(key).c_str());
-  g_settings_form->localized_buttons.emplace_back(GTK_BUTTON(button), key);
+  std::vector<std::tuple<GtkButton*, std::string>>* buttons = &g_settings_form->localized_buttons;
+  if (g_settings_form->dynamic_scope) {
+    buttons = &g_settings_form->dynamic_buttons;
+  } else if (g_settings_form->schema_scope) {
+    buttons = &g_settings_form->schema_buttons;
+  }
+  buttons->emplace_back(GTK_BUTTON(button), key);
   return GTK_BUTTON(button);
+}
+
+// Runs `fn` when the button is clicked; the callable lives with the button.
+void settings_on_clicked(GtkWidget* button, std::function<void()> fn) {
+  g_object_set_data_full(G_OBJECT(button), "settings-fn",
+                         new std::function<void()>(std::move(fn)),
+                         [](gpointer data) { delete static_cast<std::function<void()>*>(data); });
+  g_signal_connect(button, "clicked", G_CALLBACK(+[](GtkButton* clicked, gpointer) {
+    auto* fn = static_cast<std::function<void()>*>(
+        g_object_get_data(G_OBJECT(clicked), "settings-fn"));
+    if (fn) (*fn)();
+  }), nullptr);
 }
 
 SettingBinding* settings_bind(std::string key, SettingKind kind,
@@ -2641,9 +2791,12 @@ void settings_add_text(GtkWidget* section, char const* label, char const* key,
                        char const* placeholder_key,
                        char const* label_key = nullptr) {
   auto* entry = gtk_entry_new();
-  gtk_entry_set_placeholder_text(GTK_ENTRY(entry), tr(placeholder_key).c_str());
-  g_settings_form->localized_placeholders.emplace_back(
-      GTK_ENTRY(entry), placeholder_key);
+  if (placeholder_key != nullptr && *placeholder_key != '\0') {
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), tr(placeholder_key).c_str());
+    auto& placeholders = g_settings_form->schema_scope
+        ? g_settings_form->schema_placeholders : g_settings_form->localized_placeholders;
+    placeholders.emplace_back(GTK_ENTRY(entry), placeholder_key);
+  }
   gtk_widget_set_size_request(entry, 260, -1);
   if (std::string(key) == "hotkey") {
     linux_attach_key_recorder(entry);
@@ -2658,6 +2811,22 @@ void settings_add_text(GtkWidget* section, char const* label, char const* key,
 
 void refresh_settings_language() {
   if (g_settings_form == nullptr) return;
+  if (!g_settings_form->schema.empty()) {
+    // The schema pages carry their labels in the builder's language: rebuild
+    // them, selection kept, and read the lists back in the new language.
+    settings_build_schema();
+    settings_load_lists();
+  }
+  for (auto const& [label, key, fallback] : g_settings_form->schema_labels) {
+    std::string const value = tr(key.c_str());
+    gtk_label_set_text(label, value == key ? fallback.c_str() : value.c_str());
+  }
+  for (auto const& [button, key] : g_settings_form->schema_buttons) {
+    gtk_button_set_label(button, tr(key.c_str()).c_str());
+  }
+  for (auto const& [entry, key] : g_settings_form->schema_placeholders) {
+    gtk_entry_set_placeholder_text(entry, tr(key.c_str()).c_str());
+  }
   for (auto const& [label, key, fallback] : g_settings_form->localized_labels) {
     std::string const value = tr(key.c_str());
     gtk_label_set_text(label, value == key ? fallback.c_str() : value.c_str());
@@ -2732,33 +2901,143 @@ void on_linux_startup_toggle(GObject* object, GParamSpec*, gpointer) {
 
 void settings_build() {
   g_settings_form = new SettingsForm();
+  auto& form = *g_settings_form;
   auto* window = gtk_window_new();
-  g_settings_form->window = GTK_WINDOW(window);
+  form.window = GTK_WINDOW(window);
   gtk_window_set_title(GTK_WINDOW(window), "Fulcrum Settings");
-  // 720x520 is the shared settings window size (docs/design-system.md);
-  // the older 760x560 drifted from the macOS/WinUI hosts.
-  gtk_window_set_default_size(GTK_WINDOW(window), 720, 520);
+  // Fifteen grouped destinations and a description line per page need more
+  // room than the old six-item form; the three hosts keep one size.
+  gtk_window_set_default_size(GTK_WINDOW(window), 760, 640);
   gtk_window_set_hide_on_close(GTK_WINDOW(window), TRUE);
 
-  // Mirror native macOS/WinUI Settings information architecture: six
-  // named sidebar categories, one current scrollable content page.
+  // Search-jump highlight and the sidebar's own look (no GtkStackSidebar:
+  // its rows are a flat list and cannot carry group headings).
+  static GtkCssProvider* settings_css = nullptr;
+  if (settings_css == nullptr) {
+    settings_css = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(settings_css, R"css(
+      .setting-highlight { background: alpha(@accent_color, 0.22); border-radius: 6px; }
+      .settings-nav { padding: 5px 8px; border-radius: 6px; }
+      .settings-nav:checked { background: alpha(@theme_selected_bg_color, 0.25); }
+      .settings-group { padding: 10px 8px 3px 8px; opacity: 0.8; font-size: 0.92em; }
+      .settings-result { padding: 8px; border-radius: 6px; }
+    )css");
+    gtk_style_context_add_provider_for_display(
+        gdk_display_get_default(), GTK_STYLE_PROVIDER(settings_css),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  }
+
+  // Settings information architecture on every host: a search box over
+  // grouped destinations on the left, one scrollable page on the right, a
+  // shared footer under the pages for what the last action reported.
   auto* layout = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   auto* content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_widget_set_hexpand(content, TRUE);
   gtk_widget_set_vexpand(content, TRUE);
+
+  auto* sidebar_scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sidebar_scroll),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  gtk_widget_set_size_request(sidebar_scroll, 208, -1);
+  auto* sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+  gtk_widget_add_css_class(sidebar, "navigation-sidebar");
+  gtk_widget_set_margin_top(sidebar, 10);
+  gtk_widget_set_margin_bottom(sidebar, 10);
+  gtk_widget_set_margin_start(sidebar, 8);
+  gtk_widget_set_margin_end(sidebar, 8);
+  form.nav_box = sidebar;
+  auto* search = gtk_search_entry_new();
+  form.search = search;
+  gtk_widget_set_margin_bottom(search, 8);
+  gtk_accessible_update_property(GTK_ACCESSIBLE(search),
+                                 GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                 "settings-search", -1);
+  g_signal_connect(search, "search-changed",
+                   G_CALLBACK(+[](GtkEditable*, gpointer) { settings_render_search(); }),
+                   nullptr);
+  gtk_box_append(GTK_BOX(sidebar), search);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(sidebar_scroll), sidebar);
+
   auto* stack = gtk_stack_new();
-  g_settings_form->stack = stack;
+  form.stack = stack;
   gtk_widget_set_hexpand(stack, TRUE);
   gtk_widget_set_vexpand(stack, TRUE);
-  auto* sidebar = gtk_stack_sidebar_new();
-  gtk_stack_sidebar_set_stack(GTK_STACK_SIDEBAR(sidebar), GTK_STACK(stack));
-  gtk_widget_set_size_request(sidebar, 176, -1);
-  gtk_widget_add_css_class(sidebar, "navigation-sidebar");
-  gtk_box_append(GTK_BOX(layout), sidebar);
+  gtk_stack_set_hhomogeneous(GTK_STACK(stack), FALSE);
+  gtk_stack_set_vhomogeneous(GTK_STACK(stack), FALSE);
+
+  // Search results stand in for the current page while the box has text.
+  auto* search_scrolled = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(search_scrolled),
+                                 GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+  auto* search_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_margin_top(search_page, 20);
+  gtk_widget_set_margin_bottom(search_page, 24);
+  gtk_widget_set_margin_start(search_page, 24);
+  gtk_widget_set_margin_end(search_page, 24);
+  auto* search_title = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(search_title), 0.0);
+  gtk_widget_add_css_class(search_title, "heading");
+  gtk_widget_set_margin_bottom(search_title, 6);
+  gtk_box_append(GTK_BOX(search_page), search_title);
+  form.search_title = search_title;
+  auto* search_results = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+  gtk_widget_set_hexpand(search_results, TRUE);
+  gtk_box_append(GTK_BOX(search_page), search_results);
+  form.search_results = search_results;
+  auto* search_empty = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(search_empty), 0.0);
+  gtk_label_set_wrap(GTK_LABEL(search_empty), TRUE);
+  gtk_widget_add_css_class(search_empty, "dim-label");
+  form.search_empty = search_empty;
+  gtk_box_append(GTK_BOX(search_page), search_empty);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(search_scrolled), search_page);
+  gtk_stack_add_named(GTK_STACK(stack), search_scrolled, "__search");
+
+  gtk_box_append(GTK_BOX(layout), sidebar_scroll);
   gtk_box_append(GTK_BOX(layout), gtk_separator_new(GTK_ORIENTATION_VERTICAL));
   gtk_box_append(GTK_BOX(content), stack);
   gtk_box_append(GTK_BOX(layout), content);
   gtk_window_set_child(GTK_WINDOW(window), layout);
+
+  // The stack is the source of truth for the current page: it drives the
+  // sidebar toggles and remembers the page search returns to.
+  g_signal_connect(stack, "notify::visible-child", G_CALLBACK(+[](GObject*, GParamSpec*, gpointer) {
+    auto* current = g_settings_form;
+    if (!current) return;
+    char const* raw = gtk_stack_get_visible_child_name(GTK_STACK(current->stack));
+    std::string const page = raw != nullptr ? raw : "";
+    current->nav_sync = true;
+    for (auto const& [id, button] : current->nav_buttons) {
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(button), id == page);
+    }
+    current->nav_sync = false;
+    if (page != "__search" && !page.empty()) current->last_page = page;
+    current->current_page = page;
+  }), nullptr);
+
+  // Ctrl+F focuses the search from anywhere in the window; Esc empties it.
+  auto* keys = gtk_event_controller_key_new();
+  gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
+  g_signal_connect(keys, "key-pressed",
+                   G_CALLBACK(+[](GtkEventControllerKey*, guint keyval, guint,
+                                  GdkModifierType state, gpointer) -> gboolean {
+    auto* current = g_settings_form;
+    if (!current) return FALSE;
+    bool const primary = (state & (GDK_CONTROL_MASK | GDK_META_MASK)) != 0;
+    if (primary && (keyval == GDK_KEY_f || keyval == GDK_KEY_F)) {
+      gtk_widget_grab_focus(current->search);
+      return TRUE;
+    }
+    if (keyval == GDK_KEY_Escape) {
+      char const* text = gtk_editable_get_text(GTK_EDITABLE(current->search));
+      if (text != nullptr && *text != '\0') {
+        gtk_editable_set_text(GTK_EDITABLE(current->search), "");
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }), nullptr);
+  gtk_widget_add_controller(window, keys);
 
   auto make_page = [stack](char const* id, char const* title_key) -> GtkWidget* {
     auto* scrolled = gtk_scrolled_window_new();
@@ -2774,93 +3053,6 @@ void settings_build() {
     g_settings_form->localized_pages.emplace_back(id, title_key);
     return page;
   };
-
-  auto* general_page = make_page("general", "settings.nav.general");
-  auto* general = settings_section(general_page, "settings.nav.general");
-  settings_add_choice(general, "Language", "language",
-                      {{"System", "system", "settings.language.system"},
-                       {"English", "en", "settings.language.en"},
-                       {"中文", "zh", "settings.language.zh"}});
-  settings_add_choice(general, "Theme", "theme",
-                      {{"System", "system", "settings.theme.system"},
-                       {"Light", "light", "settings.theme.light"},
-                       {"Dark", "dark", "settings.theme.dark"}});
-  auto* startup_toggle = gtk_switch_new();
-  gtk_switch_set_active(GTK_SWITCH(startup_toggle), fulcrum_autostart_enabled());
-  gtk_accessible_update_property(GTK_ACCESSIBLE(startup_toggle),
-                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
-                                  "Fulcrum start at login", -1);
-  settings_row(general, "Start at login", startup_toggle, nullptr,
-               "settings.start-at-login");
-  g_signal_connect(startup_toggle, "notify::active",
-                   G_CALLBACK(on_linux_startup_toggle), nullptr);
-  settings_hint(general, "settings.hint.start-at-login");
-  settings_add_text(general, "Hotkey", "hotkey", "settings.hotkey.placeholder");
-  settings_hint(general, "settings.hint.hotkey");
-  settings_add_number(general, "Maximum results", "max-results", 5, 12);
-  settings_hint(general, "settings.hint.max-results");
-
-  auto* features = settings_section(make_page("features", "settings.nav.features"),
-                                    "settings.nav.features");
-  settings_add_toggle(features, "Record clipboard history", "clipboard-enabled");
-  settings_add_number(features, "Clipboard history limit", "clipboard-limit",
-                      10, 100000, "settings.clipboard-limit");
-  settings_hint(features, "settings.hint.clipboard-limit");
-  settings_add_toggle(features, "Web search rows (bangs and fallback)", "web-search-enabled");
-  settings_add_choice(features, "Default bang", "default-engine",
-                      {{"!g", "!g", ""}, {"!d", "!d", ""}, {"!gh", "!gh", ""},
-                       {"!so", "!so", ""}, {"!w", "!w", ""}, {"!yt", "!yt", ""},
-                       {"!m", "!m", ""}, {"!t", "!t", ""}},
-                      "settings.default-engine");
-  auto* expansion = settings_add_toggle(
-      features, "Expand snippet keywords as you type in any app",
-      "expansion-enabled");
-  gtk_widget_set_sensitive(expansion, FALSE);
-  settings_hint(features, "settings.hint.expansion.linux");
-  settings_add_toggle(features, "Load plugins", "plugins-enabled");
-  settings_add_number(features, "Plugin call timeout (ms)", "plugins-timeout-ms",
-                      100, 10000, "settings.plugins-timeout");
-  settings_hint(features, "settings.hint.plugins-timeout");
-
-  auto* ai = settings_section(make_page("ai", "settings.nav.ai"), "settings.nav.ai");
-  settings_add_choice(ai, "Provider", "ai-provider",
-                      {{"Off", "", "settings.provider.off"},
-                       {"OpenAI", "openai", ""},
-                       {"Anthropic", "anthropic", ""}, {"Ollama", "ollama", ""}});
-  settings_add_text(ai, "Model", "ai-model", "settings.ai-model.placeholder",
-                    "settings.ai-model");
-  settings_add_text(ai, "Base URL", "ai-base-url", "settings.ai-model.placeholder",
-                    "settings.ai-base-url");
-  settings_add_text(ai, "Persona", "ai-persona", "settings.ai-persona.placeholder",
-                    "settings.ai-persona");
-  auto* key_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  auto* key_entry = gtk_password_entry_new();
-  gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(key_entry), TRUE);
-  gtk_widget_set_size_request(key_entry, 240, -1);
-  g_signal_connect(key_entry, "activate", G_CALLBACK(on_key_entry_activate), nullptr);
-  auto* save = settings_button("settings.save");
-  g_signal_connect(save, "clicked", G_CALLBACK(on_save_key_clicked), nullptr);
-  gtk_box_append(GTK_BOX(key_box), key_entry);
-  gtk_box_append(GTK_BOX(key_box), GTK_WIDGET(save));
-  g_settings_form->key_entry = key_entry;
-  settings_row(ai, "API key", key_box, nullptr, "settings.ai-api-key");
-  auto* status = gtk_label_new("");
-  gtk_label_set_xalign(GTK_LABEL(status), 0.0);
-  gtk_widget_add_css_class(status, "dim-label");
-  gtk_widget_set_margin_start(status, 14);
-  gtk_widget_set_margin_end(status, 14);
-  gtk_box_append(GTK_BOX(ai), status);
-  g_settings_form->ai_status = GTK_LABEL(status);
-  auto* notice = gtk_label_new("");
-  gtk_label_set_xalign(GTK_LABEL(notice), 0.0);
-  gtk_label_set_wrap(GTK_LABEL(notice), TRUE);
-  gtk_widget_add_css_class(notice, "caption");
-  gtk_widget_add_css_class(notice, "dim-label");
-  gtk_widget_set_margin_start(notice, 14);
-  gtk_widget_set_margin_end(notice, 14);
-  gtk_box_append(GTK_BOX(ai), notice);
-  g_settings_form->key_notice = GTK_LABEL(notice);
-  settings_hint(ai, "settings.hint.ai-keys");
 
   // Commands is a real backend-owned editor, not just a placeholder label.
   auto* commands_page = make_page("commands", "settings.nav.commands");
@@ -3087,36 +3279,1337 @@ void settings_build() {
   gtk_box_append(GTK_BOX(workflow_page), wf_status);
   g_settings_form->workflow_status = wf_status;
 
-  auto* sync_page = make_page("sync", "settings.nav.sync");
-  auto* sync = settings_section(sync_page, "settings.nav.sync");
-  settings_add_text(sync, "Sync folder (beta)", "sync-root",
-                    "settings.sync-folder.placeholder", "settings.sync-folder");
-  settings_hint(sync, "settings.sync-folder.description");
-  settings_hint(sync, "settings.updates-note.linux");
-  GtkWidget* check_now = GTK_WIDGET(settings_button("settings.check-updates-now"));
-  gtk_accessible_update_property(GTK_ACCESSIBLE(check_now),
-                                  GTK_ACCESSIBLE_PROPERTY_LABEL,
-                                  "settings-update-check", -1);
-  gtk_widget_set_halign(check_now, GTK_ALIGN_START);
-  gtk_widget_set_margin_start(check_now, 14);
-  gtk_widget_set_margin_bottom(check_now, 8);
-  g_signal_connect(check_now, "clicked", G_CALLBACK(+[](GtkButton*, gpointer) {
-    show_update_window(true);
-  }), nullptr);
-  gtk_box_append(GTK_BOX(sync), check_now);
+  // Errors and results belong to a persistent shared footer, not an
+  // arbitrary section. It stays under the content pages while users
+  // navigate the sidebar.
+  auto* notice = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(notice), 0.0);
+  gtk_label_set_wrap(GTK_LABEL(notice), TRUE);
+  gtk_label_set_selectable(GTK_LABEL(notice), TRUE);
+  gtk_widget_add_css_class(notice, "caption");
+  gtk_widget_add_css_class(notice, "dim-label");
+  gtk_widget_set_margin_top(notice, 8);
+  gtk_widget_set_margin_start(notice, 16);
+  gtk_widget_set_margin_end(notice, 16);
+  gtk_widget_set_visible(notice, FALSE);
+  gtk_box_append(GTK_BOX(content), notice);
+  g_settings_form->notice = GTK_LABEL(notice);
 
   auto* error = gtk_label_new("");
   gtk_label_set_xalign(GTK_LABEL(error), 0.0);
   gtk_label_set_wrap(GTK_LABEL(error), TRUE);
   gtk_label_set_selectable(GTK_LABEL(error), TRUE);
   gtk_widget_add_css_class(error, "error");
-  gtk_widget_set_margin_top(error, 12);
+  gtk_widget_set_margin_top(error, 8);
+  gtk_widget_set_margin_bottom(error, 8);
+  gtk_widget_set_margin_start(error, 16);
+  gtk_widget_set_margin_end(error, 16);
   gtk_widget_set_visible(error, FALSE);
-  // Errors belong to a persistent shared footer, not an arbitrary section.
-  // It stays under the content pages while users navigate the sidebar.
   gtk_box_append(GTK_BOX(content), error);
   g_settings_form->error = GTK_LABEL(error);
 }
+
+
+// ---- settings v2 pages -------------------------------------------------------
+//
+// The sidebar, the pages, their sections and rows come from the backend's
+// `settings-ui` data (parsed into SettingsForm::schema); Commands and
+// Workflows keep their native editors. What each page shows beside its rows
+// — application folders, plugins, snippets, the AI key, the transfers — is
+// host code over the list/collection RPCs.
+
+void workflow_clear_rows(GtkWidget* container);
+
+std::string settings_lower(std::string text) {
+  for (auto& c : text) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return text;
+}
+
+std::vector<std::string> settings_split_csv(std::string const& text) {
+  std::vector<std::string> out;
+  std::string part;
+  for (char const c : text) {
+    if (c == ',') { out.push_back(part); part.clear(); } else { part += c; }
+  }
+  out.push_back(part);
+  return out;
+}
+
+// `settings-ui` rows: ("page" <page> <group>) opens each page, then
+// ("section" <page> <section>) and ("setting" <key> <page> <section>
+// <control> <options> <value>) follow in display order.
+std::vector<SettingsSchemaPage> settings_parse_schema(
+    std::vector<std::vector<std::string>> const& rows) {
+  std::vector<SettingsSchemaPage> pages;
+  for (auto const& row : rows) {
+    if (row.empty()) continue;
+    if (row[0] == "page" && row.size() >= 3) {
+      pages.push_back(SettingsSchemaPage{row[1], row[2], {}});
+      continue;
+    }
+    if (pages.empty()) continue;
+    auto& page = pages.back();
+    if (row[0] == "section" && row.size() >= 3 && row[1] == page.id) {
+      page.sections.push_back(SettingsSchemaSection{row[2], {}});
+      continue;
+    }
+    if (row[0] != "setting" || row.size() < 7 || row[2] != page.id) continue;
+    // A row whose section line never arrived still gets its section.
+    if (page.sections.empty() || page.sections.back().id != row[3]) {
+      page.sections.push_back(SettingsSchemaSection{row[3], {}});
+    }
+    page.sections.back().rows.push_back(SettingsSchemaRow{
+        row[1], row[3], row[4],
+        row[5].empty() ? std::vector<std::string>{} : settings_split_csv(row[5])});
+  }
+  return pages;
+}
+
+void settings_on_nav_toggled(GtkToggleButton* button, gpointer data) {
+  auto* form = g_settings_form;
+  if (!form || form->nav_sync || !gtk_toggle_button_get_active(button)) return;
+  auto* id = static_cast<std::string*>(data);
+  gtk_stack_set_visible_child_name(GTK_STACK(form->stack), id->c_str());
+}
+
+// Start at login is device-local and never in the schema; it sits before the
+// hotkey row.
+void settings_add_startup_row(GtkWidget* section) {
+  auto* toggle = gtk_switch_new();
+  gtk_switch_set_active(GTK_SWITCH(toggle), fulcrum_autostart_enabled());
+  gtk_accessible_update_property(GTK_ACCESSIBLE(toggle),
+                                 GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                 "Fulcrum start at login", -1);
+  settings_row(section, "Start at login", toggle, nullptr,
+               "settings.start-at-login");
+  g_signal_connect(toggle, "notify::active",
+                   G_CALLBACK(on_linux_startup_toggle), nullptr);
+  settings_hint(section, "settings.hint.start-at-login");
+}
+
+void settings_add_schema_row(GtkWidget* section, SettingsSchemaRow const& row) {
+  std::string const label_key = "settings." + row.key;
+  if (row.control == "toggle") {
+    settings_add_toggle(section, row.key.c_str(), row.key.c_str(), label_key.c_str());
+  } else if (row.control == "select") {
+    std::vector<std::string> option_keys;
+    for (auto const& option : row.options) {
+      // The empty option is the "Off" provider; its key spelling is `off`.
+      std::string const key =
+          "settings.opt." + row.key + "." + (option.empty() ? "off" : option);
+      option_keys.push_back(settings_has_i18n(key) ? key : "");
+    }
+    std::vector<std::tuple<char const*, char const*, char const*>> options;
+    for (std::size_t i = 0; i < row.options.size(); ++i) {
+      options.emplace_back(row.options[i].c_str(), row.options[i].c_str(),
+                           option_keys[i].c_str());
+    }
+    settings_add_choice(section, row.key.c_str(), row.key.c_str(), options,
+                        label_key.c_str());
+  } else if (row.control == "number") {
+    // options = the validator's inclusive (min max).
+    double low = 0, high = 1'000'000;
+    try {
+      if (row.options.size() >= 2) { low = std::stod(row.options[0]); high = std::stod(row.options[1]); }
+    } catch (...) {
+    }
+    settings_add_number(section, row.key.c_str(), row.key.c_str(), low, high,
+                        label_key.c_str());
+  } else {
+    std::string const placeholder_key = "settings." + row.key + ".placeholder";
+    settings_add_text(section, row.key.c_str(), row.key.c_str(),
+                      settings_has_i18n(placeholder_key) ? placeholder_key.c_str() : nullptr,
+                      label_key.c_str());
+  }
+  auto* row_box = gtk_widget_get_last_child(section);
+  if (row_box != nullptr) {
+    g_settings_form->row_widgets[row.key] = row_box;
+    // Snippet expansion has no engine on this host.
+    if (row.key == "expansion-enabled" && gtk_widget_get_first_child(row_box) != nullptr) {
+      gtk_widget_set_sensitive(gtk_widget_get_last_child(row_box), FALSE);
+    }
+  }
+  std::string hint_key = "settings.hint." + row.key;
+  if (row.key == "expansion-enabled") hint_key = "settings.hint.expansion.linux";
+  if (settings_has_i18n(hint_key)) settings_hint(section, hint_key.c_str());
+}
+
+GtkWidget* settings_list_host(GtkWidget* section) {
+  auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_set_margin_start(box, 14);
+  gtk_widget_set_margin_end(box, 14);
+  gtk_widget_set_margin_bottom(box, 8);
+  gtk_box_append(GTK_BOX(section), box);
+  return box;
+}
+
+void settings_edit_named_list(std::string kind, std::string id, std::string name,
+                              std::string path, std::string enabled);
+void settings_edit_collection(bool snippets, std::string id, std::string name,
+                              std::string keyword, std::string body);
+void settings_confirm(GtkWindow* parent, std::string message,
+                      std::string confirm_label, std::function<void()> action);
+void settings_export_dialog();
+void settings_import_file();
+void settings_clear_history(bool clipboard);
+void settings_set_plugin(std::string id, bool enabled);
+void settings_remove_named_list(std::string kind, std::string id);
+void settings_remove_collection(bool snippets, std::string id);
+
+void settings_add_ai_key(GtkWidget* section) {
+  // The AI key rides the ai.key action and never comes back over the wire;
+  // ai-status reports readiness instead.
+  auto* key_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  auto* key_entry = gtk_password_entry_new();
+  gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(key_entry), TRUE);
+  gtk_widget_set_size_request(key_entry, 240, -1);
+  g_signal_connect(key_entry, "activate", G_CALLBACK(on_key_entry_activate), nullptr);
+  auto* save = settings_button("settings.save");
+  settings_on_clicked(GTK_WIDGET(save), settings_save_key);
+  gtk_box_append(GTK_BOX(key_box), key_entry);
+  gtk_box_append(GTK_BOX(key_box), GTK_WIDGET(save));
+  g_settings_form->key_entry = key_entry;
+  settings_row(section, "API key", key_box, nullptr, "settings.ai-api-key");
+  auto* status = gtk_label_new(settings_ai_status_text(g_settings_form->ai_status_raw).c_str());
+  gtk_label_set_xalign(GTK_LABEL(status), 0.0);
+  gtk_widget_add_css_class(status, "dim-label");
+  gtk_widget_set_margin_start(status, 14);
+  gtk_widget_set_margin_end(status, 14);
+  gtk_box_append(GTK_BOX(section), status);
+  g_settings_form->ai_status = GTK_LABEL(status);
+  auto* notice = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(notice), 0.0);
+  gtk_label_set_wrap(GTK_LABEL(notice), TRUE);
+  gtk_widget_add_css_class(notice, "caption");
+  gtk_widget_add_css_class(notice, "dim-label");
+  gtk_widget_set_margin_start(notice, 14);
+  gtk_widget_set_margin_end(notice, 14);
+  gtk_widget_set_margin_bottom(notice, 8);
+  gtk_box_append(GTK_BOX(section), notice);
+  g_settings_form->key_notice = GTK_LABEL(notice);
+}
+
+// What a page shows beside its schema rows.
+void settings_add_page_extras(GtkWidget* page, std::string const& id) {
+  auto* form = g_settings_form;
+  if (id == "apps") {
+    for (char const* kind : {"app-folders", "apps"}) {
+      bool const folders = std::string(kind) == "app-folders";
+      auto* body = settings_section(page, folders ? "settings.list.app-folders"
+                                                  : "settings.list.apps");
+      settings_hint(body, folders ? "settings.list.app-folders-help"
+                                  : "settings.list.apps-help");
+      form->list_hosts[kind] = settings_list_host(body);
+      if (folders) {
+        auto* add = settings_button("settings.list.add");
+        gtk_widget_set_halign(GTK_WIDGET(add), GTK_ALIGN_START);
+        gtk_widget_set_margin_start(GTK_WIDGET(add), 14);
+        gtk_widget_set_margin_bottom(GTK_WIDGET(add), 8);
+        settings_on_clicked(GTK_WIDGET(add), [] { settings_edit_named_list("app-folders", "", "", "", ""); });
+        gtk_box_append(GTK_BOX(body), GTK_WIDGET(add));
+      }
+    }
+  } else if (id == "extensions") {
+    auto* body = settings_section(page, "settings.nav.extensions");
+    settings_hint(body, "settings.ext.help");
+    form->list_hosts["plugins"] = settings_list_host(body);
+  } else if (id == "snippets" || id == "quicklinks") {
+    bool const snippets = id == "snippets";
+    auto* body = settings_section(page, snippets ? "settings.nav.snippets"
+                                                 : "settings.nav.quicklinks");
+    form->list_hosts[id] = settings_list_host(body);
+    auto* add = settings_button(snippets ? "settings.col.add-snippet"
+                                         : "settings.col.add-quicklink");
+    gtk_widget_set_halign(GTK_WIDGET(add), GTK_ALIGN_START);
+    gtk_widget_set_margin_start(GTK_WIDGET(add), 14);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(add), 8);
+    settings_on_clicked(GTK_WIDGET(add), [snippets] {
+      settings_edit_collection(snippets, "", "", "", "");
+    });
+    gtk_box_append(GTK_BOX(body), GTK_WIDGET(add));
+  } else if (id == "clipboard") {
+    auto* body = settings_section(page, "");
+    auto* clear = settings_button("settings.clipboard.clear");
+    gtk_widget_set_halign(GTK_WIDGET(clear), GTK_ALIGN_START);
+    gtk_widget_set_margin_start(GTK_WIDGET(clear), 14);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(clear), 8);
+    settings_on_clicked(GTK_WIDGET(clear), [] {
+      auto* current = g_settings_form;
+      settings_confirm(GTK_WINDOW(current->window), tr("settings.clipboard.clear-confirm"),
+                        tr("settings.clipboard.clear"), [] { settings_clear_history(true); });
+    });
+    gtk_box_append(GTK_BOX(body), GTK_WIDGET(clear));
+  } else if (id == "privacy") {
+    auto* body = settings_section(page, "");
+    settings_hint(body, "settings.privacy.stays");
+    auto* clear = settings_button("settings.privacy.clear");
+    gtk_widget_set_halign(GTK_WIDGET(clear), GTK_ALIGN_START);
+    gtk_widget_set_margin_start(GTK_WIDGET(clear), 14);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(clear), 8);
+    settings_on_clicked(GTK_WIDGET(clear), [] {
+      auto* current = g_settings_form;
+      settings_confirm(GTK_WINDOW(current->window), tr("settings.privacy.clear-confirm"),
+                        tr("settings.privacy.clear"), [] { settings_clear_history(false); });
+    });
+    gtk_box_append(GTK_BOX(body), GTK_WIDGET(clear));
+  } else if (id == "sync") {
+    // Export / import a file the host picks; the backend never sees a path.
+    auto* body = settings_section(page, "");
+    settings_hint(body, "settings.sync.transfer-help");
+    auto* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_margin_start(buttons, 14);
+    gtk_widget_set_margin_bottom(buttons, 8);
+    auto* export_button = settings_button("settings.sync.export");
+    auto* import_button = settings_button("settings.sync.import");
+    settings_on_clicked(GTK_WIDGET(export_button), settings_export_dialog);
+    settings_on_clicked(GTK_WIDGET(import_button), settings_import_file);
+    gtk_box_append(GTK_BOX(buttons), GTK_WIDGET(export_button));
+    gtk_box_append(GTK_BOX(buttons), GTK_WIDGET(import_button));
+    gtk_box_append(GTK_BOX(body), buttons);
+    // "Check for Updates Now" keeps opening the dedicated update window.
+    auto* updates = settings_section(page, "settings.updates");
+    settings_hint(updates, "settings.updates-note.linux");
+    GtkWidget* check_now = GTK_WIDGET(settings_button("settings.check-updates-now"));
+    gtk_accessible_update_property(GTK_ACCESSIBLE(check_now),
+                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                   "settings-update-check", -1);
+    gtk_widget_set_halign(check_now, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(check_now, 14);
+    gtk_widget_set_margin_bottom(check_now, 8);
+    settings_on_clicked(check_now, [] { show_update_window(true); });
+    gtk_box_append(GTK_BOX(updates), check_now);
+  }
+}
+
+void settings_build_schema() {
+  auto* form = g_settings_form;
+  if (!form || form->stack == nullptr) return;
+  auto* stack = GTK_STACK(form->stack);
+  std::string const keep = form->current_page == "__search" ? form->last_page
+                                                            : form->current_page;
+  // Drop the previous build entirely: its bindings, labels, sidebar rows
+  // and pages go with the widgets.
+  for (auto const& [id, button] : form->nav_buttons) {
+    if (auto* parent = gtk_widget_get_parent(button)) {
+      gtk_box_remove(GTK_BOX(parent), button);
+    }
+  }
+  for (auto const& page : form->schema) {
+    if (auto* child = gtk_stack_get_child_by_name(stack, page.id.c_str())) {
+      gtk_stack_remove(stack, child);
+    }
+  }
+  for (auto* heading : form->nav_headings) {
+    if (auto* parent = gtk_widget_get_parent(heading)) gtk_box_remove(GTK_BOX(parent), heading);
+  }
+  form->nav_headings.clear();
+  form->nav_buttons.clear();
+  form->bindings.clear();
+  form->schema_labels.clear();
+  form->schema_buttons.clear();
+  form->schema_placeholders.clear();
+  form->row_widgets.clear();
+  form->row_hints.clear();
+  form->row_errors.clear();
+  form->list_hosts.clear();
+  form->key_entry = nullptr;
+  form->ai_status = nullptr;
+  form->key_notice = nullptr;
+
+  form->schema_scope = true;
+  GtkWidget* first_button = nullptr;
+  for (std::size_t index = 0; index < form->schema.size(); ++index) {
+    auto const& page = form->schema[index];
+    // Sidebar: a group heading whenever the group changes, then the page.
+    std::string const group_key = "settings.group." + page.group;
+    if (index == 0 || form->schema[index - 1].group != page.group) {
+      std::string const group_text = tr(group_key.c_str());
+      auto* heading = gtk_label_new(group_text == group_key ? page.group.c_str()
+                                                            : group_text.c_str());
+      gtk_label_set_xalign(GTK_LABEL(heading), 0.0);
+      gtk_widget_add_css_class(heading, "settings-group");
+      gtk_box_append(GTK_BOX(form->nav_box), heading);
+      form->nav_headings.push_back(heading);
+      if (group_text != group_key) {
+        form->schema_labels.emplace_back(GTK_LABEL(heading), group_key, page.group);
+      }
+    }
+    std::string const nav_key = "settings.nav." + page.id;
+    auto* button = gtk_toggle_button_new_with_label(tr(nav_key.c_str()).c_str());
+    gtk_widget_add_css_class(button, "settings-nav");
+    gtk_widget_set_halign(button, GTK_ALIGN_FILL);
+    gtk_widget_set_valign(button, GTK_ALIGN_CENTER);
+    gtk_accessible_update_property(GTK_ACCESSIBLE(button),
+                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                   ("settings-sidebar-" + page.id).c_str(), -1);
+    form->schema_buttons.emplace_back(GTK_BUTTON(button), nav_key);
+    auto* page_id = new std::string(page.id);
+    g_object_set_data_full(G_OBJECT(button), "settings-page", page_id,
+                           [](gpointer data) { delete static_cast<std::string*>(data); });
+    g_signal_connect(button, "toggled", G_CALLBACK(settings_on_nav_toggled), page_id);
+    gtk_box_append(GTK_BOX(form->nav_box), button);
+    if (first_button == nullptr) first_button = button;
+    else gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(button), GTK_TOGGLE_BUTTON(first_button));
+    form->nav_buttons[page.id] = button;
+
+    // Page: description, then one card per section with its rows.
+    auto* scrolled = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_margin_top(box, 16);
+    gtk_widget_set_margin_bottom(box, 24);
+    gtk_widget_set_margin_start(box, 24);
+    gtk_widget_set_margin_end(box, 24);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), box);
+    gtk_stack_add_named(stack, scrolled, page.id.c_str());
+    std::string const description_key = "settings.page." + page.id;
+    if (settings_has_i18n(description_key)) {
+      auto* description = gtk_label_new(tr(description_key.c_str()).c_str());
+      gtk_label_set_xalign(GTK_LABEL(description), 0.0);
+      gtk_label_set_wrap(GTK_LABEL(description), TRUE);
+      gtk_widget_add_css_class(description, "dim-label");
+      form->schema_labels.emplace_back(GTK_LABEL(description), description_key, "");
+      gtk_box_append(GTK_BOX(box), description);
+    }
+    for (auto const& section : page.sections) {
+      std::string const section_key = "settings.section." + section.id;
+      auto* body = settings_section(box, section_key.c_str());
+      for (auto const& row : section.rows) {
+        if (row.key == "hotkey") settings_add_startup_row(body);
+        settings_add_schema_row(body, row);
+      }
+      if (page.id == "ai" && section.id == "provider") settings_add_ai_key(body);
+    }
+    settings_add_page_extras(box, page.id);
+  }
+  form->schema_scope = false;
+  // Commands and Workflows keep their sidebar entries after the schema
+  // pages; give them nav toggles the first time (and every time, since the
+  // group was rebuilt).
+  for (auto const& id_pair : form->localized_pages) {
+    auto const& key = id_pair.second;
+    auto* button = gtk_toggle_button_new_with_label(tr(key.c_str()).c_str());
+    gtk_widget_add_css_class(button, "settings-nav");
+    gtk_widget_set_halign(button, GTK_ALIGN_FILL);
+    gtk_accessible_update_property(GTK_ACCESSIBLE(button),
+                                   GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                   ("settings-sidebar-" + id_pair.first).c_str(), -1);
+    auto* id = new std::string(id_pair.first);
+    g_object_set_data_full(G_OBJECT(button), "settings-page", id,
+                           [](gpointer data) { delete static_cast<std::string*>(data); });
+    g_signal_connect(button, "toggled", G_CALLBACK(settings_on_nav_toggled), id);
+    gtk_box_append(GTK_BOX(form->nav_box), button);
+    if (first_button == nullptr) first_button = button;
+    else gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(button), GTK_TOGGLE_BUTTON(first_button));
+    form->nav_buttons[id_pair.first] = button;
+  }
+  if (first_button != nullptr) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(first_button), TRUE);
+  }
+  if (gtk_stack_get_child_by_name(stack, keep.c_str())) {
+    gtk_stack_set_visible_child_name(stack, keep.c_str());
+  }
+}
+
+void settings_jump_to(std::string const& page, std::string const& key);
+
+void settings_render_search() {
+  auto* form = g_settings_form;
+  if (!form || form->search_silent || form->search_results == nullptr) return;
+  std::string const needle = settings_lower(
+      settings_trimmed(gtk_editable_get_text(GTK_EDITABLE(form->search))));
+  workflow_clear_rows(form->search_results);
+  form->dynamic_buttons.clear();
+  if (needle.empty()) {
+    if (form->current_page == "__search") {
+      gtk_stack_set_visible_child_name(GTK_STACK(form->stack), form->last_page.c_str());
+    }
+    return;
+  }
+  // Local filter over the labels and hints the window already holds — no
+  // RPC. A result reads "label" over "page / section".
+  int count = 0;
+  for (auto const& page : form->schema) {
+    for (auto const& section : page.sections) {
+      for (auto const& row : section.rows) {
+        std::string const label = tr(("settings." + row.key).c_str());
+        std::string const haystack = settings_lower(
+            label + " " + tr(("settings.hint." + row.key).c_str()) + " " + row.key);
+        if (haystack.find(needle) == std::string::npos) continue;
+        auto* button = gtk_button_new();
+        gtk_widget_set_hexpand(button, TRUE);
+        gtk_widget_add_css_class(button, "settings-result");
+        auto* lines = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        auto* title = gtk_label_new(label.c_str());
+        gtk_label_set_xalign(GTK_LABEL(title), 0.0);
+        gtk_box_append(GTK_BOX(lines), title);
+        auto* path = gtk_label_new((tr(("settings.nav." + page.id).c_str()) + " / " +
+                                    tr(("settings.section." + section.id).c_str())).c_str());
+        gtk_label_set_xalign(GTK_LABEL(path), 0.0);
+        gtk_widget_add_css_class(path, "dim-label");
+        gtk_widget_add_css_class(path, "caption");
+        gtk_box_append(GTK_BOX(lines), path);
+        gtk_button_set_child(GTK_BUTTON(button), lines);
+        std::string const page_id = page.id;
+        settings_on_clicked(button, [page_id, key = row.key] {
+          settings_jump_to(page_id, key);
+        });
+        gtk_box_append(GTK_BOX(form->search_results), button);
+        ++count;
+      }
+    }
+  }
+  gtk_label_set_text(GTK_LABEL(form->search_title),
+                     tr_format("settings.search.results", {std::to_string(count)}).c_str());
+  gtk_label_set_text(GTK_LABEL(form->search_empty), tr("settings.search.empty").c_str());
+  gtk_widget_set_visible(form->search_empty, count == 0);
+  gtk_stack_set_visible_child_name(GTK_STACK(form->stack), "__search");
+}
+
+gboolean settings_unhighlight(gpointer data) {
+  std::unique_ptr<std::string> key(static_cast<std::string*>(data));
+  auto* form = g_settings_form;
+  if (form && form->highlighted_key == *key) {
+    if (auto it = form->row_widgets.find(*key); it != form->row_widgets.end()) {
+      gtk_widget_remove_css_class(it->second, "setting-highlight");
+    }
+    form->highlighted_key.clear();
+  }
+  return G_SOURCE_REMOVE;
+}
+
+gboolean settings_scroll_to_row(gpointer data) {
+  std::unique_ptr<std::string> key(static_cast<std::string*>(data));
+  auto* form = g_settings_form;
+  if (!form) return G_SOURCE_REMOVE;
+  auto it = form->row_widgets.find(*key);
+  if (it == form->row_widgets.end()) return G_SOURCE_REMOVE;
+  GtkWidget* row = it->second;
+  auto* scrolled = gtk_widget_get_ancestor(row, GTK_TYPE_SCROLLED_WINDOW);
+  graphene_rect_t bounds{};
+  if (scrolled != nullptr && gtk_widget_compute_bounds(row, scrolled, &bounds)) {
+    auto* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scrolled));
+    double const page_size = gtk_adjustment_get_page_size(adjustment);
+    double target = bounds.origin.y - (page_size - bounds.size.height) / 2;
+    target = std::clamp(target, gtk_adjustment_get_lower(adjustment),
+                        std::max(gtk_adjustment_get_lower(adjustment),
+                                 gtk_adjustment_get_upper(adjustment) - page_size));
+    gtk_adjustment_set_value(adjustment, target);
+  }
+  return G_SOURCE_REMOVE;
+}
+
+void settings_jump_to(std::string const& page, std::string const& key);
+
+// Selecting a hit leaves search, shows its page and highlights the row.
+void settings_jump_to(std::string const& page, std::string const& key) {
+  auto* form = g_settings_form;
+  if (!form) return;
+  form->search_silent = true;
+  gtk_editable_set_text(GTK_EDITABLE(form->search), "");
+  form->search_silent = false;
+  gtk_stack_set_visible_child_name(GTK_STACK(form->stack), page.c_str());
+  auto it = form->row_widgets.find(key);
+  if (it == form->row_widgets.end()) return;
+  if (!form->highlighted_key.empty()) {
+    if (auto old = form->row_widgets.find(form->highlighted_key); old != form->row_widgets.end()) {
+      gtk_widget_remove_css_class(old->second, "setting-highlight");
+    }
+  }
+  form->highlighted_key = key;
+  gtk_widget_add_css_class(it->second, "setting-highlight");
+  // The page is allocated on the next frame.
+  g_idle_add(settings_scroll_to_row, new std::string(key));
+  g_timeout_add(1800, settings_unhighlight, new std::string(key));
+}
+
+
+// ---- list pages: what the rows show beside the schema ------------------------
+
+// What a background step reports back to the GTK thread: an error for the
+// footer, and a neutral notice when something was done.
+struct SettingsOutcome {
+  std::string error;
+  std::string notice;
+};
+
+// Runs `work` off the GTK thread, then hands its outcome to `after` on the
+// GTK thread; without `after` the footer reports it.
+void settings_background(std::function<SettingsOutcome()> work,
+                         std::function<void(SettingsOutcome const&)> after = nullptr) {
+  using Payload = std::pair<SettingsOutcome, std::function<void(SettingsOutcome const&)>>;
+  std::thread([work = std::move(work), after = std::move(after)]() mutable {
+    SettingsOutcome outcome;
+    try {
+      outcome = work();
+    } catch (std::exception const& e) {
+      outcome = SettingsOutcome{e.what(), ""};
+    } catch (...) {
+      outcome = SettingsOutcome{tr("settings.col.failed"), ""};
+    }
+    g_idle_add([](gpointer data) -> int {
+      std::unique_ptr<Payload> payload(static_cast<Payload*>(data));
+      if (g_settings_form != nullptr) {
+        if (payload->second) payload->second(payload->first);
+        else {
+          settings_show_error(payload->first.error);
+          settings_show_notice(payload->first.notice);
+        }
+      }
+      return G_SOURCE_REMOVE;
+    }, new Payload(std::move(outcome), std::move(after)));
+  }).detach();
+}
+
+void settings_reload_lists(SettingsOutcome const&) { settings_load_lists(); }
+
+// The backend leads a named-list refusal with a stable code word.
+std::string settings_list_refusal(std::string const& raw) {
+  std::string const code = raw.substr(0, raw.find(':'));
+  if (code == "duplicate-name") return tr("settings.list.duplicate");
+  if (code == "path-required") return tr("settings.list.path-required");
+  if (code == "name-required") return tr("settings.list.name-required");
+  return tr_format("settings.list.failed", {raw});
+}
+
+GtkWidget* settings_dim_label(std::string const& text) {
+  auto* label = gtk_label_new(text.c_str());
+  gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+  gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+  gtk_widget_add_css_class(label, "caption");
+  gtk_widget_add_css_class(label, "dim-label");
+  return label;
+}
+
+GtkWidget* settings_caption(std::string const& text) {
+  auto* label = gtk_label_new(text.c_str());
+  gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+  gtk_widget_add_css_class(label, "caption");
+  gtk_widget_add_css_class(label, "dim-label");
+  gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+  return label;
+}
+
+void settings_set_plugin(std::string id, bool enabled) {
+  settings_background([id = std::move(id), enabled]() -> SettingsOutcome {
+    auto* api = Launcher::instance().api.get();
+    if (api == nullptr) return {};
+    SettingsOutcome outcome;
+    try {
+      if (!api->plugin_set_enabled(id, enabled ? "on" : "off").get()) {
+        outcome.error = tr_format("settings.col.failed", {id});
+      }
+    } catch (std::exception const& e) {
+      outcome.error = e.what();
+    }
+    return outcome;
+  }, settings_reload_lists);
+}
+
+void settings_remove_named_list(std::string kind, std::string id) {
+  settings_background([kind = std::move(kind), id = std::move(id)]() -> SettingsOutcome {
+    auto* api = Launcher::instance().api.get();
+    if (api == nullptr) return {};
+    SettingsOutcome outcome;
+    try {
+      api->named_list_remove(kind, id).get();
+    } catch (std::exception const& e) {
+      outcome.error = settings_list_refusal(e.what());
+    }
+    return outcome;
+  }, settings_reload_lists);
+}
+
+void settings_remove_collection(bool snippets, std::string id) {
+  settings_background([snippets, id = std::move(id)]() -> SettingsOutcome {
+    auto* api = Launcher::instance().api.get();
+    if (api == nullptr) return {};
+    SettingsOutcome outcome;
+    try {
+      if (snippets) api->snippet_delete(id).get();
+      else api->quicklink_delete(id).get();
+    } catch (std::exception const& e) {
+      outcome.error = tr_format("settings.col.failed", {e.what()});
+    }
+    return outcome;
+  }, settings_reload_lists);
+}
+
+// Clearing history is irreversible for the user; callers confirm first.
+void settings_clear_history(bool clipboard) {
+  settings_background([clipboard]() -> SettingsOutcome {
+    auto* api = Launcher::instance().api.get();
+    if (api == nullptr) return {};
+    SettingsOutcome outcome;
+    try {
+      if (clipboard) {
+        auto const count = api->clipboard_clear().get();
+        outcome.notice = tr_format("settings.clipboard.cleared", {std::to_string(count)});
+      } else {
+        api->history_clear().get();
+        outcome.notice = tr("settings.privacy.cleared");
+      }
+    } catch (std::exception const& e) {
+      outcome.error = tr_format("settings.col.failed", {e.what()});
+    }
+    return outcome;
+  });
+}
+
+// The switch of a plugin row.
+void on_plugin_switch(GObject* object, GParamSpec*, gpointer) {
+  auto* toggle = GTK_SWITCH(object);
+  auto* id = static_cast<std::string*>(g_object_get_data(G_OBJECT(toggle), "plugin-id"));
+  if (id == nullptr) return;
+  settings_set_plugin(*id, gtk_switch_get_active(toggle));
+}
+
+// The "searchable" switch of an application row: the entry keeps its name and
+// path, only the switch moves.
+void on_app_switch(GObject* object, GParamSpec*, gpointer data) {
+  auto* item = static_cast<std::vector<std::string>*>(data);
+  if (item == nullptr || item->size() < 5) return;
+  bool const enabled = gtk_switch_get_active(GTK_SWITCH(object));
+  settings_background([item = *item, enabled]() -> SettingsOutcome {
+    auto* api = Launcher::instance().api.get();
+    if (api == nullptr) return {};
+    SettingsOutcome outcome;
+    try {
+      api->named_list_set("apps", item[0], item[1], item[2], "",
+                          enabled ? "on" : "off").get();
+    } catch (std::exception const& e) {
+      outcome.error = settings_list_refusal(e.what());
+    }
+    return outcome;
+  }, settings_reload_lists);
+}
+
+void settings_render_named_list(std::string const& kind,
+                                std::vector<std::vector<std::string>> const& items) {
+  auto* form = g_settings_form;
+  if (!form) return;
+  auto host = form->list_hosts.find(kind);
+  if (host == form->list_hosts.end()) return;
+  bool const folders = kind == "app-folders";
+  if (items.empty()) {
+    gtk_box_append(GTK_BOX(host->second), settings_dim_label(tr("settings.list.empty")));
+  }
+  for (auto const& item : items) {
+    if (item.size() < 5) continue;
+    auto const& id = item[0];
+    auto const& name = item[1];
+    auto const& path = item[2];
+    auto const& enabled = item[4];
+    auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_margin_top(row, 2);
+    gtk_widget_set_margin_bottom(row, 2);
+    auto* text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+    gtk_widget_set_hexpand(text, TRUE);
+    auto* title = gtk_label_new(name.c_str());
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0);
+    gtk_label_set_wrap(GTK_LABEL(title), TRUE);
+    gtk_box_append(GTK_BOX(text), title);
+    if (folders) gtk_box_append(GTK_BOX(text), settings_caption(path));
+    gtk_box_append(GTK_BOX(row), text);
+    if (!folders) {
+      auto* toggle = gtk_switch_new();
+      gtk_switch_set_active(GTK_SWITCH(toggle), enabled == "on");
+      gtk_accessible_update_property(GTK_ACCESSIBLE(toggle),
+                                     GTK_ACCESSIBLE_PROPERTY_LABEL, name.c_str(), -1);
+      auto* stored = new std::vector<std::string>(item);
+      g_object_set_data_full(G_OBJECT(toggle), "entry", stored,
+                             [](gpointer data) { delete static_cast<std::vector<std::string>*>(data); });
+      g_signal_connect(toggle, "notify::active", G_CALLBACK(on_app_switch), stored);
+      gtk_box_append(GTK_BOX(row), toggle);
+    } else {
+      auto* edit = settings_button("settings.list.edit");
+      auto* remove = settings_button("settings.list.remove");
+      settings_on_clicked(GTK_WIDGET(edit), [kind, id, name, path, enabled] {
+        settings_edit_named_list(kind, id, name, path, enabled);
+      });
+      settings_on_clicked(GTK_WIDGET(remove), [kind, id, name] {
+        auto* current = g_settings_form;
+        settings_confirm(GTK_WINDOW(current->window),
+                          tr_format("settings.list.remove-confirm", {name}),
+                          tr("settings.list.remove"), [kind, id] {
+          settings_remove_named_list(kind, id);
+        });
+      });
+      gtk_box_append(GTK_BOX(row), GTK_WIDGET(edit));
+      gtk_box_append(GTK_BOX(row), GTK_WIDGET(remove));
+    }
+    gtk_box_append(GTK_BOX(host->second), row);
+  }
+}
+
+void settings_render_plugins(std::vector<std::vector<std::string>> const& items,
+                             std::vector<std::string> const& disabled) {
+  auto* form = g_settings_form;
+  if (!form) return;
+  auto host = form->list_hosts.find("plugins");
+  if (host == form->list_hosts.end()) return;
+  if (items.empty()) {
+    gtk_box_append(GTK_BOX(host->second), settings_dim_label(tr("settings.ext.empty")));
+  }
+  for (auto const& item : items) {
+    // Rows: (id name version n-commands id "plugin" "" ""); a load error has
+    // an empty id and its message in the name column.
+    if (item.size() < 4) continue;
+    if (item[0].empty()) {
+      auto* message = gtk_label_new(item[1].c_str());
+      gtk_label_set_xalign(GTK_LABEL(message), 0.0);
+      gtk_label_set_wrap(GTK_LABEL(message), TRUE);
+      gtk_widget_add_css_class(message, "error");
+      gtk_box_append(GTK_BOX(host->second), message);
+      continue;
+    }
+    auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    auto* text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+    gtk_widget_set_hexpand(text, TRUE);
+    auto* title = gtk_label_new(item[1].c_str());
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0);
+    gtk_box_append(GTK_BOX(text), title);
+    std::string const meta = tr_format("settings.ext.commands", {item[3]}) +
+        (item[2].empty() ? "" : " · " + item[2]);
+    gtk_box_append(GTK_BOX(text), settings_caption(meta));
+    gtk_box_append(GTK_BOX(row), text);
+    auto* toggle = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(toggle),
+                          std::find(disabled.begin(), disabled.end(), item[0]) == disabled.end());
+    gtk_accessible_update_property(GTK_ACCESSIBLE(toggle),
+                                   GTK_ACCESSIBLE_PROPERTY_LABEL, item[1].c_str(), -1);
+    g_object_set_data_full(G_OBJECT(toggle), "plugin-id",
+                           new std::string(item[0]),
+                           [](gpointer data) { delete static_cast<std::string*>(data); });
+    g_signal_connect(toggle, "notify::active", G_CALLBACK(on_plugin_switch), nullptr);
+    gtk_box_append(GTK_BOX(row), toggle);
+    gtk_box_append(GTK_BOX(host->second), row);
+  }
+}
+
+void settings_render_collection(bool snippets,
+                                 std::vector<std::vector<std::string>> const& items) {
+  auto* form = g_settings_form;
+  if (!form) return;
+  auto host = form->list_hosts.find(snippets ? "snippets" : "quicklinks");
+  if (host == form->list_hosts.end()) return;
+  if (items.empty()) {
+    gtk_box_append(GTK_BOX(host->second),
+                   settings_dim_label(tr(snippets ? "settings.col.empty-snippets"
+                                                  : "settings.col.empty-quicklinks")));
+  }
+  for (auto const& item : items) {
+    if (item.size() < 4) continue;
+    auto const& id = item[0];
+    auto const& name = item[1];
+    auto* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_margin_top(row, 2);
+    gtk_widget_set_margin_bottom(row, 2);
+    auto* text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
+    gtk_widget_set_hexpand(text, TRUE);
+    auto* title = gtk_label_new(name.c_str());
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0);
+    gtk_box_append(GTK_BOX(text), title);
+    std::string const meta = item[2] + (item[2].empty() ? "" : " · ") + item[3];
+    gtk_box_append(GTK_BOX(text), settings_caption(meta));
+    gtk_box_append(GTK_BOX(row), text);
+    auto* edit = settings_button("settings.col.edit");
+    auto* remove = settings_button("settings.col.delete");
+    settings_on_clicked(GTK_WIDGET(edit), [snippets, id, name, keyword = item[2], body = item[3]] {
+      settings_edit_collection(snippets, id, name, keyword, body);
+    });
+    settings_on_clicked(GTK_WIDGET(remove), [snippets, id, name] {
+      auto* current = g_settings_form;
+      settings_confirm(GTK_WINDOW(current->window),
+                        tr_format("settings.col.delete-confirm", {name}),
+                        tr("settings.col.delete"), [snippets, id] {
+        settings_remove_collection(snippets, id);
+      });
+    });
+    gtk_box_append(GTK_BOX(row), GTK_WIDGET(edit));
+    gtk_box_append(GTK_BOX(row), GTK_WIDGET(remove));
+    gtk_box_append(GTK_BOX(host->second), row);
+  }
+}
+
+void settings_load_lists() {
+  auto* api_raw = Launcher::instance().api.get();
+  if (api_raw == nullptr || g_settings_form == nullptr) return;
+  using Lists = std::map<std::string, std::vector<std::vector<std::string>>>;
+  std::thread([api_raw] {
+    auto* payload = new Lists;
+    try { (*payload)["app-folders"] = api_raw->named_list_items("app-folders").get(); } catch (...) {}
+    try { (*payload)["apps"] = api_raw->named_list_items("apps").get(); } catch (...) {}
+    try { (*payload)["plugins"] = api_raw->plugins_list().get(); } catch (...) {}
+    try { (*payload)["snippets"] = api_raw->snippet_list().get(); } catch (...) {}
+    try { (*payload)["quicklinks"] = api_raw->quicklink_list().get(); } catch (...) {}
+    g_idle_add([](gpointer data) -> int {
+      std::unique_ptr<Lists> payload(static_cast<Lists*>(data));
+      auto* form = g_settings_form;
+      if (form == nullptr) return G_SOURCE_REMOVE;
+      form->dynamic_scope = true;
+      for (auto const& [kind, host] : form->list_hosts) workflow_clear_rows(host);
+      form->dynamic_buttons.clear();
+      std::vector<std::string> disabled;
+      if (auto it = form->values.find("plugins-disabled"); it != form->values.end()) {
+        disabled = settings_split_csv(it->second);
+      }
+      settings_render_named_list("app-folders", (*payload)["app-folders"]);
+      settings_render_named_list("apps", (*payload)["apps"]);
+      settings_render_plugins((*payload)["plugins"], disabled);
+      settings_render_collection(true, (*payload)["snippets"]);
+      settings_render_collection(false, (*payload)["quicklinks"]);
+      form->dynamic_scope = false;
+      return G_SOURCE_REMOVE;
+    }, payload);
+  }).detach();
+}
+
+
+// ---- dialogs -------------------------------------------------------------------
+
+// An irreversible step the host asks about once; Cancel is the default and
+// the destructive button never is.
+void settings_confirm(GtkWindow* parent, std::string message,
+                      std::string confirm_label, std::function<void()> action) {
+  auto* dialog = gtk_alert_dialog_new("%s", message.c_str());
+  std::string const cancel = tr("settings.cancel");
+  std::vector<char const*> buttons{cancel.c_str(), confirm_label.c_str(), nullptr};
+  gtk_alert_dialog_set_buttons(GTK_ALERT_DIALOG(dialog), buttons.data());
+  gtk_alert_dialog_set_modal(GTK_ALERT_DIALOG(dialog), TRUE);
+  gtk_alert_dialog_choose(GTK_ALERT_DIALOG(dialog), parent, nullptr,
+                          +[](GObject* source, GAsyncResult* result, gpointer data) {
+    std::unique_ptr<std::function<void()>> fn(
+        static_cast<std::function<void()>*>(data));
+    int const chosen = gtk_alert_dialog_choose_finish(
+        GTK_ALERT_DIALOG(source), result, nullptr);
+    if (chosen == 1) (*fn)();
+  }, new std::function<void()>(std::move(action)));
+  g_object_unref(dialog);
+}
+
+// A modal form window: heading, labelled fields, an error line under them,
+// Cancel and a suggested primary button. `collect` reads the fields on the
+// GTK thread (a refusal keeps the window open with the reason under the
+// fields); `submit` it installs runs off-thread and reports through the
+// outcome. The shared_ptr outlives the RPC even if the window closes.
+struct SettingsFormDialog {
+  GtkWidget* window{nullptr};
+  GtkWidget* box{nullptr};
+  GtkWidget* error_label{nullptr};
+  std::string primary_label{"settings.save"};
+  std::function<SettingsOutcome()> collect;
+  std::function<SettingsOutcome()> submit;
+  std::function<void()> on_saved;
+  // Set by `collect` when it handled the primary itself (a file picker).
+  bool handled{false};
+  bool closed{false};
+};
+
+std::shared_ptr<SettingsFormDialog> settings_dialog_new(char const* title_key) {
+  auto dialog = std::make_shared<SettingsFormDialog>();
+  auto* window = gtk_window_new();
+  gtk_window_set_transient_for(GTK_WINDOW(window), g_settings_form->window);
+  gtk_window_set_modal(GTK_WINDOW(window), TRUE);
+  gtk_window_set_title(GTK_WINDOW(window), tr(title_key).c_str());
+  auto* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_margin_top(box, 20);
+  gtk_widget_set_margin_bottom(box, 20);
+  gtk_widget_set_margin_start(box, 20);
+  gtk_widget_set_margin_end(box, 20);
+  gtk_widget_set_size_request(box, 440, -1);
+  gtk_window_set_child(GTK_WINDOW(window), box);
+  auto* heading = gtk_label_new(tr(title_key).c_str());
+  gtk_label_set_xalign(GTK_LABEL(heading), 0.0);
+  gtk_widget_add_css_class(heading, "heading");
+  gtk_box_append(GTK_BOX(box), heading);
+  auto* error = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(error), 0.0);
+  gtk_label_set_wrap(GTK_LABEL(error), TRUE);
+  gtk_widget_add_css_class(error, "error");
+  dialog->window = window;
+  dialog->box = box;
+  dialog->error_label = error;
+  return dialog;
+}
+
+GtkWidget* settings_dialog_field(SettingsFormDialog const& dialog, char const* label_key,
+                                 std::string const& initial, bool multi_line = false) {
+  auto* label = gtk_label_new(tr(label_key).c_str());
+  gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+  gtk_widget_add_css_class(label, "caption");
+  gtk_box_append(GTK_BOX(dialog.box), label);
+  if (multi_line) {
+    auto* scrolled = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_has_frame(GTK_SCROLLED_WINDOW(scrolled), TRUE);
+    auto* view = gtk_text_view_new();
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD_CHAR);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(view)),
+                             initial.c_str(), -1);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), view);
+    gtk_widget_set_size_request(scrolled, -1, 120);
+    gtk_box_append(GTK_BOX(dialog.box), scrolled);
+    return view;
+  }
+  auto* entry = gtk_entry_new();
+  gtk_editable_set_text(GTK_EDITABLE(entry), initial.c_str());
+  gtk_widget_set_hexpand(entry, TRUE);
+  gtk_entry_set_activates_default(GTK_ENTRY(entry), TRUE);
+  gtk_box_append(GTK_BOX(dialog.box), entry);
+  return entry;
+}
+
+std::string settings_field_text(GtkWidget* field) {
+  if (GTK_IS_TEXT_VIEW(field)) {
+    GtkTextIter begin, end;
+    auto* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(field));
+    gtk_text_buffer_get_bounds(buffer, &begin, &end);
+    char* text = gtk_text_buffer_get_text(buffer, &begin, &end, FALSE);
+    std::string const out = text != nullptr ? text : "";
+    g_free(text);
+    return out;
+  }
+  char const* text = gtk_editable_get_text(GTK_EDITABLE(field));
+  return text != nullptr ? text : "";
+}
+
+void settings_dialog_present(std::shared_ptr<SettingsFormDialog> dialog) {
+  // The error line sits under the fields, above the buttons.
+  gtk_box_append(GTK_BOX(dialog->box), dialog->error_label);
+  gtk_box_append(GTK_BOX(dialog->box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+  auto* buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_halign(buttons, GTK_ALIGN_END);
+  auto* cancel = gtk_button_new_with_label(tr("settings.cancel").c_str());
+  auto* primary = gtk_button_new_with_label(tr(dialog->primary_label.c_str()).c_str());
+  gtk_widget_add_css_class(primary, "suggested-action");
+  // The state lives as long as the window; the shared_ptr in flight keeps
+  // it valid past a close.
+  g_object_set_data_full(G_OBJECT(dialog->window), "dialog-state",
+                         new std::shared_ptr<SettingsFormDialog>(dialog),
+                         [](gpointer data) {
+                           delete static_cast<std::shared_ptr<SettingsFormDialog>*>(data);
+                         });
+  g_signal_connect(dialog->window, "close-request",
+                   G_CALLBACK(+[](GtkWidget*, gpointer data) -> gboolean {
+    static_cast<SettingsFormDialog*>(data)->closed = true;
+    return FALSE;
+  }), dialog.get());
+  settings_on_clicked(GTK_WIDGET(cancel), [dialog] {
+    dialog->closed = true;
+    gtk_window_close(GTK_WINDOW(dialog->window));
+  });
+  settings_on_clicked(primary, [dialog] {
+    if (dialog->collect) {
+      SettingsOutcome const early = dialog->collect();
+      if (dialog->handled) return;
+      if (!early.error.empty()) {
+        gtk_label_set_text(GTK_LABEL(dialog->error_label), early.error.c_str());
+        return;
+      }
+    }
+    settings_background([dialog]() -> SettingsOutcome {
+      return dialog->submit ? dialog->submit() : SettingsOutcome{};
+    }, [dialog](SettingsOutcome const& outcome) {
+      if (dialog->closed) return;
+      if (!outcome.error.empty()) {
+        gtk_label_set_text(GTK_LABEL(dialog->error_label), outcome.error.c_str());
+        return;
+      }
+      dialog->closed = true;
+      if (dialog->on_saved) dialog->on_saved();
+      gtk_window_close(GTK_WINDOW(dialog->window));
+    });
+  });
+  gtk_box_append(GTK_BOX(buttons), GTK_WIDGET(cancel));
+  gtk_box_append(GTK_BOX(buttons), GTK_WIDGET(primary));
+  gtk_box_append(GTK_BOX(dialog->box), buttons);
+  gtk_window_present(GTK_WINDOW(dialog->window));
+}
+
+// Application folders editor (the searchable-applications list has no form:
+// its rows only switch).
+void settings_edit_named_list(std::string kind, std::string id, std::string name,
+                              std::string path, std::string enabled) {
+  if (g_settings_form == nullptr) return;
+  bool const folders = kind == "app-folders";
+  auto dialog = settings_dialog_new(id.empty() ? "settings.list.add-title"
+                                               : "settings.list.edit-title");
+  auto* name_entry = settings_dialog_field(*dialog, "settings.list.name", name);
+  GtkWidget* path_entry = nullptr;
+  if (folders) {
+    path_entry = settings_dialog_field(*dialog, "settings.list.path", path);
+    auto* browse = gtk_button_new_with_label(tr("settings.browse").c_str());
+    gtk_widget_set_halign(browse, GTK_ALIGN_START);
+    settings_on_clicked(browse, [dialog, path_entry] {
+      auto* chooser = gtk_file_chooser_native_new(
+          tr("settings.browse").c_str(), GTK_WINDOW(dialog->window),
+          GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, tr("settings.cancel").c_str(), tr("settings.browse").c_str());
+      g_signal_connect(GTK_NATIVE_DIALOG(chooser), "response",
+                       G_CALLBACK(+[](GtkNativeDialog* native, gint response, gpointer data) {
+        auto* entry = GTK_EDITABLE(data);
+        if (response == GTK_RESPONSE_ACCEPT) {
+          if (auto* file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(native))) {
+            if (char* chosen = g_file_get_path(file)) {
+              gtk_editable_set_text(entry, chosen);
+              g_free(chosen);
+            }
+          }
+        }
+        g_object_unref(native);
+      }), path_entry);
+      gtk_native_dialog_show(GTK_NATIVE_DIALOG(chooser));
+    });
+    gtk_box_append(GTK_BOX(dialog->box), browse);
+  }
+  dialog->collect = [dialog, kind, id, name_entry, path_entry, folders, enabled]() mutable
+      -> SettingsOutcome {
+    std::string const new_name = settings_trimmed(gtk_editable_get_text(GTK_EDITABLE(name_entry)));
+    std::string const new_path = path_entry != nullptr
+        ? settings_trimmed(gtk_editable_get_text(GTK_EDITABLE(path_entry))) : "";
+    if (new_name.empty()) return {tr("settings.list.name-required"), ""};
+    if (folders && new_path.empty()) return {tr("settings.list.path-required"), ""};
+    dialog->submit = [kind, id, new_name, new_path, folders, enabled]() -> SettingsOutcome {
+      auto* api = Launcher::instance().api.get();
+      if (api == nullptr) return {};
+      SettingsOutcome outcome;
+      try {
+        // An edit keeps the entry's switch where it was.
+        api->named_list_set(kind, id, new_name, folders ? new_path : "", "",
+                            enabled.empty() ? "on" : enabled).get();
+      } catch (std::exception const& e) {
+        outcome.error = settings_list_refusal(e.what());
+      }
+      return outcome;
+    };
+    return {};
+  };
+  dialog->on_saved = settings_load_lists;
+  settings_dialog_present(dialog);
+}
+
+// Snippet / quicklink editor. The backend has no group field for these
+// lists, so the host keeps them flat, like the prototype's collection cards.
+void settings_edit_collection(bool snippets, std::string id, std::string name,
+                              std::string keyword, std::string body) {
+  if (g_settings_form == nullptr) return;
+  char const* title_key = snippets
+      ? (id.empty() ? "settings.col.add-snippet" : "settings.col.edit-snippet")
+      : (id.empty() ? "settings.col.add-quicklink" : "settings.col.edit-quicklink");
+  auto dialog = settings_dialog_new(title_key);
+  auto* name_entry = settings_dialog_field(*dialog, "settings.col.name", name);
+  auto* keyword_entry = settings_dialog_field(*dialog, "settings.col.keyword", keyword);
+  auto* body_field = settings_dialog_field(
+      *dialog, snippets ? "settings.col.body" : "settings.col.url", body, snippets);
+  if (!snippets) {
+    gtk_box_append(GTK_BOX(dialog->box), settings_dim_label(tr("settings.col.url-help")));
+  }
+  dialog->collect = [dialog, snippets, id, name_entry, keyword_entry, body_field]() mutable
+      -> SettingsOutcome {
+    std::string const new_name = settings_trimmed(gtk_editable_get_text(GTK_EDITABLE(name_entry)));
+    std::string const new_keyword = settings_trimmed(
+        gtk_editable_get_text(GTK_EDITABLE(keyword_entry)));
+    std::string const new_body = settings_trimmed(settings_field_text(body_field));
+    if (new_name.empty() || new_keyword.empty() || new_body.empty()) {
+      return {tr("settings.col.required"), ""};
+    }
+    dialog->submit = [snippets, id, new_name, new_keyword, new_body]() -> SettingsOutcome {
+      auto* api = Launcher::instance().api.get();
+      if (api == nullptr) return {};
+      SettingsOutcome outcome;
+      try {
+        if (snippets) api->snippet_save(id, new_name, new_keyword, new_body).get();
+        else api->quicklink_save(id, new_name, new_keyword, new_body).get();
+      } catch (std::exception const& e) {
+        outcome.error = tr_format("settings.col.failed", {e.what()});
+      }
+      return outcome;
+    };
+    return {};
+  };
+  dialog->on_saved = settings_load_lists;
+  settings_dialog_present(dialog);
+}
+
+namespace {
+std::string settings_read_file(std::string const& path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return {};
+  return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+// "plan:<category>:<count>,…" → one display line per category.
+std::string settings_plan_summary(std::string const& plan) {
+  std::string summary;
+  for (auto const& part : settings_split_csv(plan.substr(5))) {
+    auto const colon = part.find(':');
+    if (colon == std::string::npos) continue;
+    if (!summary.empty()) summary += "\n";
+    summary += tr(("settings.transfer." + part.substr(0, colon)).c_str()) + ": " +
+        part.substr(colon + 1);
+  }
+  return summary;
+}
+}  // namespace
+
+// Export: choose what to include, then where to save. The backend never
+// sees a path.
+void settings_export_dialog() {
+  if (g_settings_form == nullptr) return;
+  auto dialog = settings_dialog_new("settings.sync.export");
+  std::array<GtkCheckButton*, 4> checks{};
+  std::array<char const*, 4> const keys{
+      "settings.transfer.appearance", "settings.transfer.features",
+      "settings.transfer.commands", "settings.transfer.content"};
+  std::array<char const*, 4> const categories{"appearance", "features", "commands", "content"};
+  for (std::size_t i = 0; i < keys.size(); ++i) {
+    auto* check = gtk_check_button_new_with_label(tr(keys[i]).c_str());
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(check), TRUE);
+    gtk_widget_set_halign(check, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(dialog->box), check);
+    checks[i] = GTK_CHECK_BUTTON(check);
+  }
+  gtk_box_append(GTK_BOX(dialog->box), settings_dim_label(tr("settings.sync.transfer-help")));
+  dialog->primary_label = "settings.sync.export";
+  dialog->collect = [dialog, checks, categories]() mutable -> SettingsOutcome {
+    std::string chosen;
+    for (std::size_t i = 0; i < checks.size(); ++i) {
+      if (gtk_check_button_get_active(checks[i])) {
+        if (!chosen.empty()) chosen += ",";
+        chosen += categories[i];
+      }
+    }
+    if (chosen.empty()) return {tr("settings.sync.transfer-help"), ""};
+    dialog->handled = true;
+    struct ChooserState {
+      std::string categories;
+      std::shared_ptr<SettingsFormDialog> dialog;
+    };
+    auto* state = new ChooserState{chosen, dialog};
+    auto* chooser = gtk_file_chooser_native_new(
+        tr("settings.sync.export").c_str(), GTK_WINDOW(dialog->window),
+        GTK_FILE_CHOOSER_ACTION_SAVE, tr("settings.cancel").c_str(), tr("settings.sync.export").c_str());
+    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(chooser), "fulcrum-settings.json");
+    g_signal_connect(GTK_NATIVE_DIALOG(chooser), "response",
+                     G_CALLBACK(+[](GtkNativeDialog* native, gint response, gpointer data) {
+      std::unique_ptr<ChooserState> state(static_cast<ChooserState*>(data));
+      auto* file = response == GTK_RESPONSE_ACCEPT
+          ? gtk_file_chooser_get_file(GTK_FILE_CHOOSER(native)) : nullptr;
+      char* path = file != nullptr ? g_file_get_path(file) : nullptr;
+      g_object_unref(native);
+      if (path == nullptr) return;
+      std::string const target(path);
+      g_free(path);
+      settings_background([categories = state->categories, target]() -> SettingsOutcome {
+        auto* api = Launcher::instance().api.get();
+        if (api == nullptr) return {};
+        SettingsOutcome outcome;
+        try {
+          std::string const payload = api->settings_export(categories).get();
+          std::ofstream out(target, std::ios::binary);
+          out << payload;
+          out.close();
+          if (!out) outcome.error = tr("settings.sync.file-failed");
+          else outcome.notice = tr_format("settings.sync.exported", {target});
+        } catch (std::exception const& e) {
+          outcome.error = e.what();
+        }
+        return outcome;
+      }, [dialog = state->dialog](SettingsOutcome const& outcome) {
+        if (dialog->closed) return;
+        if (!outcome.error.empty()) {
+          gtk_label_set_text(GTK_LABEL(dialog->error_label), outcome.error.c_str());
+          return;
+        }
+        dialog->closed = true;
+        gtk_window_close(GTK_WINDOW(dialog->window));
+        settings_show_notice(outcome.notice);
+      });
+    }), state);
+    gtk_native_dialog_show(GTK_NATIVE_DIALOG(chooser));
+    return {};
+  };
+  settings_dialog_present(dialog);
+}
+
+// Import, step one: pick a file and ask the backend what it would replace;
+// step two, after one deliberate confirmation: apply it and read back.
+void settings_import_file() {
+  if (g_settings_form == nullptr) return;
+  auto* chooser = gtk_file_chooser_native_new(
+      tr("settings.sync.import").c_str(), GTK_WINDOW(g_settings_form->window),
+      GTK_FILE_CHOOSER_ACTION_OPEN, tr("settings.cancel").c_str(), tr("settings.sync.import").c_str());
+  auto* filters = gtk_file_filter_new();
+  gtk_file_filter_set_name(filters, "JSON");
+  gtk_file_filter_add_pattern(filters, "*.json");
+  gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(chooser), filters);
+  g_signal_connect(GTK_NATIVE_DIALOG(chooser), "response",
+                   G_CALLBACK(+[](GtkNativeDialog* native, gint response, gpointer) {
+    auto* file = response == GTK_RESPONSE_ACCEPT
+        ? gtk_file_chooser_get_file(GTK_FILE_CHOOSER(native)) : nullptr;
+    char* path = file != nullptr ? g_file_get_path(file) : nullptr;
+    g_object_unref(native);
+    if (path == nullptr) return;
+    std::string const source(path);
+    g_free(path);
+    settings_background([source]() -> SettingsOutcome {
+      std::string const payload = settings_read_file(source);
+      if (payload.empty()) return {tr("settings.sync.file-failed"), ""};
+      auto* api = Launcher::instance().api.get();
+      if (api == nullptr) return {};
+      SettingsOutcome outcome;
+      try {
+        std::string const plan = api->settings_import(payload, "off").get();
+        if (plan.rfind("plan:", 0) != 0) {
+          outcome.error = tr_format("settings.sync.import-failed", {source});
+        } else {
+          // The summary rides the notice to the confirmation.
+          outcome.notice = settings_plan_summary(plan);
+        }
+      } catch (std::exception const& e) {
+        outcome.error = tr_format("settings.sync.import-failed", {source});
+      }
+      return outcome;
+    }, [source](SettingsOutcome const& outcome) {
+      if (!outcome.error.empty()) {
+        settings_show_error(outcome.error);
+        return;
+      }
+      auto* form = g_settings_form;
+      settings_confirm(GTK_WINDOW(form->window), outcome.notice,
+                        tr("settings.sync.import-apply"), [source] {
+        settings_background([source]() -> SettingsOutcome {
+          std::string const payload = settings_read_file(source);
+          auto* api = Launcher::instance().api.get();
+          if (api == nullptr) return {};
+          SettingsOutcome applied;
+          try {
+            api->settings_import(payload, "on").get();
+            applied.notice = tr("settings.sync.imported");
+          } catch (std::exception const& e) {
+            applied.error = tr_format("settings.sync.import-failed", {e.what()});
+          }
+          return applied;
+        }, [](SettingsOutcome const& applied) {
+          if (!applied.error.empty()) {
+            settings_show_error(applied.error);
+            return;
+          }
+          settings_show_notice(applied.notice);
+          // The rows and lists now hold other content: read everything back.
+          settings_load();
+          settings_load_lists();
+        });
+      });
+    });
+  }), nullptr);
+  gtk_native_dialog_show(GTK_NATIVE_DIALOG(chooser));
+}
+
 
 void settings_apply(std::map<std::string, std::string> values, std::string ai_status) {
   if (g_settings_form == nullptr) return;
@@ -3154,9 +4647,10 @@ void settings_apply(std::map<std::string, std::string> values, std::string ai_st
         break;
     }
   }
-  gtk_label_set_text(g_settings_form->ai_status,
-                     ai_status == "ready" ? tr("settings.ai-ready").c_str()
-                                          : ai_status.c_str());
+  g_settings_form->ai_status_raw = ai_status;
+  if (g_settings_form->ai_status != nullptr) {
+    gtk_label_set_text(g_settings_form->ai_status, settings_ai_status_text(ai_status).c_str());
+  }
   g_settings_form->loading = false;
 }
 
@@ -3164,25 +4658,45 @@ void settings_load() {
   auto* api_raw = Launcher::instance().api.get();
   if (api_raw == nullptr || g_settings_form == nullptr) return;
   std::thread([api_raw]() {
-    auto* payload = new std::pair<std::map<std::string, std::string>, std::string>();
+    struct Payload {
+      std::map<std::string, std::string> values;
+      std::string ai_status;
+      std::vector<SettingsSchemaPage> schema;
+      bool has_schema{false};
+    };
+    auto* payload = new Payload;
     try {
       // settings-list rows: (key value description …); booleans read on/off.
       for (auto const& row : api_raw->settings_list().get()) {
         if (row.size() >= 2) {
-          payload->first[row[0]] = row[1];
+          payload->values[row[0]] = row[1];
         }
       }
     } catch (...) {
     }
     try {
-      payload->second = api_raw->ai_status().get();
+      payload->ai_status = api_raw->ai_status().get();
+    } catch (...) {
+    }
+    try {
+      payload->schema = settings_parse_schema(api_raw->settings_ui().get());
+      payload->has_schema = !payload->schema.empty();
     } catch (...) {
     }
     g_idle_add([](gpointer user_data) -> int {
-      std::unique_ptr<std::pair<std::map<std::string, std::string>, std::string>>
-          loaded(static_cast<std::pair<std::map<std::string, std::string>,
-                                       std::string>*>(user_data));
-      settings_apply(std::move(loaded->first), std::move(loaded->second));
+      std::unique_ptr<Payload> loaded(static_cast<Payload*>(user_data));
+      if (g_settings_form == nullptr) return G_SOURCE_REMOVE;
+      if (loaded->has_schema) {
+        // A new schema (first load, or pages changed) rebuilds the pages;
+        // the values below then flow into the fresh controls.
+        bool const changed = loaded->schema.size() != g_settings_form->schema.size();
+        g_settings_form->schema = loaded->schema;
+        if (changed) {
+          settings_build_schema();
+          settings_load_lists();
+        }
+      }
+      settings_apply(std::move(loaded->values), std::move(loaded->ai_status));
       return G_SOURCE_REMOVE;
     }, payload);
   }).detach();
@@ -3530,6 +5044,7 @@ void show_settings_window() {
     settings_build();
   }
   settings_load();
+  settings_load_lists();
   settings_load_commands();
   workflow_load_list();
   workflow_load_detail();

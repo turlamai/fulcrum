@@ -32,6 +32,20 @@ independently per platform packaging run.
   Prototype reduced to match (#241): the clipboard Enter action keeps Paste
   and Copy only, sensitive content keeps one mask switch, and there is no
   usage-diagnostics switch and no update channel.
+- **Settings v2, host slice (#241).** The settings window on Windows,
+  macOS and Linux is now built from the `settings-ui` data: fifteen pages in
+  three groups (Workspace / Features / Preferences), one card per section and
+  a control per row (toggle, choice, bounded number, hotkey recorder, text).
+  No host names a page or a row any more, so a row added in the schema appears
+  on all three platforms. Settings search filters the labels and hints locally;
+  a result opens its page, scrolls to the row and highlights it (Esc clears,
+  Ctrl/Cmd+F focuses the box). The page extras are native on each host:
+  application folders and the application switch, the plugin list with its
+  switch, snippets and quicklinks add / edit / remove, the AI key row with a
+  readiness line, Clear clipboard history and Clear launcher history behind a
+  confirmation, and configuration export / import (import shows the plan
+  before applying). Start at login stays a host row directly above the hotkey.
+  Windows sizes the window in DPI-independent units.
 
 ### Fixed
 

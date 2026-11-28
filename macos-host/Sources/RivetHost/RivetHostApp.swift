@@ -377,7 +377,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private static func makeSettingsWindow(model: SettingsModel) -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 520),
+        // Fifteen grouped destinations and a description line per page need
+        // more room than the old six-item form; the three hosts keep one size.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
         window.title = "Fulcrum Settings"

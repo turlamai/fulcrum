@@ -733,6 +733,42 @@ struct FulcrumAPI {
         try await generated.settings_set(key: key, value: value)
     }
     func aiStatus() async throws -> String { try await generated.ai_status() }
+    // Settings v2 (design/DESIGN.md "偏好设置 v2 宿主契约"): the schema the
+    // window renders, the list/collection editors and the transfers.
+    func settingsUI() async throws -> [[String]] { try await generated.settings_ui() }
+    func namedListItems(kind: String) async throws -> [[String]] {
+        try await generated.named_list_items(kind: kind)
+    }
+    func namedListSet(kind: String, id: String, name: String, path: String,
+                      extra: String, enabled: String) async throws -> String {
+        try await generated.named_list_set(kind: kind, id: id, name: name, path: path,
+                                           extra: extra, enabled: enabled)
+    }
+    func namedListRemove(kind: String, id: String) async throws -> Bool {
+        try await generated.named_list_remove(kind: kind, id: id)
+    }
+    func pluginsList() async throws -> [[String]] { try await generated.plugins_list() }
+    func pluginSetEnabled(id: String, enabled: String) async throws -> Bool {
+        try await generated.plugin_set_enabled(id: id, enabled: enabled)
+    }
+    func snippetList() async throws -> [[String]] { try await generated.snippet_list() }
+    func snippetSave(id: String, name: String, keyword: String, text: String) async throws -> String {
+        try await generated.snippet_save(id: id, name: name, keyword: keyword, text: text)
+    }
+    func snippetDelete(id: String) async throws -> Bool { try await generated.snippet_delete(id: id) }
+    func quicklinkList() async throws -> [[String]] { try await generated.quicklink_list() }
+    func quicklinkSave(id: String, name: String, keyword: String, url: String) async throws -> String {
+        try await generated.quicklink_save(id: id, name: name, keyword: keyword, url: url)
+    }
+    func quicklinkDelete(id: String) async throws -> Bool { try await generated.quicklink_delete(id: id) }
+    func clipboardClear() async throws -> Int64 { try await generated.clipboard_clear() }
+    func historyClear() async throws -> Bool { try await generated.history_clear() }
+    func settingsExport(categories: String) async throws -> String {
+        try await generated.settings_export(categories: categories)
+    }
+    func settingsImport(payload: String, apply: String) async throws -> String {
+        try await generated.settings_import(payload: payload, apply: apply)
+    }
     func updateCheck(manual: Bool) async throws -> RivetTypes.UpdateCheck {
         try await generated.update_check(manual: manual)
     }

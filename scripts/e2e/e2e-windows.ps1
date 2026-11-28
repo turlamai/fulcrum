@@ -309,8 +309,13 @@ try {
         }
         return $null
     }
-    # Validate all six native Settings destinations and their real editors.
-    foreach ($section in @('general','features','ai','commands','workflows','sync')) {
+    # Validate every schema-driven Settings destination (the sidebar comes
+    # from the backend's settings-ui page rows) plus the settings search.
+    [void](Wait-Until 'settings search box' {
+        Find-ById $settingsWindow 'settings-search'
+    })
+    foreach ($section in @('general','files','apps','commands','clipboard','snippets','quicklinks',
+            'extensions','workflows','windows','calculator','symbols','system','ai','privacy','sync')) {
         [void](Wait-Until "settings sidebar $section" {
             Find-ById $settingsWindow "settings-sidebar-$section"
         })

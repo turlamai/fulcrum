@@ -72,7 +72,8 @@
 ;;        #f for a key with no row (product internals, or owned by another
 ;;        surface such as the plugin center).
 ;; control: toggle | select | text | number | hotkey
-;; options: the wire values a select offers, in display order.
+;; options: the wire values a select offers, in display order; for a number,
+;;          its inclusive (min max) so the host's spinner matches the validator.
 (define schema
   (hasheq
    ;; ---- Workspace / General ------------------------------------------------
@@ -94,7 +95,7 @@
          ;; bound with the smallest list the panel keeps usable
          ;; (docs/design-system.md "Panel size").
          "Maximum results shown in the list"
-         '(general basics number ()))
+         '(general basics number (5 12)))
    'no-results-fallback
    (list (one-of '("web" "ai" "none")) "web"
          "What the list offers when nothing matches: a web search, an AI prompt, or nothing"
@@ -120,7 +121,7 @@
    'clipboard-limit
    (list (integer-in 10 100000) 1000
          "Maximum clipboard history entries kept on device"
-         '(clipboard history number ()))
+         '(clipboard history number (10 100000)))
    'clipboard-retention-days
    (list (one-of '(0 1 7 30 90)) 30
          "Days an unpinned clipboard entry is kept; 0 keeps them until the entry limit"
@@ -150,7 +151,7 @@
    'plugins-timeout-ms
    (list (integer-in 100 10000) 2000
          "Per-call plugin process timeout in milliseconds"
-         '(extensions loading number ()))
+         '(extensions loading number (100 10000)))
    'plugins-disabled
    (list string? ""
          "Comma-separated plugin ids the user turned off in the plugin center"
@@ -200,7 +201,7 @@
    'ai-persona
    (list string? ""
          "AI persona: persistent customization prepended as a system message to every request"
-         '(ai privacy text ()))
+         '(ai provider text ()))
    ;; ---- Preferences / Privacy ---------------------------------------------
    'keep-history
    (list boolean? #t
@@ -353,10 +354,14 @@
 ;; ---- settings-window data -------------------------------------------------
 
 ;; The rows of every settings page, in page then section then schema order.
-;; A section heading is `('section page section)`; a row is
+;; The list opens with one `('page page group)` row per page, in sidebar
+;; order — the host builds its grouped navigation from these, so a page
+;; added here appears on all three hosts. Then, per page, a section heading
+;; is `('section page section)` and a row is
 ;; `('setting key page section control options value)` with options and
 ;; value already in wire form. Pages without schema rows (the list pages
-;; and the workflow editor) simply emit nothing.
+;; and the workflow editor) still get their `page` row and simply carry no
+;; sections.
 (define/contract (settings-ui-rows manager)
   (-> settings-manager? (listof list?))
   (define by-page
@@ -369,6 +374,10 @@
     (if position position (+ (length (cdr declared)) 1000)))
   (append*
    (for/list ([page (in-list (apply append (map cdr settings-page-groups)))])
+     (define group
+       (car (for/or ([g (in-list settings-page-groups)]
+                     #:when (memq page (cdr g)))
+              g)))
      (define rows
        (sort (for/list ([(key meta) (in-hash by-page)]
                        #:when (and meta (eq? (list-ref meta 0) page)))
@@ -382,16 +391,17 @@
                    (< ra rb)))))
      (define sections
        (remove-duplicates (map (lambda (r) (list-ref (cdr r) 1)) rows)))
-     (append*
-      (for/list ([section (in-list sections)])
-        (cons (list 'section page section)
-              (for/list ([r (in-list rows)]
-                         #:when (eq? (list-ref (cdr r) 1) section))
-                (define key (car r))
-                (define meta (cdr r))
-                (list 'setting key page section (list-ref meta 2)
-                      (row-options key meta)
-                      (settings-value->wire (settings-get manager key))))))))))
+     (cons (list 'page page group)
+           (append*
+            (for/list ([section (in-list sections)])
+              (cons (list 'section page section)
+                    (for/list ([r (in-list rows)]
+                               #:when (eq? (list-ref (cdr r) 1) section))
+                      (define key (car r))
+                      (define meta (cdr r))
+                      (list 'setting key page section (list-ref meta 2)
+                            (row-options key meta)
+                            (settings-value->wire (settings-get manager key)))))))))))
 
 ;; Keys an export may carry, by prototype category. Appearance is the
 ;; General page minus the hotkey (a device binding); Features is every

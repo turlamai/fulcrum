@@ -59,15 +59,23 @@
 ;; section names, and the display name of every select option.
 (define (i18n-keys-for row)
   (match row
+    [(list 'page page group)
+     (list (format "settings.nav.~a" page) (format "settings.page.~a" page)
+           (format "settings.group.~a" group))]
     [(list 'section page section)
      (list (format "settings.nav.~a" page) (format "settings.section.~a" section))]
-    [(list 'setting key _page section _control options _value)
+    [(list 'setting key _page section 'select options _value)
      (append (list (format "settings.~a" key)
                    (format "settings.hint.~a" key)
                    (format "settings.section.~a" section))
              (for/list ([option (in-list options)])
                ;; an empty option value (AI provider off) is named "off"
                (format "settings.opt.~a.~a" key (if (equal? option "") 'off option))))]
+    ;; A number row's options are its bounds; no display name to resolve.
+    [(list 'setting key _page section _control _options _value)
+     (list (format "settings.~a" key)
+           (format "settings.hint.~a" key)
+           (format "settings.section.~a" section))]
     [_ '()]))
 
 ;; ---- schema ----------------------------------------------------------------
@@ -110,9 +118,16 @@
          (list-ref row 1)))
      (check-equal? general '(language theme hotkey max-results
                              no-results-fallback web-search-enabled default-engine))
-     ;; A section heading precedes the rows it names.
-     (check-equal? (list-ref (car rows) 0) 'section)
-     (check-equal? (list-ref (car rows) 2) 'basics)
+     ;; The list opens with the pages in sidebar order, then each page's
+     ;; sections and rows; a section heading precedes the rows it names.
+     (check-equal? (take rows 2) '((page general workspace) (section general basics)))
+     (check-equal? (list-ref (list-ref rows 1) 2) 'basics)
+     ;; A number row carries its inclusive bounds where a select has options.
+     (define max-results
+       (findf (lambda (r) (and (eq? (car r) 'setting) (eq? (list-ref r 1) 'max-results)))
+              rows))
+     (check-equal? (list-ref max-results 4) 'number)
+     (check-equal? (list-ref max-results 5) '(5 12))
      ;; Options travel in display order.
      (define fallback
        (findf (lambda (r) (and (eq? (car r) 'setting)

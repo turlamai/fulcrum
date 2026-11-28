@@ -63,6 +63,13 @@
     "settings.language.system" "settings.language.zh" "settings.language.en"
     "settings.theme.system" "settings.theme.light" "settings.theme.dark"
     "settings.provider.off" "settings.start-at-login"
+    "settings.group.workspace" "settings.group.features"
+    "settings.group.preferences" "settings.search.label"
+    "settings.search.empty" "settings.search.results"
+    "settings.list.add" "settings.list.edit" "settings.list.remove"
+    "settings.col.add-snippet" "settings.col.add-quicklink"
+    "settings.transfer.features" "settings.transfer.content"
+    "settings.ai-status.no-provider" "settings.ai-status.no-key"
     "settings.clipboard-limit" "settings.default-engine"
     "settings.plugins-timeout" "settings.ai-model" "settings.ai-base-url"
     "settings.ai-persona" "settings.ai-api-key" "settings.save"
@@ -118,52 +125,44 @@
   (check-true (hash-has-key? en-json (string->symbol key))
               (format "en.json is missing ~a" key)))
 
-;; ---- six destinations and the declared row order on every host -------------
+;; ---- fifteen schema pages, driven from settings-ui on every host ----------
+;;
+;; design/DESIGN.md "偏好设置 v2 宿主契约": no host names a page or a row.
+;; Every destination comes from the backend's settings-ui rows, localized
+;; through settings.group.* / settings.nav.* / settings.section.* /
+;; settings.<key> / settings.hint.<key> / settings.opt.<key>.<option>. The
+;; pages the prototype declares stay present as nav keys.
 
 (define nav-keys
-  '("settings.nav.general" "settings.nav.features" "settings.nav.ai"
-    "settings.nav.commands" "settings.nav.workflows" "settings.nav.sync"))
+  '("settings.nav.general" "settings.nav.files" "settings.nav.apps"
+    "settings.nav.commands" "settings.nav.clipboard" "settings.nav.snippets"
+    "settings.nav.quicklinks" "settings.nav.extensions"
+    "settings.nav.workflows" "settings.nav.windows" "settings.nav.calculator"
+    "settings.nav.symbols" "settings.nav.system" "settings.nav.ai"
+    "settings.nav.privacy" "settings.nav.sync"))
 (for ([key (in-list nav-keys)])
-  (check-true (string-contains? windows-settings-source key)
-              (format "Windows Settings must localize ~a" key))
-  (check-true (string-contains? macos-settings-source key)
-              (format "macOS Settings must localize ~a" key))
-  (check-true (string-contains? linux-source key)
-              (format "Linux Settings must localize ~a" key)))
+  (check-true (hash-has-key? en-json (string->symbol key))
+              (format "en.json is missing ~a" key)))
 
-;; General row order: Language → Theme → Start at login → Hotkey → Maximum
-;; results. Pin the order through the construction sequence in each host.
-(define (ordered? source anchors)
-  (let loop ([pos 0] [anchors anchors])
-    (cond
-      [(null? anchors) #t]
-      [else
-       (define idx (string-find (substring source pos) (car anchors)))
-       (and idx (loop (+ pos idx (string-length (car anchors)))
-                      (cdr anchors)))])))
-(define linux-build-start
-  (string-find linux-source "void settings_build()"))
-(define linux-build-end
-  (string-find linux-source "void settings_apply("))
-(define linux-build-source
-  (substring linux-source linux-build-start linux-build-end))
-(check-true
- (ordered? linux-build-source
-           '("\"language\"" "\"theme\"" "settings.start-at-login"
-             "\"hotkey\"" "\"max-results\""))
- "Linux General rows must follow Language → Theme → Start at login → Hotkey → Maximum results")
-(check-true
- (ordered? windows-xaml-source
-           '("LanguageBox" "ThemeBox" "FulcrumStartAtLogin" "HotkeyBox"
-             "MaxResultsBox"))
- "Windows General rows must follow the declared order")
+;; Each host reads the schema, localizes through the shared key families,
+;; offers the settings search, and keeps Start at login (device-local, not
+;; in the schema) directly before the hotkey row.
+(define (host-drives-schema? name source rpc search startup-regex)
+  (for ([marker (in-list (list "settings.group." "settings.nav." "settings.section."
+                              "settings.hint." "settings.opt." rpc search))])
+    (check-true (string-contains? source marker)
+                (format "~a Settings must carry ~a" name marker)))
+  (check-true (regexp-match? startup-regex source)
+              (format "~a Settings must put Start at login before the hotkey row" name)))
 
-;; The language picker order is System / English / 中文 on every host.
-(check-true
- (ordered? linux-source
-           '("settings.language.system" "settings.language.en"
-             "settings.language.zh"))
- "Linux language options must be System / English / 中文")
+(check-true (string-contains? windows-xaml-source "settings-search")
+            "Windows Settings must expose the settings search box")
+(host-drives-schema? "Windows" windows-settings-source "settings_ui()" "settings.start-at-login"
+                     (regexp "row\\.key == \"hotkey\".*MakeStartupRow"))
+(host-drives-schema? "macOS" macos-settings-source "settingsUI()" "settings-search"
+                     (regexp "row\\.key == \"hotkey\" \\{ startupRows \\}"))
+(host-drives-schema? "Linux" linux-source "settings_ui()" "\"settings-search\""
+                     (regexp "row\\.key == \"hotkey\"\\) settings_add_startup_row"))
 
 ;; ---- settings chrome is i18n, not hardcoded English ------------------------
 

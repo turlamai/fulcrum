@@ -155,6 +155,15 @@ Tokens 提取自现行实现，保证原型 → 原生实现零翻译成本：`d
 - 导入/导出 JSON v2（`app/core/settings-transfer.rkt`）：`{"format":"fulcrum-settings","version":2,"groups":{appearance,features,commands,content}}`。导出只含 toggle/select（不出自由文本与设备绑定），永不含热键、AI、同步、路径、索引、历史。导入先校验（格式、1 MB 上限、字段类型、命令 ≤200、内容 ≤500、热键/别名冲突含召唤热键），`settings-import` 以 `apply=off` 返回 `plan:<分类>:<数量>`，`apply=on` 整类替换并返回 `applied:<摘要>`。线上不传布尔：开关参数用 `on`/`off`。
 - 引擎读偏好经 thunk、每次搜索读取，设置窗改动下一次击键即生效，无需重建引擎；未设置的键读作 `unset`（不是 `#f`），provider 以自己的默认值兜底。
 
+## 2026-11-25 · 偏好设置 v2 宿主契约（切片 2，#241）
+
+- 三宿主数据驱动：设置窗不再各自手写表单。`settings-ui` 以 `("page" <page> <group>)` 行开头给出侧栏（分组 Workspace / Features / Preferences 与页面顺序，均来自后端 `settings-page-groups`），随后逐页 `("section" …)` / `("setting" …)`。宿主只做三件事：按 page 行建分组导航、按 section 行分卡、按 control（toggle / select / text / number / hotkey）选控件；标签、提示、选项名走 `settings.group.*` / `settings.nav.*` / `settings.page.*` / `settings.section.*` / `settings.<key>` / `settings.hint.<key>` / `settings.opt.<key>.<option>`。`number` 行的 options 是闭区间 `(min max)`，宿主微调器的上下限与校验器一致。新增页面或行只改后端 schema 与 i18n。
+- 设置搜索：侧栏顶部搜索框，按标签+提示在本机过滤全部行（不发 RPC），结果列出「行标签 · 页面 / 分节」；选中即切到该页、滚动到该行并高亮约 1.8 s；Esc 清空并回到搜索框；Ctrl/Cmd+F 聚焦搜索。空结果给出可试的关键词。
+- 宿主自有行：开机启动（设备本地，不进 schema，插在 General 的 hotkey 行之前，AutomationId 保持 `FulcrumStartAtLogin`）；AI 密钥行（PasswordBox + Save，接 `ai.key`，位于 AI 页 schema 行之后，`ai-status` 显示就绪状态）；Sync 页的「Check for Updates Now」继续打开专用更新窗。
+- 列表页 extras（schema 之外、宿主原生实现，数据仍走 RPC）：Applications = `named-list-items/set/remove` 的 `app-folders`（名称+绝对路径）与 `apps`（开关=是否可搜索）；Extensions = `plugins-list` + `plugin-set-enabled`；Snippets / Quicklinks = `snippet-*` / `quicklink-*` 增删改（关键词唯一、URL/绝对路径校验）；Clipboard 页底部「Clear history」→ `clipboard-clear`（需确认）；Privacy 页底部「Clear launcher history」→ `history-clear`（需确认）；Sync 页「Export / Import configuration」→ `settings-export` / `settings-import`（宿主文件选择器；导入先 `apply=off` 展示摘要，确认后 `apply=on`）。Commands 与 Workflows 沿用既有原生编辑器，不重做。
+- 删除项的确认走宿主原生对话框（ContentDialog / alert / GtkAlertDialog），错误贴近触发控件，不再用窗口底部一条全局红字。
+- 本切片明确不做（留后续切片）：File Search 来源管理（切片 3）、Notes/Focus/Translate/Calendar/Screenshots 五页（切片 5）、OS 权限行与「Excluded applications」「Interface size」「Show in menu bar」（切片 4，随各自偏好落地）。
+
 ## 文件搜索 · 来源联动
 
 - 主入口使用同名报价单作为样例。每条结果显示来源、目录和离线状态，文件详情显示完整路径和版本。回车打开可用文件的样例预览，⌘K / Ctrl+K 打开该文件的操作与详情。离线条目的回车操作进入详情和恢复路径。
